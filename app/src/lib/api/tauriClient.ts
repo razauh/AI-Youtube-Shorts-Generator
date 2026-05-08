@@ -71,3 +71,9 @@ export async function runGenerateAndStream(
     unlisten();
   }
 }
+
+export async function pickLocalVideoFile(): Promise<string | null> {
+  const { invoke } = await getCore();
+  const path = await invoke<string | null>('pick_local_video_file');
+  return path;
+}

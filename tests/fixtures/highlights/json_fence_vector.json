@@ -1,0 +1,24 @@
+{
+  "cases": [
+    {
+      "raw": "```json\n{\"highlights\":[{\"title\":\"X\"}]}\n```",
+      "expected": {
+        "highlights": [
+          {
+            "title": "X"
+          }
+        ]
+      }
+    },
+    {
+      "raw": "noise prefix\n{\"highlights\":[{\"title\":\"Y\"}]}\nnoise suffix",
+      "expected": {
+        "highlights": [
+          {
+            "title": "Y"
+          }
+        ]
+      }
+    }
+  ]
+}

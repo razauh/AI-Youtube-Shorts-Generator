@@ -1,0 +1,10 @@
+{
+  "details": {
+    "code": "E_NO_TRANSCRIPT_SEGMENTS",
+    "retryable": false,
+    "stage": "transcribe"
+  },
+  "error": "Whisper produced no segments. The video may have no detectable speech.",
+  "mode": "api",
+  "source_video_url": "https://cdn.example.com/video.mp4"
+}

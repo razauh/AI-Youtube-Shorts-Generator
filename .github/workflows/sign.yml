@@ -1,0 +1,10 @@
+name: sign
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sign-placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Signing workflow scaffold. Implement platform signing steps next."

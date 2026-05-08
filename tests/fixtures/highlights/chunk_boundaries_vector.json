@@ -1,0 +1,81 @@
+{
+  "input": {
+    "duration": 2500,
+    "segments": [
+      {
+        "start": 0,
+        "end": 10,
+        "text": "s0"
+      },
+      {
+        "start": 1190,
+        "end": 1205,
+        "text": "s1"
+      },
+      {
+        "start": 1200,
+        "end": 1210,
+        "text": "s2"
+      },
+      {
+        "start": 2350,
+        "end": 2370,
+        "text": "s3"
+      },
+      {
+        "start": 2390,
+        "end": 2410,
+        "text": "s4"
+      },
+      {
+        "start": 2450,
+        "end": 2490,
+        "text": "s5"
+      }
+    ]
+  },
+  "expected": [
+    {
+      "offset": 0,
+      "duration": 1200,
+      "segment_starts": [
+        0,
+        1190,
+        1200
+      ],
+      "segment_ends": [
+        10,
+        1205,
+        1210
+      ]
+    },
+    {
+      "offset": 1140,
+      "duration": 1200,
+      "segment_starts": [
+        1190,
+        1200,
+        2350
+      ],
+      "segment_ends": [
+        1205,
+        1210,
+        2370
+      ]
+    },
+    {
+      "offset": 2280,
+      "duration": 220,
+      "segment_starts": [
+        2350,
+        2390,
+        2450
+      ],
+      "segment_ends": [
+        2370,
+        2410,
+        2490
+      ]
+    }
+  ]
+}

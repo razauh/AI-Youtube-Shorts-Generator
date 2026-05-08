@@ -275,3 +275,25 @@ This project is licensed under the MIT License.
 - [Faceless Video Generator](https://github.com/SamurAIGPT/Faceless-Video-Generator)
 - [AI B-roll Generator](https://github.com/Anil-matcha/AI-B-roll)
 - [No-code YouTube Shorts Generator](https://www.vadoo.tv/clip-youtube-video)
+
+## Migration Workspace Layout (Rust/Tauri Baseline)
+
+For migration task baseline, Rust app shell lives under `app/` and legacy Python code moved intact to `python_legacy/`.
+
+```text
+AI-Youtube-Shorts-Generator/
+├── app/                         Tauri v2 + Svelte shell
+│   ├── package.json
+│   ├── src/
+│   └── src-tauri/
+├── python_legacy/               Original Python pipeline (unchanged bytes)
+│   ├── main.py
+│   └── shorts_generator/
+└── tests/
+    └── integration/
+```
+
+Root task runners:
+- `npm run dev`
+- `npm run test`
+- `npm run bundle`

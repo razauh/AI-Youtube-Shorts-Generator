@@ -1,0 +1,32 @@
+{
+  "mode": "api",
+  "source_video_url": "https://cdn.example.com/video.mp4",
+  "transcript": {
+    "duration": 245.8,
+    "segments": [
+      {"start": 0.0, "end": 4.2, "text": "Most creators miss this."},
+      {"start": 4.2, "end": 10.5, "text": "One change doubled retention."}
+    ]
+  },
+  "highlights": [
+    {
+      "title": "Retention Secret",
+      "start_time": 0.0,
+      "end_time": 54.4,
+      "score": 92,
+      "hook_sentence": "Most creators miss this.",
+      "virality_reason": "Strong hook plus concrete outcome creates immediate curiosity."
+    }
+  ],
+  "shorts": [
+    {
+      "title": "Retention Secret",
+      "start_time": 0.0,
+      "end_time": 54.4,
+      "score": 92,
+      "hook_sentence": "Most creators miss this.",
+      "virality_reason": "Strong hook plus concrete outcome creates immediate curiosity.",
+      "clip_url": "https://cdn.example.com/short_01.mp4"
+    }
+  ]
+}

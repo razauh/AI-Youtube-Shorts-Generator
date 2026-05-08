@@ -1,0 +1,58 @@
+{
+  "input": [
+    {
+      "title": "A",
+      "start_time": 0.0,
+      "end_time": 100.0,
+      "score": 95,
+      "hook_sentence": "h",
+      "virality_reason": "r"
+    },
+    {
+      "title": "B",
+      "start_time": 30.0,
+      "end_time": 80.0,
+      "score": 80,
+      "hook_sentence": "h",
+      "virality_reason": "r"
+    },
+    {
+      "title": "C",
+      "start_time": 90.0,
+      "end_time": 140.0,
+      "score": 70,
+      "hook_sentence": "h",
+      "virality_reason": "r"
+    },
+    {
+      "title": "D",
+      "start_time": 95.0,
+      "end_time": 130.0,
+      "score": 60,
+      "hook_sentence": "h",
+      "virality_reason": "r"
+    }
+  ],
+  "expected_titles": [
+    "A",
+    "C"
+  ],
+  "expected": [
+    {
+      "title": "A",
+      "start_time": 0.0,
+      "end_time": 100.0,
+      "score": 95,
+      "hook_sentence": "h",
+      "virality_reason": "r"
+    },
+    {
+      "title": "C",
+      "start_time": 90.0,
+      "end_time": 140.0,
+      "score": 70,
+      "hook_sentence": "h",
+      "virality_reason": "r"
+    }
+  ]
+}

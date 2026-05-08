@@ -1,0 +1,42 @@
+{
+  "deterministic_fields": [
+    "mode",
+    "source_video_url",
+    "transcript.duration",
+    "transcript.segments[*].start",
+    "transcript.segments[*].end",
+    "highlights[*].start_time",
+    "highlights[*].end_time",
+    "highlights[*].score",
+    "shorts[*].clip_url",
+    "shorts[*].error"
+  ],
+  "generated_at_utc": "2026-05-07T18:48:31.060901+00:00",
+  "generator": "tests/characterization/run_python_baseline.py",
+  "nondeterministic_fields": [
+    "highlights[*].title",
+    "highlights[*].hook_sentence",
+    "highlights[*].virality_reason",
+    "shorts[*].title",
+    "shorts[*].hook_sentence",
+    "shorts[*].virality_reason"
+  ],
+  "scenarios": [
+    {
+      "file": "api_success.json",
+      "id": "api_success",
+      "kind": "mocked"
+    },
+    {
+      "file": "no_segments.json",
+      "id": "no_segments",
+      "kind": "mocked"
+    },
+    {
+      "file": "clip_failure.json",
+      "id": "clip_failure",
+      "kind": "mocked"
+    }
+  ],
+  "version": "v1"
+}

@@ -6,3 +6,61 @@ venv/
 output/
 *.mp4
 .DS_Store
+architecture-high-level.puml
+architecture-high-level.png
+architecture-simple.puml
+architecture-simple.png
+architecture-local-vs-cloud-simple.puml
+architecture-local-vs-cloud-simple.png
+
+# Node / frontend
+app/node_modules/
+app/dist/
+app/.svelte-kit/
+app/coverage/
+app/.vite/
+app/.eslintcache
+app/*.tsbuildinfo
+
+# Tauri / Rust build outputs
+app/src-tauri/target/
+target/
+
+# Env files (all variants)
+.env.*
+app/.env
+app/.env.*
+
+# Logs / temp
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tmp
+*.temp
+
+# Test/cache artifacts
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+
+# Editor/OS
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local tooling artifacts
+.codex/
+graphify-out/
+
+# User-requested ignores
+.codex
+.graphifyignore
+DESIGN.md
+GRAPHIFY_FLAW_AUDIT.md
+app/.codex
+genetrate_shorts/

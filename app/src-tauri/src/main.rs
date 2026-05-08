@@ -3,6 +3,7 @@
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            shorts_tauri_app::commands::files::pick_local_video_file,
             shorts_tauri_app::commands::generate::generate_shorts,
             shorts_tauri_app::commands::generate::generate_shorts_with_events,
             shorts_tauri_app::commands::generate::generate_shorts_stream,

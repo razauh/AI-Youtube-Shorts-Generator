@@ -1,0 +1,52 @@
+{
+  "mode": "local",
+  "source_video_url": "/tmp/source_video.mp4",
+  "transcript": {
+    "duration": 180.1,
+    "segments": [
+      {"start": 0.0, "end": 6.1, "text": "I was wrong about this tactic."},
+      {"start": 6.1, "end": 12.0, "text": "Here is what finally worked."}
+    ]
+  },
+  "highlights": [
+    {
+      "title": "Wrong Then Right",
+      "start_time": 12.3,
+      "end_time": 67.8,
+      "score": 88,
+      "hook_sentence": "I was wrong about this tactic.",
+      "virality_reason": "Confession plus resolution drives attention.",
+      "provider_note": "candidate_a"
+    },
+    {
+      "title": "Tactical Breakdown",
+      "start_time": 70.0,
+      "end_time": 119.2,
+      "score": 80,
+      "hook_sentence": "Here is what finally worked.",
+      "virality_reason": "Practical sequence has clear payoff."
+    }
+  ],
+  "shorts": [
+    {
+      "title": "Wrong Then Right",
+      "start_time": 12.3,
+      "end_time": 67.8,
+      "score": 88,
+      "hook_sentence": "I was wrong about this tactic.",
+      "virality_reason": "Confession plus resolution drives attention.",
+      "clip_url": "/tmp/short_01.mp4",
+      "error": null
+    },
+    {
+      "title": "Tactical Breakdown",
+      "start_time": 70.0,
+      "end_time": 119.2,
+      "score": 80,
+      "hook_sentence": "Here is what finally worked.",
+      "virality_reason": "Practical sequence has clear payoff.",
+      "clip_url": null,
+      "error": "ffmpeg exited with status 1"
+    }
+  ]
+}

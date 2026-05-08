@@ -25,6 +25,7 @@
   --color-state-success: #32d1a0;
   --color-on-accent: #082033;
   --color-on-error: #1a0b0b;
+  --ui-color-scheme: dark;
 
   --font-display-xl: "Space Grotesk", sans-serif;
   --font-heading-md: "Space Grotesk", sans-serif;
@@ -47,4 +48,34 @@
   --space-lg: 1rem;
   --space-xl: 1.2rem;
   --space-xxl: 2rem;
+}
+
+:root[data-theme="light"] {
+  --color-canvas-start: #dfefff;
+  --color-canvas-mid: #f4f9ff;
+  --color-canvas-end: #eef5ff;
+  --color-panel-base-1: #ffffff;
+  --color-panel-base-2: #f5f9ff;
+  --color-panel-card: #edf4ff;
+  --color-text-primary: #102236;
+  --color-text-secondary: #1d334a;
+  --color-text-tertiary: #2f4963;
+  --color-text-muted: #3f5a75;
+  --color-text-label: #315174;
+  --color-text-inverse: #f4f9ff;
+  --color-primary: #2d7fe0;
+  --color-secondary: #1caa84;
+  --color-tertiary: #1f7fd0;
+  --color-focus-ring: #3d95ef;
+  --color-border-soft: #a6c7e8;
+  --color-border-medium: #96bce2;
+  --color-border-strong: #83b0df;
+  --color-surface-input: #f2f7ff;
+  --color-surface-meter-track: #d6e8fb;
+  --color-state-error: #d64545;
+  --color-state-warning: #c08b2f;
+  --color-state-success: #1e9f7b;
+  --color-on-accent: #eef5ff;
+  --color-on-error: #fff5f5;
+  --ui-color-scheme: light;
 }

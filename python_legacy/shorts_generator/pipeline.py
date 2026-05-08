@@ -6,6 +6,7 @@ Two modes:
   * mode="local"            — yt-dlp + faster-whisper + OpenAI + ffmpeg/opencv.
                               Self-hosted, OPENAI_API_KEY required for the LLM.
 """
+import os
 from typing import Dict, List, Optional
 
 from .clipper import crop_highlights
@@ -26,7 +27,11 @@ def _run_local(
     from .local.llm import call_openai_llm
     from .local.transcriber import transcribe_local
 
-    source_path = download_youtube_local(youtube_url, fmt=download_format)
+    # In local mode, allow a direct on-disk video path and skip yt-dlp download.
+    if isinstance(youtube_url, str) and os.path.isfile(youtube_url):
+        source_path = youtube_url
+    else:
+        source_path = download_youtube_local(youtube_url, fmt=download_format)
 
     transcript = transcribe_local(source_path, language=language)
     if not transcript["segments"]:

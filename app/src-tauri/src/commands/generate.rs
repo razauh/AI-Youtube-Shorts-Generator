@@ -37,6 +37,9 @@ fn default_aspect_ratio() -> String {
 fn default_download_format() -> String {
     "720".to_string()
 }
+fn default_language() -> String {
+    "English".to_string()
+}
 fn default_mode() -> String {
     "api".to_string()
 }
@@ -108,7 +111,12 @@ fn as_request(c: &GenerateShortsCommand) -> GenerateShortsRequest {
         num_clips: c.num_clips,
         aspect_ratio: c.aspect_ratio.clone(),
         download_format: c.download_format.clone(),
-        language: c.language.clone(),
+        language: c
+            .language
+            .clone()
+            .or_else(|| Some(default_language()))
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty()),
         mode: c.mode.clone(),
     }
 }

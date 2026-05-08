@@ -1,0 +1,11 @@
+{
+  "name": "ai-youtube-shorts-generator-root",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix app run dev",
+    "test:config": "cargo test --manifest-path app/src-tauri/Cargo.toml --test config_tests -- --test-threads=1",
+    "test": "npm run test:config && npm --prefix app run test",
+    "bundle": "npm --prefix app run tauri build",
+    "build": "npm --prefix app run build"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "mode": "api",
+  "source_video_url": "https://cdn.example.com/video.mp4",
+  "error": "Whisper produced no segments. The video may have no detectable speech.",
+  "details": {
+    "stage": "transcribe",
+    "retryable": false
+  }
+}

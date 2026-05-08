@@ -4,9 +4,11 @@ import Page from '../routes/+page.svelte';
 import { createRunState } from '../lib/stores/runState';
 
 const runGenerateAndStream = vi.fn();
+const pickLocalVideoFile = vi.fn();
 
 vi.mock('../lib/api/tauriClient', () => ({
-  runGenerateAndStream: (...args: unknown[]) => runGenerateAndStream(...args)
+  runGenerateAndStream: (...args: unknown[]) => runGenerateAndStream(...args),
+  pickLocalVideoFile: (...args: unknown[]) => pickLocalVideoFile(...args)
 }));
 
 describe('ui flow parity', () => {
@@ -21,12 +23,11 @@ describe('ui flow parity', () => {
   it('default form values parity', () => {
     render(Page);
 
-    expect((screen.getByLabelText('URL') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('YouTube video URL') as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText('Mode') as HTMLSelectElement).value).toBe('api');
     expect((screen.getByLabelText('Num clips') as HTMLInputElement).value).toBe('3');
-    expect((screen.getByLabelText('Aspect ratio') as HTMLInputElement).value).toBe('9:16');
-    expect((screen.getByLabelText('Format') as HTMLInputElement).value).toBe('720');
-    expect((screen.getByLabelText('Language') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('Aspect ratio') as HTMLSelectElement).value).toBe('9:16');
+    expect((screen.getByLabelText('Resolution') as HTMLSelectElement).value).toBe('720');
     expect((screen.getByLabelText('Output JSON path') as HTMLInputElement).value).toBe('');
   });
 
@@ -37,12 +38,11 @@ describe('ui flow parity', () => {
     });
 
     render(Page);
-    await fireEvent.input(screen.getByLabelText('URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
+    await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
     await fireEvent.change(screen.getByLabelText('Mode'), { target: { value: 'local' } });
     await fireEvent.input(screen.getByLabelText('Num clips'), { target: { value: '5' } });
-    await fireEvent.input(screen.getByLabelText('Aspect ratio'), { target: { value: '1:1' } });
-    await fireEvent.input(screen.getByLabelText('Format'), { target: { value: '1080' } });
-    await fireEvent.input(screen.getByLabelText('Language'), { target: { value: 'en' } });
+    await fireEvent.input(screen.getByLabelText('Resolution'), { target: { value: '1080' } });
+    await fireEvent.change(screen.getByLabelText('Aspect ratio'), { target: { value: '1:1' } });
     await fireEvent.input(screen.getByLabelText('Output JSON path'), { target: { value: 'result.json' } });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
@@ -55,7 +55,6 @@ describe('ui flow parity', () => {
       num_clips: 5,
       aspect_ratio: '1:1',
       download_format: '1080',
-      language: 'en',
       output_json: 'result.json'
     });
   });
@@ -93,7 +92,7 @@ describe('ui flow parity', () => {
     });
 
     render(Page);
-    await fireEvent.input(screen.getByLabelText('URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
+    await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
 
     expect(await screen.findByText('Hit')).toBeTruthy();
