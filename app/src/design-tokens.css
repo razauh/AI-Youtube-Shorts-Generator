@@ -1,0 +1,50 @@
+:root {
+  --color-canvas-start: #26496d;
+  --color-canvas-mid: #0d1722;
+  --color-canvas-end: #081017;
+  --color-panel-base-1: #0e1f32;
+  --color-panel-base-2: #091523;
+  --color-panel-card: #112336;
+  --color-text-primary: #f2f8ff;
+  --color-text-secondary: #d8e9fb;
+  --color-text-tertiary: #c3d6eb;
+  --color-text-muted: #b9cde3;
+  --color-text-label: #b8d2ee;
+  --color-text-inverse: #082033;
+  --color-primary: #58a6ff;
+  --color-secondary: #32d1a0;
+  --color-tertiary: #89c3ff;
+  --color-focus-ring: #67b9ff;
+  --color-border-soft: #7fade6;
+  --color-border-medium: #81ace0;
+  --color-border-strong: #7caadf;
+  --color-surface-input: #0b1825;
+  --color-surface-meter-track: #264e70;
+  --color-state-error: #ff6b6b;
+  --color-state-warning: #f5c76b;
+  --color-state-success: #32d1a0;
+  --color-on-accent: #082033;
+  --color-on-error: #1a0b0b;
+
+  --font-display-xl: "Space Grotesk", sans-serif;
+  --font-heading-md: "Space Grotesk", sans-serif;
+  --font-title-sm: "Space Grotesk", sans-serif;
+  --font-body-md: "Space Grotesk", sans-serif;
+  --font-body-sm: "Space Grotesk", sans-serif;
+  --font-label-caps: "Space Grotesk", sans-serif;
+
+  --radius-xs: 10px;
+  --radius-sm: 11px;
+  --radius-md: 12px;
+  --radius-lg: 13px;
+  --radius-xl: 18px;
+  --radius-pill: 999px;
+
+  --space-xxs: 0.22rem;
+  --space-xs: 0.36rem;
+  --space-sm: 0.45rem;
+  --space-md: 0.72rem;
+  --space-lg: 1rem;
+  --space-xl: 1.2rem;
+  --space-xxl: 2rem;
+}
