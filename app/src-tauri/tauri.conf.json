@@ -13,8 +13,7 @@
     "windows": [
       {
         "title": "AI YouTube Shorts Generator",
-        "width": 1200,
-        "height": 800
+        "maximized": true
       }
     ],
     "security": {

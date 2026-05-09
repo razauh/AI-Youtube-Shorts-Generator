@@ -1,11 +1,9 @@
 <script>
   import { onMount } from 'svelte';
   import { runState } from '../lib/stores/runState';
-  import { pickLocalVideoFile, runGenerateAndStream } from '../lib/api/tauriClient';
+  import { openInFileManager, pickLocalVideoFile, pickOutputJsonPath, runGenerateAndStream } from '../lib/api/tauriClient';
   const LS = {
     projects: 'shorts.projects.v1',
-    media: 'shorts.media.v1',
-    presets: 'shorts.presets.v1',
     theme: 'shorts.theme.v1'
   };
 
@@ -20,93 +18,22 @@
   let outputJson = '';
 
   let projectName = '';
-  let projectSearch = '';
-  let mediaSearch = '';
-  let selectedType = 'all';
-  let selectedFolder = 'all';
-
-  let hookTopic = '';
-  let hookResult = '';
-  let studioPrompt = '';
-  let studioTone = 'energetic';
-  let studioLanguage = 'English';
-  let presetName = '';
+  let shortsSearch = '';
 
   let supportMessage = '';
   let supportLog = '';
   let theme = 'dark';
+  let mobileNavOpen = false;
 
   let projects = [];
-  let assets = [];
-  let presets = [];
-
-  const sampleProject = {
-    id: 'sample-project',
-    name: 'Sample: Podcast Growth Clip',
-    status: 'exported',
-    updatedAt: new Date().toISOString(),
-    sourceUrl: 'https://www.youtube.com/watch?v=sample123',
-    clipCount: 3
-  };
-
-  const sampleAssets = [
-    {
-      id: 'asset-1',
-      name: 'podcast_episode.mp4',
-      type: 'video',
-      folder: 'raw-footage',
-      tags: ['podcast', 'long-form'],
-      path: '/Users/local/raw-footage/podcast_episode.mp4',
-      usedIn: ['Sample: Podcast Growth Clip'],
-      updatedAt: new Date().toISOString()
-    },
-    {
-      id: 'asset-2',
-      name: 'brand_logo.png',
-      type: 'logo',
-      folder: 'brand',
-      tags: ['logo', 'branding'],
-      path: '/Users/local/brand/brand_logo.png',
-      usedIn: [],
-      updatedAt: new Date().toISOString()
-    }
-  ];
-
-  const samplePresets = [
-    {
-      id: 'preset-1',
-      name: 'Educational Hook',
-      prompt: 'Generate a curiosity-first hook with one concrete takeaway for creators.',
-      tone: 'educational',
-      language: 'English'
-    },
-    {
-      id: 'preset-2',
-      name: 'Bold Viral CTA',
-      prompt: 'Write a short, punchy title and opening line with urgency.',
-      tone: 'bold',
-      language: 'English'
-    }
-  ];
-
-  $: draftCount = projects.filter((p) => p.status === 'draft').length;
-  $: exportedCount = projects.filter((p) => p.status === 'exported').length;
-  $: recentProjects = [...projects]
-    .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt))
-    .slice(0, 6);
-  $: filteredProjects = projects.filter((p) =>
-    [p.name, p.sourceUrl].join(' ').toLowerCase().includes(projectSearch.toLowerCase())
-  );
-  $: folders = Array.from(new Set(assets.map((a) => a.folder))).sort();
-  $: filteredAssets = assets.filter((a) => {
-    const matchesText = [a.name, a.folder, a.tags.join(' '), a.path]
-      .join(' ')
-      .toLowerCase()
-      .includes(mediaSearch.toLowerCase());
-    const matchesType = selectedType === 'all' || a.type === selectedType;
-    const matchesFolder = selectedFolder === 'all' || a.folder === selectedFolder;
-    return matchesText && matchesType && matchesFolder;
-  });
+  $: filteredProjectsWithShorts = projects
+    .filter((p) => (p.shorts || []).length > 0)
+    .filter((p) =>
+      [p.name, ...(p.shorts || []).map((s) => s.title || ''), ...(p.shorts || []).map((s) => s.clip_url || '')]
+        .join(' ')
+        .toLowerCase()
+        .includes(shortsSearch.toLowerCase())
+    );
   $: sourceLabel = sourceType === 'local' ? 'Local video file path' : 'YouTube video URL';
   $: sourcePlaceholder =
     sourceType === 'local'
@@ -119,31 +46,17 @@
 
   function loadState() {
     const p = localStorage.getItem(LS.projects);
-    const m = localStorage.getItem(LS.media);
-    const s = localStorage.getItem(LS.presets);
     const t = localStorage.getItem(LS.theme);
 
-    projects = p ? JSON.parse(p) : [sampleProject];
-    assets = m ? JSON.parse(m) : sampleAssets;
-    presets = s ? JSON.parse(s) : samplePresets;
+    projects = p ? JSON.parse(p) : [];
     theme = t === 'light' ? 'light' : 'dark';
     applyTheme(theme);
 
     if (!p) persistProjects();
-    if (!m) persistMedia();
-    if (!s) persistPresets();
   }
 
   function persistProjects() {
     localStorage.setItem(LS.projects, JSON.stringify(projects));
-  }
-
-  function persistMedia() {
-    localStorage.setItem(LS.media, JSON.stringify(assets));
-  }
-
-  function persistPresets() {
-    localStorage.setItem(LS.presets, JSON.stringify(presets));
   }
 
   function applyTheme(nextTheme) {
@@ -156,51 +69,9 @@
     applyTheme(theme);
   }
 
-  function useSampleProject() {
-    const sample = projects.find((p) => p.id === 'sample-project') ?? sampleProject;
-    projectName = sample.name;
-    url = sample.sourceUrl;
-    numClips = sample.clipCount;
-    active = 'generate';
-  }
-
-  function continueProject(project) {
-    projectName = project.name;
-    url = project.sourceUrl;
-    numClips = project.clipCount;
-    active = 'generate';
-  }
-
-  function makeHook() {
-    if (!hookTopic.trim()) {
-      hookResult = 'Add a topic to generate hooks.';
-      return;
-    }
-    hookResult = `Stop scrolling: ${hookTopic.trim()} mistakes are killing your growth. Here is the 20-second fix.`;
-  }
-
-  function savePreset() {
-    if (!presetName.trim() || !studioPrompt.trim()) {
-      return;
-    }
-    presets = [
-      {
-        id: crypto.randomUUID(),
-        name: presetName.trim(),
-        prompt: studioPrompt.trim(),
-        tone: studioTone,
-        language: studioLanguage
-      },
-      ...presets
-    ];
-    presetName = '';
-    persistPresets();
-  }
-
-  function applyPreset(preset) {
-    studioPrompt = preset.prompt;
-    studioTone = preset.tone;
-    studioLanguage = preset.language;
+  function selectScreen(screen) {
+    active = screen;
+    mobileNavOpen = false;
   }
 
   function exportDebugLog() {
@@ -210,7 +81,7 @@
       runLifecycle: $runState.lifecycle,
       progress: $runState.progress,
       lastError: $runState.error,
-      recentProjects: recentProjects.slice(0, 3).map((p) => p.name)
+      recentProjects: projects.slice(0, 3).map((p) => p.name)
     };
     supportLog = JSON.stringify(debug, null, 2);
   }
@@ -222,6 +93,34 @@
       mode = 'local';
       url = picked;
     }
+  }
+
+  async function chooseOutputJsonPath() {
+    const picked = await pickOutputJsonPath();
+    if (picked) {
+      outputJson = picked;
+    }
+  }
+
+  async function openClipFolder(path) {
+    if (!path || typeof path !== 'string' || path.startsWith('http')) {
+      return;
+    }
+    try {
+      await openInFileManager(path);
+    } catch (_e) {
+      // no-op for now
+    }
+  }
+
+  function removeProject(projectId) {
+    projects = projects.filter((p) => p.id !== projectId);
+    persistProjects();
+  }
+
+  function clearShortsLibrary() {
+    projects = [];
+    persistProjects();
   }
 
   async function submitRun() {
@@ -251,7 +150,8 @@
         status,
         updatedAt: new Date().toISOString(),
         sourceUrl: url,
-        clipCount: numClips
+        clipCount: numClips,
+        shorts: envelope.ok ? envelope.result.shorts : existing?.shorts || []
       };
 
       projects = [next, ...projects.filter((p) => p.id !== next.id)];
@@ -277,57 +177,33 @@
   <div class="orb orb-b"></div>
 
   <aside class="sidebar panel">
-    <h1>Signal Forge</h1>
-    <nav>
-      <button class:active={active === 'dashboard'} on:click={() => (active = 'dashboard')}>Dashboard</button>
-      <button class:active={active === 'generate'} on:click={() => (active = 'generate')}>Generate</button>
-      <button class:active={active === 'library'} on:click={() => (active = 'library')}>Media Library</button>
-      <button class:active={active === 'studio'} on:click={() => (active = 'studio')}>Prompt Studio</button>
-      <button class:active={active === 'help'} on:click={() => (active = 'help')}>Help & Trust</button>
-      <button class:active={active === 'legal'} on:click={() => (active = 'legal')}>Legal</button>
+    <div class="sidebar-head">
+      <h1>Signal Forge</h1>
+      <button
+        type="button"
+        class="menu-toggle"
+        aria-label="Toggle navigation"
+        aria-expanded={mobileNavOpen}
+        on:click={() => (mobileNavOpen = !mobileNavOpen)}
+      >
+        Menu
+      </button>
+    </div>
+    <nav class:nav-open={mobileNavOpen}>
+      <button class:active={active === 'generate'} on:click={() => selectScreen('generate')}>Generate</button>
+      <button class:active={active === 'library'} on:click={() => selectScreen('library')}>Shorts Library</button>
+      <button class:active={active === 'help'} on:click={() => selectScreen('help')}>Help & Trust</button>
+      <button class:active={active === 'legal'} on:click={() => selectScreen('legal')}>Legal</button>
     </nav>
-    <button class="theme-toggle" type="button" on:click={toggleTheme}>
+    <button class="theme-toggle" class:nav-open={mobileNavOpen} type="button" on:click={toggleTheme}>
       {theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}
     </button>
   </aside>
 
   <section class="content">
-    {#if active === 'dashboard'}
-      <section class="panel hero">
-        <p class="eyebrow">Project Dashboard</p>
-        <h2>Recent projects and quick resume</h2>
-        <p class="sub">Track drafts vs exported and continue where you left off.</p>
-      </section>
-
-      <section class="stats-grid">
-        <article class="panel card"><h3>Total Projects</h3><p>{projects.length}</p></article>
-        <article class="panel card"><h3>Drafts</h3><p>{draftCount}</p></article>
-        <article class="panel card"><h3>Exported</h3><p>{exportedCount}</p></article>
-      </section>
-
-      <section class="panel">
-        <div class="toolbar">
-          <input bind:value={projectSearch} placeholder="Search projects" />
-        </div>
-        <div class="list">
-          {#each filteredProjects as project}
-            <article class="list-item">
-              <div>
-                <h3>{project.name}</h3>
-                <p>{project.sourceUrl}</p>
-                <p class="meta">{project.status} | {new Date(project.updatedAt).toLocaleString()} | {project.clipCount} clips</p>
-              </div>
-              <button type="button" on:click={() => continueProject(project)}>Continue</button>
-            </article>
-          {/each}
-        </div>
-      </section>
-    {/if}
-
     {#if active === 'generate'}
       <section class="panel hero">
-        <p class="eyebrow">Desktop Pipeline</p>
-        <h2>Generate Shorts</h2>
+        <h2 class="screen-title">Generate Shorts</h2>
       </section>
 
       <section class="panel">
@@ -390,6 +266,9 @@
           <details class="advanced">
             <summary>Advanced</summary>
             <label>Save detailed report to file (optional) <input aria-label="Output JSON path" bind:value={outputJson} /></label>
+            <div class="row advanced-actions">
+              <button type="button" on:click={chooseOutputJsonPath}>Choose Save Location</button>
+            </div>
           </details>
           <button type="submit">Run</button>
         </form>
@@ -435,97 +314,50 @@
 
     {#if active === 'library'}
       <section class="panel hero">
-        <p class="eyebrow">Media Library</p>
-        <h2>Local assets, tags, folders, reuse map</h2>
+        <h2 class="screen-title">Shorts Library</h2>
+        <p class="meta">Open Folder is available for locally generated shorts.</p>
       </section>
 
       <section class="panel">
-        <div class="toolbar split">
-          <input bind:value={mediaSearch} placeholder="Search assets, tags, paths" />
-          <select bind:value={selectedType}>
-            <option value="all">All types</option>
-            <option value="video">Video</option>
-            <option value="audio">Audio</option>
-            <option value="captions">Captions</option>
-            <option value="logo">Logo</option>
-          </select>
-          <select bind:value={selectedFolder}>
-            <option value="all">All folders</option>
-            {#each folders as folder}
-              <option value={folder}>{folder}</option>
+        <div class="toolbar">
+          <input bind:value={shortsSearch} placeholder="Search by project, short title, or clip path" />
+          <div class="row">
+            <button type="button" on:click={clearShortsLibrary}>Clear All</button>
+          </div>
+        </div>
+
+        {#if filteredProjectsWithShorts.length === 0}
+          <p class="meta">No shorts yet. Run generation and completed clips will appear here.</p>
+        {:else}
+          <div class="list">
+            {#each filteredProjectsWithShorts as project}
+              <article class="list-item">
+                <div>
+                  <h3>{project.name}</h3>
+                  <p class="meta">{(project.shorts || []).length} shorts | {new Date(project.updatedAt).toLocaleString()}</p>
+                  <div class="list">
+                    {#each project.shorts || [] as short}
+                      <div class="row">
+                        <span>{short.title}</span>
+                        {#if short.clip_url}
+                          <button type="button" on:click={() => openClipFolder(short.clip_url)}>Open Folder</button>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+                <button type="button" on:click={() => removeProject(project.id)}>Delete</button>
+              </article>
             {/each}
-          </select>
-        </div>
-
-        <div class="list">
-          {#each filteredAssets as asset}
-            <article class="list-item">
-              <div>
-                <h3>{asset.name}</h3>
-                <p class="meta">{asset.type} | folder: {asset.folder}</p>
-                <p>{asset.path}</p>
-                <p class="meta">tags: {asset.tags.join(', ') || 'none'} | used in: {asset.usedIn.join(', ') || 'none'}</p>
-              </div>
-            </article>
-          {/each}
-        </div>
-      </section>
-    {/if}
-
-    {#if active === 'studio'}
-      <section class="panel hero">
-        <p class="eyebrow">Script & Prompt Studio</p>
-        <h2>Presets, hook/title generation, tone and language templates</h2>
-      </section>
-
-      <section class="panel">
-        <div class="form one-col">
-          <label>Hook topic <input bind:value={hookTopic} placeholder="e.g. email marketing for coaches" /></label>
-          <button type="button" on:click={makeHook}>Generate Hook</button>
-          {#if hookResult}
-            <p class="meta">{hookResult}</p>
-          {/if}
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="form one-col">
-          <label>Preset name <input bind:value={presetName} placeholder="My preset" /></label>
-          <label>Prompt template <textarea bind:value={studioPrompt} rows="4"></textarea></label>
-          <label>Tone
-            <select bind:value={studioTone}>
-              <option value="energetic">energetic</option>
-              <option value="educational">educational</option>
-              <option value="bold">bold</option>
-              <option value="storytelling">storytelling</option>
-            </select>
-          </label>
-          <label>Language template <input bind:value={studioLanguage} /></label>
-          <button type="button" on:click={savePreset}>Save Preset</button>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h3>Saved presets</h3>
-        <div class="list">
-          {#each presets as preset}
-            <article class="list-item">
-              <div>
-                <h4>{preset.name}</h4>
-                <p class="meta">tone: {preset.tone} | language: {preset.language}</p>
-                <p>{preset.prompt}</p>
-              </div>
-              <button type="button" on:click={() => applyPreset(preset)}>Apply</button>
-            </article>
-          {/each}
-        </div>
+          </div>
+        {/if}
       </section>
     {/if}
 
     {#if active === 'help'}
       <section class="panel hero">
-        <p class="eyebrow">Help & Trust</p>
-        <h2>How it works, privacy, support and logs</h2>
+        <h2 class="screen-title">Help & Trust</h2>
+        <p class="meta">How it works, privacy, support and logs.</p>
       </section>
 
       <section class="panel">
@@ -536,7 +368,7 @@
 
       <section class="panel">
         <h3>Privacy</h3>
-        <p>Project history, media library metadata, and prompt presets are stored locally on this machine (browser local storage in this build).</p>
+        <p>Project history and media library metadata are stored locally on this machine (browser local storage in this build).</p>
         <p class="meta">No cloud sync is used for these screens unless you implement explicit remote storage later.</p>
       </section>
 
@@ -558,8 +390,8 @@
 
     {#if active === 'legal'}
       <section class="panel hero">
-        <p class="eyebrow">Legal</p>
-        <h2>Terms and Conditions</h2>
+        <h2 class="screen-title">Legal</h2>
+        <p class="meta">Terms and Conditions.</p>
       </section>
 
       <section class="panel legal-copy">
@@ -571,7 +403,7 @@
         <p>Do not use the app to generate unlawful, deceptive, harmful, or infringing content. Abuse may result in access suspension for paid services.</p>
 
         <h3>Privacy Notice</h3>
-        <p>Local workspace data for dashboard, library, and prompt presets is stored on-device in this release build. Cloud operations only occur when API mode is selected for generation.</p>
+        <p>Local workspace data for generation history and library is stored on-device in this release build. Cloud operations only occur when API mode is selected for generation.</p>
 
         <h3>Warranty and Liability</h3>
         <p>The software is provided as-is without guarantees of uninterrupted service. Liability is limited to the maximum extent permitted by law.</p>
@@ -595,18 +427,23 @@
   }
 
   .app-shell {
-    min-height: 100vh;
+    height: 100vh;
+    box-sizing: border-box;
     padding: var(--space-lg);
     display: grid;
     grid-template-columns: 240px minmax(0, 1fr);
     gap: var(--space-lg);
     position: relative;
+    overflow: hidden;
   }
 
   .content {
     display: grid;
-    gap: var(--space-md);
+    gap: var(--space-lg);
     align-content: start;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 0.2rem;
   }
 
   .panel {
@@ -614,24 +451,54 @@
     border: 1px solid color-mix(in srgb, var(--color-border-soft) 20%, transparent);
     border-radius: var(--radius-xl);
     box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
-    padding: 1rem;
+    padding: var(--space-lg);
     z-index: 1;
     position: relative;
   }
 
   .hero { padding: var(--space-xl); }
-  .eyebrow { margin: 0; font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-tertiary); }
-  .sub, .meta { color: var(--color-text-tertiary); }
-  h1, h2, h3, h4 { margin: 0 0 .45rem; }
-  p { margin: .2rem 0; }
+  .screen-title { margin: 0; font-size: clamp(1.15rem, 1.8vw, 1.45rem); font-weight: 700; }
+  .meta { color: var(--color-text-tertiary); }
+  h1, h2, h3, h4 { margin: 0 0 var(--space-sm); line-height: 1.3; }
+  p { margin: 0 0 var(--space-sm); line-height: 1.45; }
+  p:last-child { margin-bottom: 0; }
 
   .sidebar {
     display: flex;
     flex-direction: column;
     gap: .75rem;
+    min-height: 0;
+    height: calc(100vh - (var(--space-lg) * 2));
+    position: sticky;
+    top: var(--space-lg);
+  }
+  .sidebar-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
   }
   .sidebar h1 { font-size: 1.25rem; }
-  nav { display: grid; gap: .4rem; }
+  .menu-toggle {
+    display: none;
+    position: relative;
+    padding-right: 2rem;
+    text-align: left;
+    min-width: 110px;
+  }
+  .menu-toggle::after {
+    content: "";
+    position: absolute;
+    right: .75rem;
+    top: 50%;
+    width: .45rem;
+    height: .45rem;
+    border-right: 2px solid var(--color-text-tertiary);
+    border-bottom: 2px solid var(--color-text-tertiary);
+    transform: translateY(-62%) rotate(45deg);
+    pointer-events: none;
+  }
+  nav { display: grid; gap: var(--space-sm); }
   .theme-toggle {
     margin-top: auto;
   }
@@ -679,39 +546,41 @@
   button { cursor: pointer; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); color: var(--color-on-accent); border: none; font-weight: 700; }
   nav button { text-align: left; background: color-mix(in srgb, var(--color-panel-card) 80%, transparent); color: var(--color-text-primary); border: 1px solid color-mix(in srgb, var(--color-border-strong) 25%, transparent); }
   nav button.active { border-color: var(--color-focus-ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-focus-ring) 25%, transparent); }
-  .stats-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-md); }
-  .card p { font-size: 1.3rem; color: var(--color-secondary); }
-
-  .form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; align-items: end; }
-  .form.one-col { grid-template-columns: 1fr; }
-  label { display: grid; gap: .3rem; }
+  .form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); align-items: end; }
+  label { display: grid; gap: var(--space-xs); }
   .advanced { grid-column: 1 / -1; }
   .advanced summary {
     cursor: pointer;
     color: var(--color-text-tertiary);
-    margin-bottom: .45rem;
+    margin-bottom: var(--space-sm);
+  }
+  .advanced[open] {
+    display: grid;
+    gap: var(--space-sm);
+  }
+  .advanced-actions {
+    margin-top: var(--space-sm);
   }
   textarea { resize: vertical; }
 
-  .toolbar { display: grid; gap: .55rem; margin-bottom: .75rem; }
-  .toolbar.split { grid-template-columns: 1.6fr .7fr .7fr; }
+  .toolbar { display: grid; gap: var(--space-sm); margin-bottom: var(--space-md); }
 
-  .list { display: grid; gap: .55rem; }
+  .list { display: grid; gap: var(--space-sm); }
   .list-item {
     background: color-mix(in srgb, var(--color-panel-card) 80%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-border-strong) 20%, transparent);
     border-radius: var(--radius-lg);
-    padding: .7rem;
+    padding: var(--space-md);
     display: flex;
     justify-content: space-between;
     gap: .8rem;
     align-items: center;
   }
 
-  .row { display: flex; gap: .55rem; flex-wrap: wrap; }
+  .row { display: flex; gap: var(--space-sm); flex-wrap: wrap; }
   .picker-row { grid-column: 1 / -1; }
 
-  .status-line { margin: 0 0 .45rem; color: var(--color-text-secondary); }
+  .status-line { margin: 0 0 var(--space-sm); color: var(--color-text-secondary); }
   .meter { height: 10px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--color-surface-meter-track) 45%, transparent); overflow: hidden; }
   .meter span { display: block; height: 100%; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); transition: width 180ms ease; }
 
@@ -725,9 +594,55 @@
   .legal-copy h3 { margin-top: .8rem; }
 
   @media (max-width: 900px) {
-    .app-shell { grid-template-columns: 1fr; }
-    .stats-grid { grid-template-columns: 1fr; }
-    .form, .toolbar.split { grid-template-columns: 1fr; }
+    .app-shell {
+      height: auto;
+      min-height: 100vh;
+      overflow: visible;
+      grid-template-columns: 1fr;
+    }
+    .sidebar {
+      height: auto;
+      position: static;
+      top: auto;
+    }
+    .menu-toggle {
+      display: inline-flex;
+      width: auto;
+    }
+    nav,
+    .theme-toggle {
+      display: none;
+    }
+    nav.nav-open,
+    .theme-toggle.nav-open {
+      display: grid;
+    }
+    .theme-toggle.nav-open {
+      margin-top: 0;
+    }
+    .content {
+      min-height: auto;
+      overflow: visible;
+      padding-right: 0;
+    }
+    .form { grid-template-columns: 1fr; }
     .list-item { flex-direction: column; align-items: stretch; }
+  }
+
+  @media (max-height: 760px) {
+    .app-shell {
+      height: auto;
+      min-height: 100vh;
+      overflow: visible;
+    }
+    .sidebar {
+      height: auto;
+      position: static;
+      top: auto;
+    }
+    .content {
+      overflow: visible;
+      min-height: auto;
+    }
   }
 </style>

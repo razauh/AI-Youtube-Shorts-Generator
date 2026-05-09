@@ -5,10 +5,12 @@ import { createRunState } from '../lib/stores/runState';
 
 const runGenerateAndStream = vi.fn();
 const pickLocalVideoFile = vi.fn();
+const pickOutputJsonPath = vi.fn();
 
 vi.mock('../lib/api/tauriClient', () => ({
   runGenerateAndStream: (...args: unknown[]) => runGenerateAndStream(...args),
-  pickLocalVideoFile: (...args: unknown[]) => pickLocalVideoFile(...args)
+  pickLocalVideoFile: (...args: unknown[]) => pickLocalVideoFile(...args),
+  pickOutputJsonPath: (...args: unknown[]) => pickOutputJsonPath(...args)
 }));
 
 describe('ui flow parity', () => {
