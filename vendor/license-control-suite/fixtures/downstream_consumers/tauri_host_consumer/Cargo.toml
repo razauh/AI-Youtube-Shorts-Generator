@@ -1,0 +1,9 @@
+[package]
+name = "license-control-suite-tauri-host-consumer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+license-control-suite = { path = "../../..", features = ["core", "desktop-tauri", "desktop-persistence"] }
+tauri = { version = "2", features = [] }

@@ -1,5 +1,6 @@
 use crate::core::config::Config;
 use crate::core::errors::ConfigError;
+use crate::core::network::client::default_http_client;
 use crate::core::observability::events::{NoopProgressEmitter, ProgressEmitter};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use serde_json::Value;
@@ -44,7 +45,7 @@ impl MuApiClient {
     pub fn with_emitter(config: Config, emitter: Arc<dyn ProgressEmitter>) -> Self {
         Self {
             config,
-            http: reqwest::Client::new(),
+            http: default_http_client().unwrap_or_else(|_| reqwest::Client::new()),
             emitter,
         }
     }

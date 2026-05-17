@@ -352,7 +352,10 @@ impl LivePipelineStages {
         Self::new_with_emitter(config, Arc::new(NoopProgressEmitter))
     }
 
-    pub fn new_with_emitter(config: Config, emitter: Arc<dyn ProgressEmitter>) -> Result<Self, String> {
+    pub fn new_with_emitter(
+        config: Config,
+        emitter: Arc<dyn ProgressEmitter>,
+    ) -> Result<Self, String> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_time()
             .build()
@@ -436,13 +439,15 @@ pub fn generate_shorts_with_progress_live(
         details: None,
     })?;
 
-    let emitter: Arc<dyn ProgressEmitter> = muapi_emitter.unwrap_or_else(|| Arc::new(NoopProgressEmitter));
-    let mut live = LivePipelineStages::new_with_emitter(config, emitter).map_err(|e| ErrorEnvelope {
-        mode: Some("api".to_string()),
-        source_video_url: None,
-        error: e,
-        details: None,
-    })?;
+    let emitter: Arc<dyn ProgressEmitter> =
+        muapi_emitter.unwrap_or_else(|| Arc::new(NoopProgressEmitter));
+    let mut live =
+        LivePipelineStages::new_with_emitter(config, emitter).map_err(|e| ErrorEnvelope {
+            mode: Some("api".to_string()),
+            source_video_url: None,
+            error: e,
+            details: None,
+        })?;
 
     generate_shorts_with_progress(request, &mut live, progress_cb)
 }

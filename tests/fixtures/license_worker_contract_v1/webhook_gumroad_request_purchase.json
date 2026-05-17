@@ -1,0 +1,13 @@
+{
+  "content_type": "application/x-www-form-urlencoded",
+  "body": {
+    "sale_id": "sale_9xy123",
+    "sale_timestamp": "2026-05-17T13:00:00Z",
+    "product_id": "prod_123",
+    "product_permalink": "ai-youtube-shorts-generator",
+    "product_name": "AI Youtube Shorts Generator",
+    "email": "buyer@example.com",
+    "price": "4900",
+    "license_key": "AAAA-BBBB-CCCC-DDDD"
+  }
+}

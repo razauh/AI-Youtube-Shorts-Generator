@@ -1,0 +1,15 @@
+[package]
+name = "license-control-suite-client-shell"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+license-control-suite = { path = "../../..", features = ["desktop-tauri", "desktop-persistence", "core"] }
+tauri = { version = "2", features = [] }
+
+[[bin]]
+name = "license-control-suite-client-shell"
+path = "src/main.rs"

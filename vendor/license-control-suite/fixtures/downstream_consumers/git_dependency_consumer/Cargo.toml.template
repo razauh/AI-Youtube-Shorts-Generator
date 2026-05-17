@@ -1,0 +1,8 @@
+[package]
+name = "license-control-suite-git-dependency-consumer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+license-control-suite = { git = "__REPO_URL__", rev = "__REPO_REV__", default-features = false, features = ["core"] }

@@ -1,0 +1,6 @@
+{
+  "reset_request_id": "rr_123",
+  "status": "APPROVED",
+  "license_state": "UNBOUND",
+  "message": "Device reset approved. You can now use this license key to activate a device."
+}

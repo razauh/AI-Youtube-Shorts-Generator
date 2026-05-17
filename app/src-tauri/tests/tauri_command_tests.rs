@@ -1,11 +1,19 @@
+use license_control_suite::core::test_support::{FakeWorkerClient, TestService};
+use license_control_suite::core::{
+    BoundDeviceSummary, DeviceFingerprint, DeviceId, DevicePublicKey, LocalStateStore,
+    MaskedLicenseKey, SessionState,
+};
+use license_control_suite::desktop::tauri::AuthAppState;
 use serde_json::Value;
-use std::fs;
 use shorts_tauri_app::commands::{
     generate::{
-        generate_shorts, run_generate, GenerateCommandArgs, GenerateEnvelope, GenerateShortsCommand,
+        run_generate, run_generate_authorized, GenerateCommandArgs, GenerateEnvelope,
+        GenerateShortsCommand,
     },
     health::{health_check, validate_runtime},
 };
+use std::fs;
+use std::sync::Arc;
 
 fn base_req() -> GenerateShortsCommand {
     GenerateShortsCommand {
@@ -19,13 +27,40 @@ fn base_req() -> GenerateShortsCommand {
     }
 }
 
+fn unauthenticated_auth_state() -> AuthAppState {
+    AuthAppState {
+        service: Arc::new(TestService::new(FakeWorkerClient::new()).service),
+    }
+}
+
+async fn licensed_auth_state() -> AuthAppState {
+    let harness = TestService::new(FakeWorkerClient::new());
+    let public_key = DevicePublicKey::new("public").expect("public key");
+    harness
+        .state
+        .save_session_state(SessionState::Licensed {
+            masked_license_key: MaskedLicenseKey::new("****-1234").expect("masked key"),
+            bound_device: BoundDeviceSummary {
+                device_id: DeviceId::from_public_key(&public_key),
+                public_key,
+                fingerprint: DeviceFingerprint::new("linux", "linux", "x86_64", None)
+                    .expect("fingerprint"),
+            },
+            token_expires_at_ms: 1_700_000_000_000,
+        })
+        .await
+        .expect("licensed state should be saved");
+    AuthAppState {
+        service: Arc::new(harness.service),
+    }
+}
+
 #[test]
 fn generate_success_returns_envelope() {
-    let out = generate_shorts(GenerateCommandArgs {
+    let (out, _) = run_generate(GenerateCommandArgs {
         request: base_req(),
         test_mode: Some("success".to_string()),
-    })
-    .expect("generate success");
+    });
 
     match out {
         GenerateEnvelope::Success { ok, result } => {
@@ -38,11 +73,10 @@ fn generate_success_returns_envelope() {
 
 #[test]
 fn generate_failure_returns_stable_error_envelope() {
-    let out = generate_shorts(GenerateCommandArgs {
+    let (out, _) = run_generate(GenerateCommandArgs {
         request: base_req(),
         test_mode: Some("fail_transcribe".to_string()),
-    })
-    .expect("command should resolve with envelope");
+    });
 
     match out {
         GenerateEnvelope::Failure { ok, error } => {
@@ -53,6 +87,58 @@ fn generate_failure_returns_stable_error_envelope() {
         }
         GenerateEnvelope::Success { .. } => panic!("expected failure envelope"),
     }
+}
+
+#[tokio::test]
+async fn authorized_generate_rejects_unauthenticated_state() {
+    let (out, events) = run_generate_authorized(
+        GenerateCommandArgs {
+            request: base_req(),
+            test_mode: Some("success".to_string()),
+        },
+        &unauthenticated_auth_state(),
+    )
+    .await;
+
+    match out {
+        GenerateEnvelope::Failure { ok, error } => {
+            assert!(!ok);
+            assert_eq!(error.error, "license required");
+            assert_eq!(error.mode.as_deref(), Some("api"));
+            assert_eq!(
+                error
+                    .details
+                    .as_ref()
+                    .and_then(|details| details.get("code"))
+                    .and_then(Value::as_str),
+                Some("E_LICENSE_REQUIRED")
+            );
+        }
+        GenerateEnvelope::Success { .. } => panic!("expected license failure"),
+    }
+    assert!(events.is_empty());
+}
+
+#[tokio::test]
+async fn authorized_generate_allows_licensed_state() {
+    let auth_state = licensed_auth_state().await;
+    let (out, events) = run_generate_authorized(
+        GenerateCommandArgs {
+            request: base_req(),
+            test_mode: Some("success".to_string()),
+        },
+        &auth_state,
+    )
+    .await;
+
+    match out {
+        GenerateEnvelope::Success { ok, result } => {
+            assert!(ok);
+            assert_eq!(result.mode, "api");
+        }
+        GenerateEnvelope::Failure { .. } => panic!("expected success envelope"),
+    }
+    assert!(!events.is_empty());
 }
 
 #[test]
@@ -94,11 +180,10 @@ fn generate_writes_output_json_when_path_provided() {
     let mut req = base_req();
     req.output_json = Some(out_path.display().to_string());
 
-    let out = generate_shorts(GenerateCommandArgs {
+    let (out, _) = run_generate(GenerateCommandArgs {
         request: req,
         test_mode: Some("success".to_string()),
-    })
-    .expect("generate success");
+    });
 
     match out {
         GenerateEnvelope::Success { .. } => {}

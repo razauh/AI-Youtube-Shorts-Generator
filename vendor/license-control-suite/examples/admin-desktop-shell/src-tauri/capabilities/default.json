@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "windows": ["admin"],
+  "permissions": [
+    "core:default"
+  ]
+}

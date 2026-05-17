@@ -19,6 +19,15 @@ fn defaults_match_python_when_env_missing() {
         "LOCAL_WHISPER_MODEL",
         "LOCAL_WHISPER_DEVICE",
         "LOCAL_OUTPUT_DIR",
+        "LICENSE_WORKER_BASE_URL",
+        "LICENSE_STORAGE_NAMESPACE",
+        "LICENSE_KEYCHAIN_SERVICE",
+        "LICENSE_BACKEND_MODE",
+        "LICENSE_WORKER_TIMEOUT_MS",
+        "LICENSE_WORKER_RETRY_ATTEMPTS",
+        "LICENSE_WORKER_RETRY_BACKOFF_MS",
+        "LICENSE_WORKER_CIRCUIT_FAILURE_THRESHOLD",
+        "LICENSE_WORKER_CIRCUIT_COOLDOWN_MS",
     ] {
         unsafe { std::env::remove_var(key) };
     }
@@ -33,6 +42,63 @@ fn defaults_match_python_when_env_missing() {
     assert_eq!(cfg.local_whisper_model, "base");
     assert_eq!(cfg.local_whisper_device, "auto");
     assert_eq!(cfg.local_output_dir, "output");
+    assert_eq!(cfg.license_worker_base_url, "http://127.0.0.1:8787");
+    assert_eq!(cfg.license_storage_namespace, "desktop-client");
+    assert_eq!(cfg.license_keychain_service, "ai-youtube-shorts-generator");
+    assert_eq!(
+        cfg.license_backend_mode,
+        shorts_tauri_app::core::config::LicenseBackendMode::Reference
+    );
+    assert_eq!(cfg.license_worker_timeout_ms, 10_000);
+    assert_eq!(cfg.license_worker_retry_attempts, 2);
+    assert_eq!(cfg.license_worker_retry_backoff_ms, 150);
+    assert_eq!(cfg.license_worker_circuit_breaker_failure_threshold, 3);
+    assert_eq!(cfg.license_worker_circuit_breaker_cooldown_ms, 30_000);
+}
+
+#[test]
+fn license_config_env_overrides_are_trimmed_and_normalized() {
+    let _guard = env_lock().lock().expect("env lock poisoned");
+    unsafe {
+        std::env::set_var(
+            "LICENSE_WORKER_BASE_URL",
+            " https://licenses.example.test/ ",
+        );
+        std::env::set_var("LICENSE_STORAGE_NAMESPACE", " desktop-client-test ");
+        std::env::set_var("LICENSE_KEYCHAIN_SERVICE", " shorts-test ");
+        std::env::set_var("LICENSE_BACKEND_MODE", " hosted ");
+        std::env::set_var("LICENSE_WORKER_TIMEOUT_MS", "2500");
+        std::env::set_var("LICENSE_WORKER_RETRY_ATTEMPTS", "4");
+        std::env::set_var("LICENSE_WORKER_RETRY_BACKOFF_MS", "25");
+        std::env::set_var("LICENSE_WORKER_CIRCUIT_FAILURE_THRESHOLD", "5");
+        std::env::set_var("LICENSE_WORKER_CIRCUIT_COOLDOWN_MS", "5000");
+    }
+
+    let cfg = Config::from_env().expect("config should load");
+    assert_eq!(cfg.license_worker_base_url, "https://licenses.example.test");
+    assert_eq!(cfg.license_storage_namespace, "desktop-client-test");
+    assert_eq!(cfg.license_keychain_service, "shorts-test");
+    assert_eq!(
+        cfg.license_backend_mode,
+        shorts_tauri_app::core::config::LicenseBackendMode::Hosted
+    );
+    assert_eq!(cfg.license_worker_timeout_ms, 2500);
+    assert_eq!(cfg.license_worker_retry_attempts, 4);
+    assert_eq!(cfg.license_worker_retry_backoff_ms, 25);
+    assert_eq!(cfg.license_worker_circuit_breaker_failure_threshold, 5);
+    assert_eq!(cfg.license_worker_circuit_breaker_cooldown_ms, 5000);
+
+    unsafe {
+        std::env::remove_var("LICENSE_WORKER_BASE_URL");
+        std::env::remove_var("LICENSE_STORAGE_NAMESPACE");
+        std::env::remove_var("LICENSE_KEYCHAIN_SERVICE");
+        std::env::remove_var("LICENSE_BACKEND_MODE");
+        std::env::remove_var("LICENSE_WORKER_TIMEOUT_MS");
+        std::env::remove_var("LICENSE_WORKER_RETRY_ATTEMPTS");
+        std::env::remove_var("LICENSE_WORKER_RETRY_BACKOFF_MS");
+        std::env::remove_var("LICENSE_WORKER_CIRCUIT_FAILURE_THRESHOLD");
+        std::env::remove_var("LICENSE_WORKER_CIRCUIT_COOLDOWN_MS");
+    }
 }
 
 #[test]
@@ -71,5 +137,37 @@ fn invalid_float_env_returns_parse_error_with_var_name() {
 
     unsafe {
         std::env::remove_var("MUAPI_POLL_INTERVAL");
+    }
+}
+
+#[test]
+fn invalid_license_backend_mode_is_rejected() {
+    let _guard = env_lock().lock().expect("env lock poisoned");
+    unsafe {
+        std::env::set_var("LICENSE_BACKEND_MODE", "cloudflare");
+    }
+
+    let err = Config::from_env().expect_err("unknown backend mode should fail");
+    assert!(err.to_string().starts_with("invalid LICENSE_BACKEND_MODE:"));
+
+    unsafe {
+        std::env::remove_var("LICENSE_BACKEND_MODE");
+    }
+}
+
+#[test]
+fn invalid_license_worker_integer_is_rejected() {
+    let _guard = env_lock().lock().expect("env lock poisoned");
+    unsafe {
+        std::env::set_var("LICENSE_WORKER_TIMEOUT_MS", "soon");
+    }
+
+    let err = Config::from_env().expect_err("invalid integer env should fail");
+    assert!(err
+        .to_string()
+        .starts_with("invalid integer for LICENSE_WORKER_TIMEOUT_MS:"));
+
+    unsafe {
+        std::env::remove_var("LICENSE_WORKER_TIMEOUT_MS");
     }
 }

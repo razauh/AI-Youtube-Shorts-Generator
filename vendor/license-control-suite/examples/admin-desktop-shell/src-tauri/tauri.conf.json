@@ -1,0 +1,19 @@
+{
+  "$schema": "./gen/schemas/desktop-schema.json",
+  "productName": "license-control-suite-admin-example",
+  "version": "0.1.0",
+  "identifier": "com.example.license-control-suite.admin",
+  "app": {
+    "windows": [
+      {
+        "label": "admin",
+        "title": "License Control Suite Admin Example",
+        "width": 1100,
+        "height": 760
+      }
+    ],
+    "security": {
+      "capabilities": ["default"]
+    }
+  }
+}

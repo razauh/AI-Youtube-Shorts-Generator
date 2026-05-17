@@ -1,0 +1,25 @@
+target/
+**/target/
+
+logs/
+log/
+*.log
+
+graphify-out/
+**/graphify-out/
+docs/
+**/docs/
+
+.agents/
+.codex/
+
+# OS/editor/temp
+.DS_Store
+.idea/
+.vscode/
+*.tmp
+*.swp
+
+# local env overrides
+.env
+.env.*

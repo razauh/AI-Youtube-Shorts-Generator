@@ -1,0 +1,8 @@
+{
+  "license_key": "XXXX-XXXX-XXXX",
+  "device": {
+    "device_id": "dev_abc123",
+    "platform": "windows",
+    "app_version": "1.0.0"
+  }
+}

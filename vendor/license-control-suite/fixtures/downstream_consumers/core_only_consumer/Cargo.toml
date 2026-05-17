@@ -1,0 +1,10 @@
+[package]
+name = "license-control-suite-core-only-consumer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+async-trait = "0.1"
+license-control-suite = { path = "../../..", default-features = false, features = ["core"] }
+tokio = { version = "1", features = ["macros", "rt"] }

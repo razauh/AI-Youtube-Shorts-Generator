@@ -2,9 +2,39 @@ name: sign
 
 on:
   workflow_dispatch:
+    inputs:
+      artifact_name:
+        description: 'Uploaded artifact bundle name'
+        required: true
+        default: 'release-bundle'
 
 jobs:
-  sign-placeholder:
+  sign-release-artifacts:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - run: echo "Signing workflow scaffold. Implement platform signing steps next."
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: release
+
+      - name: Generate detached signatures
+        env:
+          SIGNING_PRIVATE_KEY_PEM: ${{ secrets.SIGNING_PRIVATE_KEY_PEM }}
+        run: |
+          test -n "$SIGNING_PRIVATE_KEY_PEM"
+          printf '%s' "$SIGNING_PRIVATE_KEY_PEM" > release/signing-key.pem
+          for file in release/*; do
+            [ "$(basename "$file")" = "signing-key.pem" ] && continue
+            openssl dgst -sha256 -sign release/signing-key.pem -out "${file}.sig" "$file"
+            openssl dgst -sha256 "$file" > "${file}.sha256.txt"
+          done
+          rm -f release/signing-key.pem
+
+      - name: Upload signed artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-release-bundle
+          path: release/*

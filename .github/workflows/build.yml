@@ -5,8 +5,79 @@ on:
   pull_request:
 
 jobs:
+  dependency-risk-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Detect dependency file changes
+        id: dep_changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="$(git rev-parse HEAD~1)"
+            HEAD="$(git rev-parse HEAD)"
+          fi
+          echo "Comparing $BASE..$HEAD"
+          CHANGED="$(git diff --name-only "$BASE" "$HEAD" || true)"
+          echo "$CHANGED"
+          if echo "$CHANGED" | grep -Eq '^(app/package\.json|app/package-lock\.json|package\.json)$'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enforce safe dependency specifiers
+        if: steps.dep_changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("fs");
+          const pkg = JSON.parse(fs.readFileSync("app/package.json", "utf8"));
+          const buckets = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"];
+          const bad = [];
+          for (const b of buckets) {
+            const deps = pkg[b] || {};
+            for (const [name, spec] of Object.entries(deps)) {
+              const s = String(spec);
+              if (/^(git\+|https?:|file:|link:|github:)/i.test(s)) {
+                bad.push(`${b}.${name} -> ${s}`);
+              }
+            }
+          }
+          if (bad.length) {
+            console.error("Blocked risky dependency specifiers:");
+            for (const item of bad) console.error(` - ${item}`);
+            process.exit(1);
+          }
+          console.log("Dependency specifier policy passed.");
+          NODE
+
+      - name: Locked install with scripts disabled
+        if: steps.dep_changes.outputs.changed == 'true'
+        run: npm ci --prefix app --ignore-scripts
+
+      - name: Production audit (high+ severity fails)
+        if: steps.dep_changes.outputs.changed == 'true'
+        run: npm audit --prefix app --omit=dev --audit-level=high
+
+      - name: Emit dependency tree for review
+        if: steps.dep_changes.outputs.changed == 'true'
+        run: npm ls --prefix app --all
+
   rust-and-frontend-tests:
     runs-on: ubuntu-latest
+    needs: dependency-risk-gate
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

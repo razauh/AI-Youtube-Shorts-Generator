@@ -1,0 +1,19 @@
+{
+  "event_id": "evt_123",
+  "event_type": "ADMIN_AUTH_SUCCEEDED",
+  "occurred_at": "2026-05-13T10:00:00Z",
+  "actor": {
+    "type": "admin",
+    "id": "op_123"
+  },
+  "license_id": "lic_123",
+  "reset_request_id": null,
+  "old_device_id": null,
+  "new_device_id": null,
+  "request_id": "req_123",
+  "metadata": {
+    "ip": "203.0.113.10",
+    "app_version": "1.0.0",
+    "reason": null
+  }
+}

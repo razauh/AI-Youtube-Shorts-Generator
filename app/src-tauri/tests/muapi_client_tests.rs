@@ -67,6 +67,15 @@ fn cfg(base: String) -> Config {
         local_whisper_model: "base".to_string(),
         local_whisper_device: "auto".to_string(),
         local_output_dir: "output".to_string(),
+        license_worker_base_url: "http://127.0.0.1:8787".to_string(),
+        license_storage_namespace: "desktop-client-test".to_string(),
+        license_keychain_service: "shorts-test".to_string(),
+        license_backend_mode: shorts_tauri_app::core::config::LicenseBackendMode::Reference,
+        license_worker_timeout_ms: 10_000,
+        license_worker_retry_attempts: 2,
+        license_worker_retry_backoff_ms: 150,
+        license_worker_circuit_breaker_failure_threshold: 3,
+        license_worker_circuit_breaker_cooldown_ms: 30_000,
     }
 }
 
@@ -177,7 +186,10 @@ async fn poll_emits_status_change_events_in_order() {
     assert_eq!(out["status"], "completed");
 
     let statuses = emitter.snapshot();
-    assert!(statuses.len() >= 2, "expected at least 2 status emissions, got {statuses:?}");
+    assert!(
+        statuses.len() >= 2,
+        "expected at least 2 status emissions, got {statuses:?}"
+    );
     assert_eq!(statuses[0], "download:processing");
     assert_eq!(statuses[1], "download:completed");
 

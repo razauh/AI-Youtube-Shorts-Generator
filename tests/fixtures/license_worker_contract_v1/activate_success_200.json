@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "data": {
+    "access_token": "tok_01HXYZ123",
+    "masked_license_key": "••••-DDDD",
+    "bound_device": {
+      "device_id": "dev_01HXYZ123",
+      "public_key": "pubkey-abc-123",
+      "fingerprint": {
+        "os_name": "linux",
+        "platform_family": "linux",
+        "arch": "x86_64",
+        "machine_id_hash": "mhash_8f0d9a"
+      }
+    },
+    "entitlement": "active",
+    "token_expires_at_ms": 1736803600000
+  }
+}

@@ -1,4 +1,8 @@
-import type { ErrorEnvelope, PipelineSuccess, ProgressEvent } from '../contracts';
+import type {
+  ErrorEnvelope,
+  PipelineSuccess,
+  ProgressEvent,
+} from '../contracts';
 
 export interface GenerateRequest {
   youtube_url: string;

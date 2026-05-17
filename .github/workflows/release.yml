@@ -1,10 +1,89 @@
 name: release
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version label (for manual runs)'
+        required: false
+        default: 'manual'
 
 jobs:
-  release-placeholder:
+  verify-and-package:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Release workflow scaffold. Implement artifact upload + checksums next."
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install desktop app dependencies
+        run: npm ci
+        working-directory: app
+
+      - name: Run desktop app tests
+        run: npm run test
+        working-directory: app
+
+      - name: Run Tauri/Rust tests
+        run: cargo test --manifest-path app/src-tauri/Cargo.toml --locked
+
+      - name: Create release bundle
+        run: |
+          VERSION="${GITHUB_REF_NAME:-${{ inputs.version }}}"
+          mkdir -p release
+          tar \
+            --exclude='./.git' \
+            --exclude='./node_modules' \
+            --exclude='./app/node_modules' \
+            --exclude='./target' \
+            --exclude='./app/src-tauri/target' \
+            -czf "release/ai-youtube-shorts-generator-${VERSION}.tar.gz" .
+          sha256sum "release/ai-youtube-shorts-generator-${VERSION}.tar.gz" \
+            > "release/ai-youtube-shorts-generator-${VERSION}.sha256"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle
+          path: release/*
+
+  sign-release-artifacts:
+    needs: verify-and-package
+    runs-on: ubuntu-latest
+    if: ${{ secrets.SIGNING_PRIVATE_KEY_PEM != '' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: release
+
+      - name: Generate detached signatures
+        env:
+          SIGNING_PRIVATE_KEY_PEM: ${{ secrets.SIGNING_PRIVATE_KEY_PEM }}
+        run: |
+          printf '%s' "$SIGNING_PRIVATE_KEY_PEM" > release/signing-key.pem
+          for file in release/*; do
+            [ "$(basename "$file")" = "signing-key.pem" ] && continue
+            openssl dgst -sha256 -sign release/signing-key.pem -out "${file}.sig" "$file"
+            openssl dgst -sha256 "$file" > "${file}.sha256.txt"
+          done
+          rm -f release/signing-key.pem
+
+      - name: Upload signed artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-release-bundle
+          path: release/*

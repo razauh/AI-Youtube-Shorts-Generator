@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "LICENSE_INVALID",
+    "message": "Human-readable summary",
+    "retryable": false
+  },
+  "request_id": "req_123"
+}

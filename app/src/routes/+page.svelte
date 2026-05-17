@@ -1,11 +1,16 @@
 <script>
   import { onMount } from 'svelte';
   import { runState } from '../lib/stores/runState';
+  import { authState } from '../lib/stores/authState';
   import { openInFileManager, pickLocalVideoFile, pickOutputJsonPath, runGenerateAndStream } from '../lib/api/tauriClient';
+  import { checkForAppUpdate, installAppUpdate } from '../lib/api/updaterClient';
+  import { CRASH_DRAFT_KEY, createCrashDraft, dismissCrashDraft, saveCrashDraft } from '../support/crashDraft';
   const LS = {
     projects: 'shorts.projects.v1',
     theme: 'shorts.theme.v1'
   };
+  const APP_VERSION = import.meta.env?.VITE_APP_VERSION ?? '0.1.0';
+  const CRASH_REPORT_ENDPOINT = import.meta.env?.VITE_CRASH_REPORT_ENDPOINT ?? '';
 
   let active = 'generate';
 
@@ -16,16 +21,30 @@
   let aspectRatio = '9:16';
   let format = '720';
   let outputJson = '';
+  let licenseKey = '';
+  let resetEmail = '';
+  let resetReceipt = '';
 
   let projectName = '';
   let shortsSearch = '';
 
   let supportMessage = '';
   let supportLog = '';
+  let updaterStatus = 'Updater idle.';
+  let updateAvailable = false;
+  let updateVersion = '';
+  let updaterBusy = false;
+  let crashDraft = null;
+  let crashStatus = '';
   let theme = 'dark';
   let mobileNavOpen = false;
 
   let projects = [];
+  const localDraftStore = {
+    load: async (key) => localStorage.getItem(key),
+    save: async (key, value) => localStorage.setItem(key, value),
+    delete: async (key) => localStorage.removeItem(key)
+  };
   $: filteredProjectsWithShorts = projects
     .filter((p) => (p.shorts || []).length > 0)
     .filter((p) =>
@@ -41,7 +60,23 @@
       : 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 
   onMount(() => {
-    loadState();
+    try {
+      loadState();
+      loadCrashDraftFromLocalStorage();
+      authState.bootstrap();
+    } catch (_err) {
+      projects = [];
+      theme = 'dark';
+      applyTheme(theme);
+    }
+
+    window.addEventListener('error', captureWindowError);
+    window.addEventListener('unhandledrejection', captureUnhandledRejection);
+
+    return () => {
+      window.removeEventListener('error', captureWindowError);
+      window.removeEventListener('unhandledrejection', captureUnhandledRejection);
+    };
   });
 
   function loadState() {
@@ -70,6 +105,9 @@
   }
 
   function selectScreen(screen) {
+    if (screen === 'help') {
+      loadCrashDraftFromLocalStorage();
+    }
     active = screen;
     mobileNavOpen = false;
   }
@@ -86,12 +124,143 @@
     supportLog = JSON.stringify(debug, null, 2);
   }
 
+  function platformLabel() {
+    return navigator.platform || 'unknown';
+  }
+
+  function loadCrashDraftFromLocalStorage() {
+    const raw = localStorage.getItem(CRASH_DRAFT_KEY);
+    if (!raw) {
+      crashDraft = null;
+      return;
+    }
+
+    try {
+      crashDraft = JSON.parse(raw);
+    } catch (_err) {
+      localStorage.removeItem(CRASH_DRAFT_KEY);
+      crashDraft = null;
+    }
+  }
+
+  function captureWindowError(event) {
+    const draft = createCrashDraft(event.error ?? event.message, {
+      appVersion: APP_VERSION,
+      platform: platformLabel()
+    });
+    saveCrashDraft(localDraftStore, draft);
+  }
+
+  function captureUnhandledRejection(event) {
+    const draft = createCrashDraft(event.reason ?? 'Unhandled promise rejection', {
+      appVersion: APP_VERSION,
+      platform: platformLabel()
+    });
+    saveCrashDraft(localDraftStore, draft);
+  }
+
+  async function dismissPendingCrashDraft() {
+    await dismissCrashDraft(localDraftStore);
+    crashDraft = null;
+    crashStatus = '';
+  }
+
+  async function submitPendingCrashDraft() {
+    if (!crashDraft) {
+      return;
+    }
+    if (!CRASH_REPORT_ENDPOINT) {
+      crashStatus = 'Crash report endpoint is not configured. No report was sent.';
+      return;
+    }
+
+    try {
+      const response = await fetch(CRASH_REPORT_ENDPOINT, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(crashDraft)
+      });
+      if (!response.ok) {
+        crashStatus = 'Crash report submission failed. You can dismiss this draft or try again later.';
+        return;
+      }
+      await dismissPendingCrashDraft();
+    } catch (_err) {
+      crashStatus = 'Crash report submission failed. You can dismiss this draft or try again later.';
+    }
+  }
+
+  async function checkForUpdates() {
+    updaterBusy = true;
+    updaterStatus = 'Checking for updates...';
+    try {
+      const result = await checkForAppUpdate();
+      updateAvailable = result.available;
+      updateVersion = result.available ? result.update.version : '';
+      updaterStatus = result.available
+        ? `Update ${result.update.version} is available.`
+        : 'Signal Forge is up to date.';
+    } catch (err) {
+      updateAvailable = false;
+      updateVersion = '';
+      updaterStatus = err instanceof Error ? err.message : 'Updater is unavailable.';
+    } finally {
+      updaterBusy = false;
+    }
+  }
+
+  async function installUpdate() {
+    updaterBusy = true;
+    updaterStatus = updateVersion ? `Installing update ${updateVersion}...` : 'Installing update...';
+    try {
+      const result = await installAppUpdate();
+      if (result.installed) {
+        updaterStatus = `Update ${result.version} installed. Restart the app to finish.`;
+        updateAvailable = false;
+        updateVersion = '';
+      } else {
+        updaterStatus = result.message || 'No update is available to install.';
+      }
+    } catch (err) {
+      updaterStatus = err instanceof Error ? err.message : 'Update installation failed.';
+    } finally {
+      updaterBusy = false;
+    }
+  }
+
   async function chooseLocalFile() {
     const picked = await pickLocalVideoFile();
     if (picked) {
       sourceType = 'local';
       mode = 'local';
       url = picked;
+    }
+  }
+
+  async function submitLicense() {
+    const key = licenseKey.trim();
+    if (!key) {
+      return;
+    }
+    await authState.activate(key);
+    licenseKey = '';
+  }
+
+  async function submitResetRequest() {
+    const purchaser_email = resetEmail.trim();
+    if (!purchaser_email) {
+      return;
+    }
+    await authState.requestReset({
+      purchaser_email,
+      receipt_reference: resetReceipt.trim() || null
+    });
+    resetReceipt = '';
+  }
+
+  async function refreshResetStatus() {
+    if ($authState.resetRequestId) {
+      await authState.pollResetStatus($authState.resetRequestId);
     }
   }
 
@@ -202,6 +371,59 @@
 
   <section class="content">
     {#if active === 'generate'}
+      {#if $authState.lifecycle !== 'licensed'}
+        <section class="panel hero">
+          <h2 class="screen-title">License Required</h2>
+          <p class="meta">Enter your license key to unlock generation on this device.</p>
+        </section>
+
+        {#if $authState.lifecycle === 'checking'}
+          <section class="panel status">
+            <p class="status-line">Checking license...</p>
+          </section>
+        {:else if $authState.lifecycle === 'reset_pending' || $authState.lifecycle === 'reset_approved_unbound' || $authState.lifecycle === 'reset_rejected' || $authState.lifecycle === 'reset_expired'}
+          <section class="panel">
+            <h3>Device Reset</h3>
+            <p class="meta">Status: {$authState.lifecycle.replaceAll('_', ' ')}</p>
+            {#if $authState.resetRequestId}
+              <p class="meta">Request: {$authState.resetRequestId}</p>
+            {/if}
+            {#if $authState.lifecycle === 'reset_approved_unbound'}
+              <p>Device reset approved. You can now use this license key to activate a device.</p>
+              <p class="meta">Your license is currently unbound. The next device activated with this license key will become the registered device.</p>
+            {/if}
+            {#if $authState.lifecycle === 'reset_pending'}
+              <button type="button" on:click={refreshResetStatus}>Refresh Reset Status</button>
+            {/if}
+          </section>
+        {:else}
+          <section class="panel">
+            <form class="form" on:submit|preventDefault={submitLicense}>
+              <label>License key <input aria-label="License key" bind:value={licenseKey} autocomplete="off" required /></label>
+              <button type="submit" disabled={$authState.lifecycle === 'activating'}>
+                {$authState.lifecycle === 'activating' ? 'Activating...' : 'Activate'}
+              </button>
+            </form>
+            {#if $authState.lifecycle === 'reauth_required'}
+              <p class="meta">Session expired. Re-enter your license key to continue.</p>
+            {/if}
+            {#if $authState.error}
+              <p class="meta">{$authState.error.message}</p>
+            {/if}
+          </section>
+
+          {#if $authState.lifecycle === 'device_bound_elsewhere'}
+            <section class="panel">
+              <h3>Request Device Reset</h3>
+              <form class="form" on:submit|preventDefault={submitResetRequest}>
+                <label>Purchaser email <input aria-label="Purchaser email" type="email" bind:value={resetEmail} required /></label>
+                <label>Receipt reference <input aria-label="Receipt reference" bind:value={resetReceipt} /></label>
+                <button type="submit">Request Reset</button>
+              </form>
+            </section>
+          {/if}
+        {/if}
+      {:else}
       <section class="panel hero">
         <h2 class="screen-title">Generate Shorts</h2>
       </section>
@@ -310,6 +532,7 @@
           </div>
         </section>
       {/if}
+      {/if}
     {/if}
 
     {#if active === 'library'}
@@ -357,7 +580,7 @@
     {#if active === 'help'}
       <section class="panel hero">
         <h2 class="screen-title">Help & Trust</h2>
-        <p class="meta">How it works, privacy, support and logs.</p>
+        <p class="meta">How it works, privacy and support.</p>
       </section>
 
       <section class="panel">
@@ -370,6 +593,22 @@
         <h3>Privacy</h3>
         <p>Project history and media library metadata are stored locally on this machine (browser local storage in this build).</p>
         <p class="meta">No cloud sync is used for these screens unless you implement explicit remote storage later.</p>
+      </section>
+
+      <section class="panel">
+        <h3>Updates</h3>
+        <p class="meta">Update checks use the official Tauri updater plugin and signed release artifacts.</p>
+        <p>{updaterStatus}</p>
+        <div class="row">
+          <button type="button" on:click={checkForUpdates} disabled={updaterBusy}>
+            {updaterBusy ? 'Working...' : 'Check for Updates'}
+          </button>
+          {#if updateAvailable}
+            <button type="button" on:click={installUpdate} disabled={updaterBusy}>
+              Install Update {updateVersion}
+            </button>
+          {/if}
+        </div>
       </section>
 
       <section class="panel">
@@ -386,6 +625,21 @@
           </label>
         {/if}
       </section>
+
+      {#if crashDraft}
+        <section class="panel">
+          <h3>Crash Report Draft</h3>
+          <p class="meta">A previous fatal error was saved locally. Nothing is uploaded unless you choose to submit it.</p>
+          <p>{crashDraft.errorName}: {crashDraft.message}</p>
+          {#if crashStatus}
+            <p class="meta">{crashStatus}</p>
+          {/if}
+          <div class="row">
+            <button type="button" on:click={submitPendingCrashDraft}>Submit Crash Report</button>
+            <button type="button" on:click={dismissPendingCrashDraft}>Dismiss Crash Report</button>
+          </div>
+        </section>
+      {/if}
     {/if}
 
     {#if active === 'legal'}
@@ -405,6 +659,10 @@
         <h3>Privacy Notice</h3>
         <p>Local workspace data for generation history and library is stored on-device in this release build. Cloud operations only occur when API mode is selected for generation.</p>
 
+        <h3>Refund Policy</h3>
+        <p>Refund requests are handled manually within 7 days from purchase, subject to purchase records and platform dispute rules.</p>
+        <p>No automated refund engine is built into this app.</p>
+
         <h3>Warranty and Liability</h3>
         <p>The software is provided as-is without guarantees of uninterrupted service. Liability is limited to the maximum extent permitted by law.</p>
 
@@ -414,6 +672,7 @@
         <p class="meta">Last updated: May 8, 2026</p>
       </section>
     {/if}
+
   </section>
 </main>
 

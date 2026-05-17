@@ -1,0 +1,12 @@
+name = "license-worker"
+main = "src/index.js"
+compatibility_date = "2026-05-17"
+
+[vars]
+LICENSE_CONTRACT_VERSION = "v1"
+GUMROAD_APPLICATION_ID = "50DBfeWSBnw3YzfnYYq-N18A-HxKcWLFLNnu2Vw01k0"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "license_worker_db"
+database_id = "5170bb58-6d4c-4bf9-9756-0497284168e2"

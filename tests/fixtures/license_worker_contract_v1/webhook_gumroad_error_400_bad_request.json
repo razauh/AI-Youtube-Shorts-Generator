@@ -1,0 +1,9 @@
+{
+  "ok": false,
+  "error": {
+    "code": "bad_request",
+    "message": "Gumroad Ping must use application/x-www-form-urlencoded payloads.",
+    "request_id": "req_01HXYZA8",
+    "retryable": false
+  }
+}

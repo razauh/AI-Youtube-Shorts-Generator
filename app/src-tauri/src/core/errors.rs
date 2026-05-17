@@ -4,9 +4,20 @@ use std::fmt::{Display, Formatter};
 pub enum ConfigError {
     MissingApiKey,
     MissingOpenAiKey,
+    InvalidInteger {
+        var_name: &'static str,
+        value: String,
+    },
     InvalidFloat {
         var_name: &'static str,
         value: String,
+    },
+    InvalidLicenseBackendMode {
+        value: String,
+    },
+    InvalidConfigValue {
+        var_name: &'static str,
+        reason: &'static str,
     },
 }
 
@@ -21,8 +32,17 @@ impl Display for ConfigError {
                 f,
                 "OPENAI_API_KEY is not set. Local mode needs an OpenAI key for highlight ranking. Add it to your .env or export it, or switch back to --mode api."
             ),
+            Self::InvalidInteger { var_name, value } => {
+                write!(f, "invalid integer for {var_name}: {value}")
+            }
             Self::InvalidFloat { var_name, value } => {
                 write!(f, "invalid float for {var_name}: {value}")
+            }
+            Self::InvalidLicenseBackendMode { value } => {
+                write!(f, "invalid LICENSE_BACKEND_MODE: {value}")
+            }
+            Self::InvalidConfigValue { var_name, reason } => {
+                write!(f, "invalid value for {var_name}: {reason}")
             }
         }
     }

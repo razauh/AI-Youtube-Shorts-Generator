@@ -1,0 +1,9 @@
+{
+  "ok": false,
+  "error": {
+    "code": "device_already_bound",
+    "message": "License is already bound to a different device.",
+    "request_id": "req_01HXYZA1",
+    "retryable": false
+  }
+}

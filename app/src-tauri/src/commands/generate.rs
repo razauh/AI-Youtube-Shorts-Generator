@@ -5,6 +5,8 @@ use crate::core::pipeline::{
     MockPipelineStages,
 };
 use crate::runtime::fs_output::write_result_json_atomic;
+use license_control_suite::core::SessionState;
+use license_control_suite::desktop::tauri::AuthAppState;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::Path;
@@ -190,23 +192,31 @@ fn run_mock(
 }
 
 #[tauri::command]
-pub fn generate_shorts(args: GenerateCommandArgs) -> Result<GenerateEnvelope, String> {
-    Ok(run_generate(args).0)
+pub async fn generate_shorts(
+    args: GenerateCommandArgs,
+    auth_state: tauri::State<'_, AuthAppState>,
+) -> Result<GenerateEnvelope, String> {
+    Ok(run_generate_authorized(args, &auth_state).await.0)
 }
 
 #[tauri::command]
-pub fn generate_shorts_with_events(
+pub async fn generate_shorts_with_events(
     args: GenerateCommandArgs,
+    auth_state: tauri::State<'_, AuthAppState>,
 ) -> Result<GenerateWithEventsResponse, String> {
-    let (envelope, events) = run_generate(args);
+    let (envelope, events) = run_generate_authorized(args, &auth_state).await;
     Ok(GenerateWithEventsResponse { envelope, events })
 }
 
 #[tauri::command]
-pub fn generate_shorts_stream(
+pub async fn generate_shorts_stream(
     app_handle: tauri::AppHandle,
     args: GenerateCommandArgs,
+    auth_state: tauri::State<'_, AuthAppState>,
 ) -> Result<GenerateEnvelope, String> {
+    if let Some(error) = generation_auth_error(&args, &auth_state).await {
+        return Ok(GenerateEnvelope::Failure { ok: false, error });
+    }
     let sink_handle = app_handle.clone();
     let mut sink = |event: &ProgressEvent| {
         let _ = sink_handle.emit("generate-progress", event);
@@ -214,8 +224,41 @@ pub fn generate_shorts_stream(
     Ok(run_generate_with_sink(args, Some(&mut sink), Some(app_handle)).0)
 }
 
+pub async fn run_generate_authorized(
+    args: GenerateCommandArgs,
+    auth_state: &AuthAppState,
+) -> (GenerateEnvelope, Vec<ProgressEvent>) {
+    if let Some(error) = generation_auth_error(&args, auth_state).await {
+        return (GenerateEnvelope::Failure { ok: false, error }, Vec::new());
+    }
+    run_generate(args)
+}
+
 pub fn run_generate(args: GenerateCommandArgs) -> (GenerateEnvelope, Vec<ProgressEvent>) {
     run_generate_with_sink(args, None, None)
+}
+
+async fn generation_auth_error(
+    args: &GenerateCommandArgs,
+    auth_state: &AuthAppState,
+) -> Option<ErrorEnvelope> {
+    match auth_state.service.get_auth_state().await {
+        Ok(SessionState::Licensed { .. }) => None,
+        Ok(_) => Some(auth_error_envelope(args, "license required")),
+        Err(err) => Some(auth_error_envelope(args, &err.to_string())),
+    }
+}
+
+fn auth_error_envelope(args: &GenerateCommandArgs, message: &str) -> ErrorEnvelope {
+    ErrorEnvelope {
+        mode: Some(args.request.mode.clone()),
+        source_video_url: Some(args.request.youtube_url.clone()),
+        error: message.to_string(),
+        details: Some(json!({
+            "code": "E_LICENSE_REQUIRED",
+            "stage": "auth"
+        })),
+    }
 }
 
 pub fn run_generate_with_sink(
@@ -241,9 +284,11 @@ pub fn run_generate_with_sink(
             let mut emit_stage = |stage: &str, progress: f64, message: Option<String>| {
                 push_progress(&mut events, stage, progress, message, &mut sink);
             };
-            let muapi_emitter = app_handle
-                .as_ref()
-                .map(|h| Arc::new(TauriMuapiProgressEmitter { app_handle: h.clone() }) as Arc<dyn ProgressEmitter>);
+            let muapi_emitter = app_handle.as_ref().map(|h| {
+                Arc::new(TauriMuapiProgressEmitter {
+                    app_handle: h.clone(),
+                }) as Arc<dyn ProgressEmitter>
+            });
             generate_shorts_with_progress_live(&req, Some(&mut emit_stage), muapi_emitter)
         };
         if result.is_ok() {

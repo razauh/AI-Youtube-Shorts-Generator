@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "activate_license",
+    "validate_session",
+    "request_device_reset",
+    "get_device_reset_status",
+    "clear_local_session",
+    "get_auth_state"
+  ]
+}
