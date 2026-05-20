@@ -6,6 +6,7 @@ export const ERROR_CODES = new Set([
   "device_already_bound",
   "reauth_required",
   "worker_unreachable",
+  "not_found",
   "reset_request_not_found",
   "unauthorized",
   "storage",

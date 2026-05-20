@@ -323,6 +323,34 @@ test('gumroad webhook fails on verification mismatch', async () => {
     const json = await res.json();
     assert.equal(json.ok, false);
     assert.equal(json.error.code, 'unauthorized');
+    assert.equal(json.error.message, 'Gumroad verification mismatch for: sale_id.');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('gumroad webhook returns not_found when Gumroad cannot find the sale id', async () => {
+  const originalFetch = global.fetch;
+  const db = new MockD1Database();
+  global.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        success: false,
+        message: 'The sale was not found.',
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  try {
+    const res = await call('/v1/license/webhooks/gumroad', {
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: { sale_id: 'order_123', product_id: 'prod_123', email: 'buyer@example.com' },
+      env: { DB: db, GUMROAD_ACCESS_TOKEN: 'token_123' },
+    });
+    assert.equal(res.status, 404);
+    const json = await res.json();
+    assert.equal(json.ok, false);
+    assert.equal(json.error.code, 'not_found');
+    assert.equal(json.error.message, 'Gumroad sale was not found for the provided sale_id.');
   } finally {
     global.fetch = originalFetch;
   }

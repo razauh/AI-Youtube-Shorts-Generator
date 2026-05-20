@@ -1,6 +1,9 @@
 # License Worker (Cloudflare)
 
-This worker implements the hosted licensing contract in `docs/license-worker-contract-v1.md`.
+This worker implements the hosted licensing contract exercised by:
+
+- `worker/test/contract.test.js`
+- `tests/fixtures/license_worker_contract_v1/`
 
 ## Routes
 
@@ -51,5 +54,6 @@ wrangler secret put HASH_PEPPER
   - reset status
   - Gumroad webhook idempotency/audit/license upsert
 - Gumroad webhook verification now uses server-to-server sale verification with `GUMROAD_ACCESS_TOKEN`.
+- Gumroad webhook verification expects Gumroad `sale.id` as `sale_id`. Do not use Gumroad `order_id`.
 - Access tokens are signed/verified with `TOKEN_SIGNING_SECRET`.
 - License key hashing uses `HASH_PEPPER` and is independent of token signing.

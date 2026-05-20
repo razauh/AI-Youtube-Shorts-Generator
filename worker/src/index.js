@@ -449,6 +449,26 @@ async function verifyGumroadSale({ saleId, productId, email, token }) {
     };
   }
 
+  if (payload.success === false) {
+    const remoteMessage = String(payload.message || "").trim();
+    if (remoteMessage === "The sale was not found.") {
+      return {
+        ok: false,
+        code: "not_found",
+        message: "Gumroad sale was not found for the provided sale_id.",
+        retryable: false,
+        status: 404,
+      };
+    }
+    return {
+      ok: false,
+      code: "unauthorized",
+      message: remoteMessage || "Gumroad verification was rejected.",
+      retryable: false,
+      status: response.status || 401,
+    };
+  }
+
   const sale = payload.sale || payload;
   const remoteSaleId = sale.id ?? sale.sale_id;
   const remoteProductId = sale.product_id;
@@ -456,25 +476,31 @@ async function verifyGumroadSale({ saleId, productId, email, token }) {
   const refunded = Boolean(sale.refunded);
   const disputed = Boolean(sale.disputed ?? sale.chargebacked);
 
-  if (!remoteSaleId || !remoteProductId || !remoteEmail) {
+  const missingFields = [];
+  if (!remoteSaleId) missingFields.push("sale.id");
+  if (!remoteProductId) missingFields.push("sale.product_id");
+  if (!remoteEmail) missingFields.push("sale.email");
+
+  if (missingFields.length > 0) {
     return {
       ok: false,
       code: "serialization",
-      message: "Gumroad verification payload is missing required sale fields.",
+      message: `Gumroad verification payload is missing required sale fields: ${missingFields.join(", ")}.`,
       retryable: false,
       status: 503,
     };
   }
 
-  if (
-    String(remoteSaleId) !== String(saleId) ||
-    String(remoteProductId) !== String(productId) ||
-    String(remoteEmail).toLowerCase() !== String(email).toLowerCase()
-  ) {
+  const mismatchedFields = [];
+  if (String(remoteSaleId) !== String(saleId)) mismatchedFields.push("sale_id");
+  if (String(remoteProductId) !== String(productId)) mismatchedFields.push("product_id");
+  if (String(remoteEmail).toLowerCase() !== String(email).toLowerCase()) mismatchedFields.push("email");
+
+  if (mismatchedFields.length > 0) {
     return {
       ok: false,
       code: "unauthorized",
-      message: "Gumroad verification mismatch for sale_id/product_id/email.",
+      message: `Gumroad verification mismatch for: ${mismatchedFields.join(", ")}.`,
       retryable: false,
       status: 401,
     };
