@@ -58,6 +58,16 @@
     sourceType === 'local'
       ? '/home/user/Videos/interview.mp4'
       : 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+  $: isResetStatus =
+    $authState.lifecycle === 'reset_pending' ||
+    $authState.lifecycle === 'reset_approved_unbound' ||
+    $authState.lifecycle === 'reset_rejected' ||
+    $authState.lifecycle === 'reset_expired';
+  $: canShowActivationForm =
+    $authState.lifecycle !== 'checking' &&
+    $authState.lifecycle !== 'reset_pending' &&
+    $authState.lifecycle !== 'reset_rejected' &&
+    $authState.lifecycle !== 'reset_expired';
 
   onMount(() => {
     try {
@@ -341,89 +351,107 @@
   }
 </script>
 
-<main class="app-shell">
-  <div class="orb orb-a"></div>
-  <div class="orb orb-b"></div>
+{#if $authState.lifecycle !== 'licensed'}
+  <main class="license-shell">
+    <div class="orb orb-a"></div>
+    <div class="orb orb-b"></div>
 
-  <aside class="sidebar panel">
-    <div class="sidebar-head">
-      <h1>Signal Forge</h1>
-      <button
-        type="button"
-        class="menu-toggle"
-        aria-label="Toggle navigation"
-        aria-expanded={mobileNavOpen}
-        on:click={() => (mobileNavOpen = !mobileNavOpen)}
-      >
-        Menu
-      </button>
-    </div>
-    <nav class:nav-open={mobileNavOpen}>
-      <button class:active={active === 'generate'} on:click={() => selectScreen('generate')}>Generate</button>
-      <button class:active={active === 'library'} on:click={() => selectScreen('library')}>Shorts Library</button>
-      <button class:active={active === 'help'} on:click={() => selectScreen('help')}>Help & Trust</button>
-      <button class:active={active === 'legal'} on:click={() => selectScreen('legal')}>Legal</button>
-    </nav>
-    <button class="theme-toggle" class:nav-open={mobileNavOpen} type="button" on:click={toggleTheme}>
-      {theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}
-    </button>
-  </aside>
+    <section class="panel license-card" aria-labelledby="license-title">
+      <div class="license-brand">
+        <p class="brand-mark">Signal Forge</p>
+        <button class="theme-toggle compact" type="button" on:click={toggleTheme}>
+          {theme === 'dark' ? 'Light' : 'Dark'}
+        </button>
+      </div>
 
-  <section class="content">
-    {#if active === 'generate'}
-      {#if $authState.lifecycle !== 'licensed'}
-        <section class="panel hero">
-          <h2 class="screen-title">License Required</h2>
-          <p class="meta">Enter your license key to unlock generation on this device.</p>
-        </section>
+      <div class="license-copy">
+        <h1 id="license-title">License Required</h1>
+        <p class="meta">Enter your Gumroad license key to unlock this device.</p>
+      </div>
 
-        {#if $authState.lifecycle === 'checking'}
-          <section class="panel status">
-            <p class="status-line">Checking license...</p>
-          </section>
-        {:else if $authState.lifecycle === 'reset_pending' || $authState.lifecycle === 'reset_approved_unbound' || $authState.lifecycle === 'reset_rejected' || $authState.lifecycle === 'reset_expired'}
-          <section class="panel">
-            <h3>Device Reset</h3>
-            <p class="meta">Status: {$authState.lifecycle.replaceAll('_', ' ')}</p>
-            {#if $authState.resetRequestId}
-              <p class="meta">Request: {$authState.resetRequestId}</p>
-            {/if}
-            {#if $authState.lifecycle === 'reset_approved_unbound'}
-              <p>Device reset approved. You can now use this license key to activate a device.</p>
-              <p class="meta">Your license is currently unbound. The next device activated with this license key will become the registered device.</p>
-            {/if}
-            {#if $authState.lifecycle === 'reset_pending'}
-              <button type="button" on:click={refreshResetStatus}>Refresh Reset Status</button>
-            {/if}
-          </section>
-        {:else}
-          <section class="panel">
-            <form class="form" on:submit|preventDefault={submitLicense}>
-              <label>License key <input aria-label="License key" bind:value={licenseKey} autocomplete="off" required /></label>
-              <button type="submit" disabled={$authState.lifecycle === 'activating'}>
-                {$authState.lifecycle === 'activating' ? 'Activating...' : 'Activate'}
-              </button>
-            </form>
-            {#if $authState.lifecycle === 'reauth_required'}
-              <p class="meta">Session expired. Re-enter your license key to continue.</p>
-            {/if}
-            {#if $authState.error}
-              <p class="meta">{$authState.error.message}</p>
-            {/if}
-          </section>
+      {#if $authState.lifecycle === 'checking'}
+        <div class="status auth-status">
+          <p class="status-line">Checking license...</p>
+        </div>
+      {/if}
 
-          {#if $authState.lifecycle === 'device_bound_elsewhere'}
-            <section class="panel">
-              <h3>Request Device Reset</h3>
-              <form class="form" on:submit|preventDefault={submitResetRequest}>
-                <label>Purchaser email <input aria-label="Purchaser email" type="email" bind:value={resetEmail} required /></label>
-                <label>Receipt reference <input aria-label="Receipt reference" bind:value={resetReceipt} /></label>
-                <button type="submit">Request Reset</button>
-              </form>
-            </section>
+      {#if isResetStatus}
+        <div class="auth-status">
+          <h2>Device Reset</h2>
+          <p class="meta">Status: {$authState.lifecycle.replaceAll('_', ' ')}</p>
+          {#if $authState.resetRequestId}
+            <p class="meta">Request: {$authState.resetRequestId}</p>
           {/if}
-        {/if}
-      {:else}
+          {#if $authState.lifecycle === 'reset_approved_unbound'}
+            <p>Device reset approved. You can now use this license key to activate a device.</p>
+            <p class="meta">Your license is currently unbound. The next device activated with this license key will become the registered device.</p>
+          {/if}
+          {#if $authState.lifecycle === 'reset_pending'}
+            <button type="button" on:click={refreshResetStatus}>Refresh Reset Status</button>
+          {/if}
+        </div>
+      {/if}
+
+      {#if canShowActivationForm}
+        <form class="form license-form" on:submit|preventDefault={submitLicense}>
+          <label>License key <input aria-label="License key" bind:value={licenseKey} autocomplete="off" required /></label>
+          <button type="submit" disabled={$authState.lifecycle === 'activating'}>
+            {$authState.lifecycle === 'activating' ? 'Activating...' : 'Activate'}
+          </button>
+        </form>
+      {/if}
+
+      {#if $authState.lifecycle === 'reauth_required'}
+        <p class="meta">Session expired. Re-enter your license key to continue.</p>
+      {/if}
+
+      {#if $authState.error}
+        <p class="meta error-text">{$authState.error.message}</p>
+      {/if}
+
+      {#if $authState.lifecycle === 'device_bound_elsewhere'}
+        <div class="reset-box">
+          <h2>Request Device Reset</h2>
+          <form class="form reset-form" on:submit|preventDefault={submitResetRequest}>
+            <label>Purchaser email <input aria-label="Purchaser email" type="email" bind:value={resetEmail} required /></label>
+            <label>Receipt reference <input aria-label="Receipt reference" bind:value={resetReceipt} /></label>
+            <button type="submit">Request Reset</button>
+          </form>
+        </div>
+      {/if}
+    </section>
+  </main>
+{:else}
+  <main class="app-shell">
+    <div class="orb orb-a"></div>
+    <div class="orb orb-b"></div>
+
+    <aside class="sidebar panel">
+      <div class="sidebar-head">
+        <h1>Signal Forge</h1>
+        <button
+          type="button"
+          class="menu-toggle"
+          aria-label="Toggle navigation"
+          aria-expanded={mobileNavOpen}
+          on:click={() => (mobileNavOpen = !mobileNavOpen)}
+        >
+          Menu
+        </button>
+      </div>
+      <nav class:nav-open={mobileNavOpen}>
+        <button class:active={active === 'generate'} on:click={() => selectScreen('generate')}>Generate</button>
+        <button class:active={active === 'library'} on:click={() => selectScreen('library')}>Shorts Library</button>
+        <button class:active={active === 'help'} on:click={() => selectScreen('help')}>Help & Trust</button>
+        <button class:active={active === 'legal'} on:click={() => selectScreen('legal')}>Legal</button>
+      </nav>
+      <button class="theme-toggle" class:nav-open={mobileNavOpen} type="button" on:click={toggleTheme}>
+        {theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}
+      </button>
+    </aside>
+
+    <section class="content">
+      {#if active === 'generate'}
       <section class="panel hero">
         <h2 class="screen-title">Generate Shorts</h2>
       </section>
@@ -531,7 +559,6 @@
             {/each}
           </div>
         </section>
-      {/if}
       {/if}
     {/if}
 
@@ -675,6 +702,7 @@
 
   </section>
 </main>
+{/if}
 
 <style>
   :global(body) {
@@ -694,6 +722,71 @@
     gap: var(--space-lg);
     position: relative;
     overflow: hidden;
+  }
+
+  .license-shell {
+    min-height: 100vh;
+    box-sizing: border-box;
+    padding: var(--space-lg);
+    display: grid;
+    place-items: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .license-card {
+    width: min(100%, 520px);
+    display: grid;
+    gap: var(--space-lg);
+    padding: var(--space-xl);
+  }
+
+  .license-brand {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+  }
+
+  .brand-mark {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-weight: 700;
+  }
+
+  .license-copy {
+    display: grid;
+    gap: var(--space-xs);
+  }
+
+  .license-copy h1 {
+    margin: 0;
+    font-size: 1.55rem;
+  }
+
+  .license-form,
+  .reset-form {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-status,
+  .reset-box {
+    display: grid;
+    gap: var(--space-sm);
+    padding: var(--space-md);
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--color-panel-card) 72%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border-strong) 20%, transparent);
+  }
+
+  .auth-status h2,
+  .reset-box h2 {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .error-text {
+    color: var(--color-state-error);
   }
 
   .content {
@@ -760,6 +853,10 @@
   nav { display: grid; gap: var(--space-sm); }
   .theme-toggle {
     margin-top: auto;
+  }
+  .theme-toggle.compact {
+    margin-top: 0;
+    padding: .45rem .65rem;
   }
 
   button, input, select, textarea {
@@ -871,6 +968,9 @@
     nav,
     .theme-toggle {
       display: none;
+    }
+    .theme-toggle.compact {
+      display: inline-flex;
     }
     nav.nav-open,
     .theme-toggle.nav-open {

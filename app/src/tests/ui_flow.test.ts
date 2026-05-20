@@ -108,6 +108,9 @@ describe('test_ui flow parity', () => {
 
     expect(screen.getByText('License Required')).toBeTruthy();
     expect(screen.queryByLabelText('YouTube video URL')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Generate' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Shorts Library' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Help & Trust' })).toBeNull();
 
     await fireEvent.input(screen.getByLabelText('License key'), { target: { value: 'LICENSE-1234' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
@@ -125,6 +128,9 @@ describe('test_ui flow parity', () => {
     });
 
     render(Page);
+    expect(screen.getByText('License Required')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Generate' })).toBeNull();
+
     await fireEvent.input(screen.getByLabelText('Purchaser email'), { target: { value: 'buyer@example.com' } });
     await fireEvent.input(screen.getByLabelText('Receipt reference'), { target: { value: 'receipt-1' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Request Reset' }));
