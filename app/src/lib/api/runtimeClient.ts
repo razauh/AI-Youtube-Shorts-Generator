@@ -14,6 +14,34 @@ export interface DesktopRuntimeContext {
   secureFallbackBasePath: string;
 }
 
+export interface RuntimeToolStatus {
+  tool: string;
+  ok: boolean;
+  path?: string | null;
+  source?: string | null;
+  message: string;
+}
+
+export interface RuntimeValidation {
+  runtime: string;
+  bridge_entry: string;
+  bridge_entry_exists: boolean;
+  ok: boolean;
+  tools: RuntimeToolStatus[];
+}
+
+export interface AppConfigSummary {
+  licenseBackendMode: string;
+  licenseWorkerEndpoint: string;
+  licenseWorkerEndpointKind: string;
+  muapiConfigured: boolean;
+  openaiConfigured: boolean;
+  localWhisperModel: string;
+  localWhisperDevice: string;
+  licenseWorkerTimeoutMs: number;
+  licenseWorkerRetryAttempts: number;
+}
+
 let corePromise: Promise<TauriCore> | null = null;
 
 async function getCore(): Promise<TauriCore> {
@@ -39,6 +67,14 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
 
 export function runtimeContext(): Promise<DesktopRuntimeContext> {
   return invoke<DesktopRuntimeContext>('runtime_context');
+}
+
+export function validateRuntime(): Promise<RuntimeValidation> {
+  return invoke<RuntimeValidation>('validate_runtime');
+}
+
+export function appConfigSummary(): Promise<AppConfigSummary> {
+  return invoke<AppConfigSummary>('app_config_summary');
 }
 
 export function runtimeMachineSecret(): Promise<string> {

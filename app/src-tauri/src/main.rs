@@ -27,6 +27,7 @@ fn main() {
             shorts_tauri_app::commands::generate::generate_shorts_stream,
             shorts_tauri_app::commands::health::health_check,
             shorts_tauri_app::commands::health::validate_runtime,
+            shorts_tauri_app::commands::health::app_config_summary,
             shorts_tauri_app::commands::runtime::runtime_context,
             shorts_tauri_app::commands::runtime::runtime_machine_secret,
             shorts_tauri_app::commands::runtime::runtime_fs_read_text,

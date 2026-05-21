@@ -1,4 +1,5 @@
-use shorts_tauri_app::core::config::Config;
+use shorts_tauri_app::commands::health::app_config_summary;
+use shorts_tauri_app::core::config::{load_env_files_from, Config};
 use std::sync::{Mutex, OnceLock};
 
 fn env_lock() -> &'static Mutex<()> {
@@ -54,6 +55,91 @@ fn defaults_match_python_when_env_missing() {
     assert_eq!(cfg.license_worker_retry_backoff_ms, 150);
     assert_eq!(cfg.license_worker_circuit_breaker_failure_threshold, 3);
     assert_eq!(cfg.license_worker_circuit_breaker_cooldown_ms, 30_000);
+}
+
+#[test]
+fn app_config_summary_reports_status_without_secret_values() {
+    let _guard = env_lock().lock().expect("env lock poisoned");
+    unsafe {
+        std::env::set_var("MUAPI_API_KEY", "muapi-secret-value");
+        std::env::set_var("OPENAI_API_KEY", "openai-secret-value");
+        std::env::set_var(
+            "LICENSE_WORKER_BASE_URL",
+            "http://127.0.0.1:8787/license-secret-route",
+        );
+        std::env::set_var("LICENSE_BACKEND_MODE", "hosted");
+    }
+
+    let summary = app_config_summary().expect("summary should load");
+    assert_eq!(summary.license_backend_mode, "hosted");
+    assert_eq!(summary.license_worker_endpoint, "local/private worker");
+    assert_eq!(summary.license_worker_endpoint_kind, "local");
+    assert!(summary.muapi_configured);
+    assert!(summary.openai_configured);
+
+    let encoded = serde_json::to_string(&summary).expect("summary should serialize");
+    assert!(!encoded.contains("muapi-secret-value"));
+    assert!(!encoded.contains("openai-secret-value"));
+    assert!(!encoded.contains("127.0.0.1"));
+    assert!(!encoded.contains("8787"));
+    assert!(!encoded.contains("license-secret-route"));
+
+    unsafe {
+        std::env::remove_var("MUAPI_API_KEY");
+        std::env::remove_var("OPENAI_API_KEY");
+        std::env::remove_var("LICENSE_WORKER_BASE_URL");
+        std::env::remove_var("LICENSE_BACKEND_MODE");
+    }
+}
+
+#[test]
+fn dotenv_loader_walks_parent_dirs_without_overriding_existing_env() {
+    let _guard = env_lock().lock().expect("env lock poisoned");
+    let root = std::env::temp_dir().join(format!("shorts-dotenv-test-{}", std::process::id()));
+    let app_dir = root.join("app");
+    std::fs::create_dir_all(&app_dir).expect("test app dir should be created");
+    std::fs::write(
+        root.join(".env"),
+        "LICENSE_WORKER_BASE_URL=https://licenses.example.test\nLICENSE_BACKEND_MODE=hosted\nLICENSE_STORAGE_NAMESPACE=root-env\n",
+    )
+    .expect("root dotenv should be written");
+    std::fs::write(
+        app_dir.join(".env"),
+        "LICENSE_STORAGE_NAMESPACE=app-env\nLICENSE_KEYCHAIN_SERVICE='quoted-service'\n",
+    )
+    .expect("app dotenv should be written");
+
+    unsafe {
+        std::env::remove_var("LICENSE_WORKER_BASE_URL");
+        std::env::remove_var("LICENSE_BACKEND_MODE");
+        std::env::remove_var("LICENSE_STORAGE_NAMESPACE");
+        std::env::remove_var("LICENSE_KEYCHAIN_SERVICE");
+        std::env::set_var("LICENSE_BACKEND_MODE", "mock");
+    }
+
+    load_env_files_from(&app_dir);
+
+    assert_eq!(
+        std::env::var("LICENSE_WORKER_BASE_URL").unwrap(),
+        "https://licenses.example.test"
+    );
+    assert_eq!(std::env::var("LICENSE_BACKEND_MODE").unwrap(), "mock");
+    assert_eq!(
+        std::env::var("LICENSE_STORAGE_NAMESPACE").unwrap(),
+        "app-env"
+    );
+    assert_eq!(
+        std::env::var("LICENSE_KEYCHAIN_SERVICE").unwrap(),
+        "quoted-service"
+    );
+
+    unsafe {
+        std::env::remove_var("LICENSE_WORKER_BASE_URL");
+        std::env::remove_var("LICENSE_BACKEND_MODE");
+        std::env::remove_var("LICENSE_STORAGE_NAMESPACE");
+        std::env::remove_var("LICENSE_KEYCHAIN_SERVICE");
+    }
+    std::fs::remove_dir_all(root).ok();
 }
 
 #[test]
