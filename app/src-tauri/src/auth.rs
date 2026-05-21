@@ -113,6 +113,7 @@ pub fn build_auth_state<R>(app: &tauri::AppHandle<R>) -> Result<AuthAppState, St
 where
     R: tauri::Runtime,
 {
+    crate::core::config::load_env_files_near_current_dir();
     let cfg = Config::from_env().map_err(|err| err.to_string())?;
     let app_data_dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
     build_auth_state_from_parts(

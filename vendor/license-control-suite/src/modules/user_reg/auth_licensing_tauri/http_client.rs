@@ -1,9 +1,9 @@
-use async_trait::async_trait;
 use crate::modules::user_reg::auth_licensing_core::{
     AccessToken, ActivationOutcome, ActivationRequest, AuthError, BoundDeviceSummary,
     DeviceFingerprint, DeviceId, DevicePublicKey, DeviceResetRequest, DeviceResetStatus,
     EntitlementStatus, MaskedLicenseKey, ResetRequestId, ValidationOutcome, WorkerClient,
 };
+use async_trait::async_trait;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -19,10 +19,7 @@ impl HttpWorkerClient {
         Self::with_timeout(base_url, Duration::from_secs(10))
     }
 
-    pub fn with_timeout(
-        base_url: impl Into<String>,
-        timeout: Duration,
-    ) -> Result<Self, AuthError> {
+    pub fn with_timeout(base_url: impl Into<String>, timeout: Duration) -> Result<Self, AuthError> {
         let client = reqwest::Client::builder()
             .timeout(timeout)
             .build()
@@ -38,23 +35,41 @@ impl HttpWorkerClient {
         T: serde::Serialize + ?Sized,
         R: for<'de> serde::Deserialize<'de>,
     {
-        let response = self
-            .client
-            .post(format!("{}{}", self.base_url, path))
-            .json(body)
-            .send()
-            .await
-            .map_err(|_| AuthError::WorkerUnreachable)?;
-        parse_response(response).await
+        self.post_json_with_headers(path, body, None).await
     }
 
-    async fn get_json<R>(&self, path: &str) -> Result<R, AuthError>
+    async fn post_json_with_idempotency<T, R>(
+        &self,
+        path: &str,
+        body: &T,
+        idempotency_key: String,
+    ) -> Result<R, AuthError>
     where
+        T: serde::Serialize + ?Sized,
         R: for<'de> serde::Deserialize<'de>,
     {
-        let response = self
+        self.post_json_with_headers(path, body, Some(idempotency_key))
+            .await
+    }
+
+    async fn post_json_with_headers<T, R>(
+        &self,
+        path: &str,
+        body: &T,
+        idempotency_key: Option<String>,
+    ) -> Result<R, AuthError>
+    where
+        T: serde::Serialize + ?Sized,
+        R: for<'de> serde::Deserialize<'de>,
+    {
+        let mut request = self
             .client
-            .get(format!("{}{}", self.base_url, path))
+            .post(format!("{}{}", self.base_url, path))
+            .json(body);
+        if let Some(idempotency_key) = idempotency_key {
+            request = request.header("x-idempotency-key", idempotency_key);
+        }
+        let response = request
             .send()
             .await
             .map_err(|_| AuthError::WorkerUnreachable)?;
@@ -72,6 +87,11 @@ where
         .await
         .map_err(|_| AuthError::WorkerUnreachable)?;
     if status.is_success() {
+        if let Ok(envelope) = serde_json::from_str::<WorkerSuccessBody<R>>(&body) {
+            if envelope.ok {
+                return Ok(envelope.data);
+            }
+        }
         return serde_json::from_str::<R>(&body)
             .map_err(|err| AuthError::Serialization(err.to_string()));
     }
@@ -89,13 +109,28 @@ where
 }
 
 #[derive(Debug, Deserialize)]
+struct WorkerSuccessBody<T> {
+    ok: bool,
+    data: T,
+}
+
+#[derive(Debug, Deserialize)]
 struct WorkerErrorBody {
+    code: Option<String>,
+    error: Option<WorkerErrorDetail>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WorkerErrorDetail {
     code: Option<String>,
 }
 
 impl WorkerErrorBody {
     fn into_auth_error(self, fallback_status: StatusCode) -> AuthError {
-        match self.code.as_deref() {
+        let code = self
+            .code
+            .or_else(|| self.error.and_then(|error| error.code));
+        match code.as_deref() {
             Some("invalid_license_key") => AuthError::InvalidLicenseKey,
             Some("invalid_purchase_email") => AuthError::InvalidPurchaseEmail,
             Some("invalid_device_identity") => AuthError::InvalidDeviceIdentity,
@@ -183,6 +218,11 @@ struct DeviceResetRequestBody {
     app_version: String,
     timestamp_ms: i64,
     receipt_reference: Option<String>,
+}
+
+#[derive(Serialize)]
+struct DeviceResetStatusRequestBody {
+    request_id: String,
 }
 
 impl From<DeviceResetRequest> for DeviceResetRequestBody {
@@ -317,19 +357,23 @@ impl TryFrom<ValidationResponseBody> for ValidationOutcome {
 enum DeviceResetStatusBody {
     Pending {
         request_id: String,
+        #[serde(default)]
         created_at_ms: i64,
     },
     Approved {
         request_id: String,
+        #[serde(default)]
         decided_at_ms: i64,
     },
     Rejected {
         request_id: String,
+        #[serde(default)]
         decided_at_ms: i64,
         reason: Option<String>,
     },
     Expired {
         request_id: String,
+        #[serde(default)]
         expired_at_ms: i64,
     },
     NotFound {
@@ -379,18 +423,50 @@ impl TryFrom<DeviceResetStatusBody> for DeviceResetStatus {
     }
 }
 
+fn activation_idempotency_key(request: &ActivationRequest) -> String {
+    format!(
+        "activate:{}:{}:{}",
+        request.device_public_key.as_str(),
+        request.app_version,
+        request.timestamp_ms
+    )
+}
+
+fn reset_idempotency_key(request: &DeviceResetRequest) -> String {
+    let license_marker = request
+        .masked_license_key
+        .as_ref()
+        .map(|key| key.as_str().to_string())
+        .or_else(|| {
+            request
+                .license_key
+                .as_ref()
+                .map(|key| key.masked().as_str().to_string())
+        })
+        .unwrap_or_else(|| "unmasked".to_string());
+    format!(
+        "reset:{}:{}:{}",
+        request.device_public_key.as_str(),
+        license_marker,
+        request.timestamp_ms
+    )
+}
+
 #[async_trait]
 impl WorkerClient for HttpWorkerClient {
     async fn activate(&self, request: ActivationRequest) -> Result<ActivationOutcome, AuthError> {
+        let idempotency_key = activation_idempotency_key(&request);
         let body = ActivationRequestBody::from(request);
-        let response: ActivationResponseBody = self.post_json("/v1/activate", &body).await?;
+        let response: ActivationResponseBody = self
+            .post_json_with_idempotency("/v1/license/activate", &body, idempotency_key)
+            .await?;
         response.try_into()
     }
 
     async fn validate_session(&self, token: AccessToken) -> Result<ValidationOutcome, AuthError> {
         let body = ValidationRequestBody::from(token);
         let response: ValidationResponseBody =
-            self.post_json("/v1/session/validate", &body).await?;
+            self.post_json("/v1/license/validate", &body).await?;
         response.try_into()
     }
 
@@ -398,9 +474,11 @@ impl WorkerClient for HttpWorkerClient {
         &self,
         request: DeviceResetRequest,
     ) -> Result<DeviceResetStatus, AuthError> {
+        let idempotency_key = reset_idempotency_key(&request);
         let body = DeviceResetRequestBody::from(request);
-        let response: DeviceResetStatusBody =
-            self.post_json("/v1/device-reset/request", &body).await?;
+        let response: DeviceResetStatusBody = self
+            .post_json_with_idempotency("/v1/license/reset/request", &body, idempotency_key)
+            .await?;
         response.try_into()
     }
 
@@ -408,9 +486,11 @@ impl WorkerClient for HttpWorkerClient {
         &self,
         request_id: ResetRequestId,
     ) -> Result<DeviceResetStatus, AuthError> {
-        let response: DeviceResetStatusBody = self
-            .get_json(&format!("/v1/device-reset/status/{}", request_id.as_str()))
-            .await?;
+        let body = DeviceResetStatusRequestBody {
+            request_id: request_id.as_str().to_string(),
+        };
+        let response: DeviceResetStatusBody =
+            self.post_json("/v1/license/reset/status", &body).await?;
         response.try_into()
     }
 }
@@ -430,7 +510,7 @@ mod tests {
         DeviceFingerprint, DeviceId, DevicePublicKey, LicenseKey, PurchaseEmail,
     };
     use serde_json::json;
-    use wiremock::matchers::{body_json, method, path};
+    use wiremock::matchers::{body_json, header, header_exists, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn activation_request() -> ActivationRequest {
@@ -464,11 +544,19 @@ mod tests {
         })
     }
 
+    fn success(data: serde_json::Value) -> serde_json::Value {
+        json!({
+            "ok": true,
+            "data": data
+        })
+    }
+
     #[tokio::test]
     async fn activation_uses_expected_method_path_and_parses_success() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/v1/activate"))
+            .and(path("/v1/license/activate"))
+            .and(header("x-idempotency-key", "activate:public:1.0.0:10"))
             .and(body_json(json!({
                 "license_key": "SECRET-LICENSE",
                 "device_public_key": "public",
@@ -481,7 +569,9 @@ mod tests {
                 "app_version": "1.0.0",
                 "timestamp_ms": 10
             })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(activation_response_json()))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(success(activation_response_json())),
+            )
             .mount(&server)
             .await;
         let client = HttpWorkerClient::new(server.uri()).unwrap();
@@ -493,10 +583,16 @@ mod tests {
     async fn activation_error_body_maps_without_echoing_worker_message() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/v1/activate"))
+            .and(path("/v1/license/activate"))
+            .and(header("x-idempotency-key", "activate:public:1.0.0:10"))
             .respond_with(ResponseTemplate::new(400).set_body_json(json!({
-                "code": "invalid_license_key",
-                "message": "SECRET-LICENSE"
+                "ok": false,
+                "error": {
+                    "code": "invalid_license_key",
+                    "message": "SECRET-LICENSE",
+                    "request_id": "req-1",
+                    "retryable": false
+                }
             })))
             .mount(&server)
             .await;
@@ -510,7 +606,8 @@ mod tests {
     async fn activation_conflict_maps_to_device_bound() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/v1/activate"))
+            .and(path("/v1/license/activate"))
+            .and(header("x-idempotency-key", "activate:public:1.0.0:10"))
             .respond_with(ResponseTemplate::new(409))
             .mount(&server)
             .await;
@@ -525,7 +622,7 @@ mod tests {
     async fn validation_gone_maps_to_reauth_required() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/v1/session/validate"))
+            .and(path("/v1/license/validate"))
             .respond_with(ResponseTemplate::new(410))
             .mount(&server)
             .await;
@@ -544,7 +641,8 @@ mod tests {
         let server = MockServer::start().await;
         let request_id = ResetRequestId::new("reset-1").unwrap();
         Mock::given(method("POST"))
-            .and(path("/v1/device-reset/request"))
+            .and(path("/v1/license/reset/request"))
+            .and(header_exists("x-idempotency-key"))
             .and(body_json(json!({
                 "license_key": "SECRET-LICENSE",
                 "masked_license_key": null,
@@ -560,11 +658,10 @@ mod tests {
                 "timestamp_ms": 10,
                 "receipt_reference": null
             })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            .respond_with(ResponseTemplate::new(200).set_body_json(success(json!({
                 "status": "pending",
-                "request_id": "reset-1",
-                "created_at_ms": 10
-            })))
+                "request_id": "reset-1"
+            }))))
             .mount(&server)
             .await;
         let client = HttpWorkerClient::new(server.uri()).unwrap();
@@ -592,13 +689,15 @@ mod tests {
     async fn reset_status_get_parses_approved() {
         let server = MockServer::start().await;
         let request_id = ResetRequestId::new("reset-1").unwrap();
-        Mock::given(method("GET"))
-            .and(path("/v1/device-reset/status/reset-1"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "status": "approved",
-                "request_id": "reset-1",
-                "decided_at_ms": 10
+        Mock::given(method("POST"))
+            .and(path("/v1/license/reset/status"))
+            .and(body_json(json!({
+                "request_id": "reset-1"
             })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success(json!({
+                "status": "approved",
+                "request_id": "reset-1"
+            }))))
             .mount(&server)
             .await;
         let client = HttpWorkerClient::new(server.uri()).unwrap();
@@ -611,10 +710,10 @@ mod tests {
     #[test]
     fn http_worker_client_route_contracts_remain_unchanged() {
         let source = include_str!("http_client.rs");
-        assert!(source.contains("\"/v1/activate\""));
-        assert!(source.contains("\"/v1/session/validate\""));
-        assert!(source.contains("\"/v1/device-reset/request\""));
-        assert!(source.contains("\"/v1/device-reset/status/{}\""));
+        assert!(source.contains("\"/v1/license/activate\""));
+        assert!(source.contains("\"/v1/license/validate\""));
+        assert!(source.contains("\"/v1/license/reset/request\""));
+        assert!(source.contains("\"/v1/license/reset/status\""));
     }
 
     #[test]

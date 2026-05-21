@@ -300,20 +300,23 @@ async fn hosted_worker_mode_hits_real_local_http_route_contract() {
     let device_id = DeviceId::from_public_key(&public_key);
     let body = format!(
         r#"{{
-            "access_token":"TOKEN",
-            "masked_license_key":"****-ENSE",
-            "bound_device":{{
-                "device_id":"{}",
-                "public_key":"public",
-                "fingerprint":{{
-                    "platform":"linux",
-                    "os":"linux",
-                    "arch":"x86_64",
-                    "hostname_hash":null
+            "ok":true,
+            "data":{{
+                "access_token":"TOKEN",
+                "masked_license_key":"****-ENSE",
+                "bound_device":{{
+                    "device_id":"{}",
+                    "public_key":"public",
+                    "fingerprint":{{
+                        "platform":"linux",
+                        "os":"linux",
+                        "arch":"x86_64",
+                        "hostname_hash":null
+                    }}
+                }},
+                "entitlement":"active",
+                "token_expires_at_ms":9999
                 }}
-            }},
-            "entitlement":"active",
-            "token_expires_at_ms":9999
         }}"#,
         device_id.as_str()
     );
@@ -337,7 +340,7 @@ async fn hosted_worker_mode_hits_real_local_http_route_contract() {
         .expect("local HTTP worker should activate");
     let request = handle.join().expect("server thread should finish");
 
-    assert!(request.starts_with("POST /v1/activate "));
+    assert!(request.starts_with("POST /v1/license/activate "));
     assert!(request.contains(r#""license_key":"SECRET-LICENSE""#));
     assert_eq!(outcome.entitlement, EntitlementStatus::Active);
 }

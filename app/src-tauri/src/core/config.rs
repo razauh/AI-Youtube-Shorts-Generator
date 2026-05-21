@@ -1,4 +1,6 @@
 use crate::core::errors::ConfigError;
+use std::collections::HashSet;
+use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
@@ -162,6 +164,60 @@ fn read_env_trimmed(key: &str, default: &str) -> String {
         .unwrap_or_else(|_| default.to_string())
         .trim()
         .to_string()
+}
+
+pub fn load_env_files_near_current_dir() {
+    if let Ok(current_dir) = std::env::current_dir() {
+        load_env_files_from(current_dir);
+    }
+}
+
+pub fn load_env_files_from(start_dir: impl AsRef<Path>) {
+    let mut candidates = Vec::new();
+    for dir in start_dir.as_ref().ancestors() {
+        candidates.push(dir.join(".env"));
+    }
+    candidates.reverse();
+
+    let existing_env: HashSet<String> = std::env::vars().map(|(key, _)| key).collect();
+    for path in candidates {
+        load_env_file(&path, &existing_env);
+    }
+}
+
+fn load_env_file(path: &Path, existing_env: &HashSet<String>) {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return;
+    };
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        if key.is_empty() || existing_env.contains(key) {
+            continue;
+        }
+        let value = unquote_env_value(value.trim());
+        unsafe {
+            std::env::set_var(key, value);
+        }
+    }
+}
+
+fn unquote_env_value(value: &str) -> String {
+    let bytes = value.as_bytes();
+    if bytes.len() >= 2
+        && ((bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"')
+            || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\''))
+    {
+        return value[1..value.len() - 1].to_string();
+    }
+    value.to_string()
 }
 
 fn parse_float_env(var_name: &'static str, default: &'static str) -> Result<f64, ConfigError> {
