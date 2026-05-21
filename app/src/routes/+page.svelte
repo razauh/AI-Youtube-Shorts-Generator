@@ -3,6 +3,7 @@
   import { runState } from '../lib/stores/runState';
   import { authState } from '../lib/stores/authState';
   import { openInFileManager, pickLocalVideoFile, pickOutputJsonPath, runGenerateAndStream } from '../lib/api/tauriClient';
+  import { appConfigSummary, runtimeContext, validateRuntime } from '../lib/api/runtimeClient';
   import { checkForAppUpdate, installAppUpdate } from '../lib/api/updaterClient';
   import { CRASH_DRAFT_KEY, createCrashDraft, dismissCrashDraft, saveCrashDraft } from '../support/crashDraft';
   const LS = {
@@ -36,6 +37,11 @@
   let updaterBusy = false;
   let crashDraft = null;
   let crashStatus = '';
+  let settingsBusy = false;
+  let settingsError = '';
+  let settingsConfig = null;
+  let settingsRuntime = null;
+  let settingsContext = null;
   let theme = 'dark';
   let mobileNavOpen = false;
 
@@ -115,11 +121,52 @@
   }
 
   function selectScreen(screen) {
-    if (screen === 'help') {
+    if (screen === 'settings') {
+      loadSettingsStatus();
       loadCrashDraftFromLocalStorage();
     }
     active = screen;
     mobileNavOpen = false;
+  }
+
+  async function loadSettingsStatus() {
+    settingsBusy = true;
+    settingsError = '';
+    try {
+      const [config, runtime, context] = await Promise.all([
+        appConfigSummary(),
+        validateRuntime(),
+        runtimeContext()
+      ]);
+      settingsConfig = config;
+      settingsRuntime = runtime;
+      settingsContext = context;
+    } catch (err) {
+      settingsError = err instanceof Error ? err.message : 'Unable to load settings status.';
+    } finally {
+      settingsBusy = false;
+    }
+  }
+
+  function authStatusLabel() {
+    return $authState.lifecycle.replaceAll('_', ' ');
+  }
+
+  function deviceRegistrationLabel() {
+    return $authState.authState?.status === 'licensed' && $authState.authState.device_id
+      ? 'Registered on this device'
+      : 'Not registered on this device';
+  }
+
+  function tokenExpiryLabel() {
+    if ($authState.authState?.status !== 'licensed') {
+      return 'Unavailable';
+    }
+    return new Date($authState.authState.token_expires_at_ms).toLocaleString();
+  }
+
+  function configuredLabel(value) {
+    return value ? 'Configured' : 'Not configured';
   }
 
   function exportDebugLog() {
@@ -394,7 +441,7 @@
 
       {#if canShowActivationForm}
         <form class="form license-form" on:submit|preventDefault={submitLicense}>
-          <label>License key <input aria-label="License key" bind:value={licenseKey} autocomplete="off" required /></label>
+          <label>License key <input aria-label="License key" type="password" bind:value={licenseKey} autocomplete="off" spellcheck="false" required /></label>
           <button type="submit" disabled={$authState.lifecycle === 'activating'}>
             {$authState.lifecycle === 'activating' ? 'Activating...' : 'Activate'}
           </button>
@@ -442,9 +489,11 @@
       <nav class:nav-open={mobileNavOpen}>
         <button class:active={active === 'generate'} on:click={() => selectScreen('generate')}>Generate</button>
         <button class:active={active === 'library'} on:click={() => selectScreen('library')}>Shorts Library</button>
-        <button class:active={active === 'help'} on:click={() => selectScreen('help')}>Help & Trust</button>
-        <button class:active={active === 'legal'} on:click={() => selectScreen('legal')}>Legal</button>
+        <button class:active={active === 'settings'} on:click={() => selectScreen('settings')}>Settings</button>
       </nav>
+      <div class="sidebar-secondary" class:nav-open={mobileNavOpen}>
+        <button class:active={active === 'legal'} type="button" on:click={() => selectScreen('legal')}>Terms</button>
+      </div>
       <button class="theme-toggle" class:nav-open={mobileNavOpen} type="button" on:click={toggleTheme}>
         {theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}
       </button>
@@ -604,20 +653,139 @@
       </section>
     {/if}
 
-    {#if active === 'help'}
+    {#if active === 'settings'}
       <section class="panel hero">
-        <h2 class="screen-title">Help & Trust</h2>
-        <p class="meta">How it works, privacy and support.</p>
+        <h2 class="screen-title">Settings</h2>
+        <p class="meta">Runtime, license, and device status for this installation.</p>
       </section>
 
       <section class="panel">
-        <h3>How it works</h3>
+        <div class="section-head">
+          <div>
+            <h3>Status</h3>
+            <p class="meta">Values are read-only and redact sensitive material.</p>
+          </div>
+          <button type="button" on:click={loadSettingsStatus} disabled={settingsBusy}>
+            {settingsBusy ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+        {#if settingsError}
+          <p class="meta error-text">{settingsError}</p>
+        {/if}
+      </section>
+
+      <section class="settings-grid">
+        <article class="panel status-card">
+          <p class="eyebrow">License</p>
+          <h3>{authStatusLabel()}</h3>
+          <dl>
+            <div>
+              <dt>Device registration</dt>
+              <dd>{deviceRegistrationLabel()}</dd>
+            </div>
+            <div>
+              <dt>License key</dt>
+              <dd>
+                {$authState.authState && 'masked_license_key' in $authState.authState && $authState.authState.masked_license_key
+                  ? $authState.authState.masked_license_key
+                  : 'Unavailable'}
+              </dd>
+            </div>
+            <div>
+              <dt>Session expires</dt>
+              <dd>{tokenExpiryLabel()}</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="panel status-card">
+          <p class="eyebrow">Generation</p>
+          <h3>{mode}</h3>
+          <dl>
+            <div>
+              <dt>Source type</dt>
+              <dd>{sourceType === 'local' ? 'Local video file' : 'YouTube URL'}</dd>
+            </div>
+            <div>
+              <dt>API key</dt>
+              <dd>{settingsConfig ? configuredLabel(settingsConfig.muapiConfigured) : 'Unknown'}</dd>
+            </div>
+            <div>
+              <dt>Local model</dt>
+              <dd>{settingsConfig?.localWhisperModel ?? 'Unknown'}</dd>
+            </div>
+            <div>
+              <dt>Local device</dt>
+              <dd>{settingsConfig?.localWhisperDevice ?? 'Unknown'}</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="panel status-card">
+          <p class="eyebrow">License Worker</p>
+          <h3>{settingsConfig?.licenseBackendMode ?? 'Unknown'}</h3>
+          <dl>
+            <div>
+              <dt>Endpoint</dt>
+              <dd>{settingsConfig?.licenseWorkerEndpoint ?? 'Unknown'}</dd>
+            </div>
+            <div>
+              <dt>Endpoint type</dt>
+              <dd>{settingsConfig?.licenseWorkerEndpointKind ?? 'Unknown'}</dd>
+            </div>
+            <div>
+              <dt>Timeout</dt>
+              <dd>{settingsConfig ? `${settingsConfig.licenseWorkerTimeoutMs} ms` : 'Unknown'}</dd>
+            </div>
+            <div>
+              <dt>Retry attempts</dt>
+              <dd>{settingsConfig?.licenseWorkerRetryAttempts ?? 'Unknown'}</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="panel status-card">
+          <p class="eyebrow">Runtime</p>
+          <h3>{settingsRuntime ? (settingsRuntime.ok ? 'Ready' : 'Needs attention') : 'Unknown'}</h3>
+          <dl>
+            <div>
+              <dt>App version</dt>
+              <dd>{settingsContext?.appVersion ?? APP_VERSION}</dd>
+            </div>
+            <div>
+              <dt>Platform</dt>
+              <dd>{settingsContext?.platform ?? 'Unknown'}</dd>
+            </div>
+            <div>
+              <dt>Bridge entry</dt>
+              <dd>{settingsRuntime ? (settingsRuntime.bridge_entry_exists ? 'Found' : 'Missing') : 'Unknown'}</dd>
+            </div>
+            <div>
+              <dt>OpenAI key</dt>
+              <dd>{settingsConfig ? configuredLabel(settingsConfig.openaiConfigured) : 'Unknown'}</dd>
+            </div>
+          </dl>
+        </article>
+      </section>
+
+      {#if settingsRuntime?.tools?.length}
+        <section class="panel">
+          <h3>Runtime Tools</h3>
+          <div class="tool-list">
+            {#each settingsRuntime.tools as tool}
+              <div class="tool-row">
+                <span>{tool.tool}</span>
+                <span class:ok={tool.ok} class:warn={!tool.ok}>{tool.ok ? 'Available' : tool.message}</span>
+              </div>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      <section class="panel">
+        <h3>Privacy & Trust</h3>
         <p>1. Add a source URL. 2. Choose mode and clip settings. 3. Run pipeline. 4. Review exported clips.</p>
         <p class="meta">Progress events stream live so users can track each stage of the generation pipeline.</p>
-      </section>
-
-      <section class="panel">
-        <h3>Privacy</h3>
         <p>Project history and media library metadata are stored locally on this machine (browser local storage in this build).</p>
         <p class="meta">No cloud sync is used for these screens unless you implement explicit remote storage later.</p>
       </section>
@@ -850,9 +1018,18 @@
     transform: translateY(-62%) rotate(45deg);
     pointer-events: none;
   }
-  nav { display: grid; gap: var(--space-sm); }
-  .theme-toggle {
+  nav,
+  .sidebar-secondary {
+    display: grid;
+    gap: var(--space-sm);
+  }
+  .sidebar-secondary {
     margin-top: auto;
+    padding-top: var(--space-sm);
+    border-top: 1px solid color-mix(in srgb, var(--color-border-strong) 18%, transparent);
+  }
+  .theme-toggle {
+    margin-top: 0;
   }
   .theme-toggle.compact {
     margin-top: 0;
@@ -900,8 +1077,14 @@
   }
 
   button { cursor: pointer; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); color: var(--color-on-accent); border: none; font-weight: 700; }
-  nav button { text-align: left; background: color-mix(in srgb, var(--color-panel-card) 80%, transparent); color: var(--color-text-primary); border: 1px solid color-mix(in srgb, var(--color-border-strong) 25%, transparent); }
-  nav button.active { border-color: var(--color-focus-ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-focus-ring) 25%, transparent); }
+  nav button,
+  .sidebar-secondary button { text-align: left; background: color-mix(in srgb, var(--color-panel-card) 80%, transparent); color: var(--color-text-primary); border: 1px solid color-mix(in srgb, var(--color-border-strong) 25%, transparent); }
+  .sidebar-secondary button {
+    color: var(--color-text-tertiary);
+    font-weight: 600;
+  }
+  nav button.active,
+  .sidebar-secondary button.active { border-color: var(--color-focus-ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-focus-ring) 25%, transparent); }
   .form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); align-items: end; }
   label { display: grid; gap: var(--space-xs); }
   .advanced { grid-column: 1 / -1; }
@@ -920,6 +1103,78 @@
   textarea { resize: vertical; }
 
   .toolbar { display: grid; gap: var(--space-sm); margin-bottom: var(--space-md); }
+
+  .section-head {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-md);
+    align-items: center;
+  }
+
+  .settings-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-lg);
+  }
+
+  .status-card {
+    display: grid;
+    gap: var(--space-sm);
+  }
+
+  .eyebrow {
+    margin: 0;
+    color: var(--color-text-tertiary);
+    font-size: .78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  dl {
+    display: grid;
+    gap: var(--space-sm);
+    margin: 0;
+  }
+
+  dl div,
+  .tool-row {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-md);
+    align-items: center;
+  }
+
+  dt {
+    color: var(--color-text-tertiary);
+  }
+
+  dd {
+    margin: 0;
+    color: var(--color-text-primary);
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+
+  .tool-list {
+    display: grid;
+    gap: var(--space-sm);
+  }
+
+  .tool-row {
+    padding: var(--space-sm);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--color-panel-card) 80%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border-strong) 20%, transparent);
+  }
+
+  .ok {
+    color: var(--color-state-success);
+  }
+
+  .warn {
+    color: var(--color-state-error);
+    text-align: right;
+  }
 
   .list { display: grid; gap: var(--space-sm); }
   .list-item {
@@ -966,6 +1221,7 @@
       width: auto;
     }
     nav,
+    .sidebar-secondary,
     .theme-toggle {
       display: none;
     }
@@ -973,8 +1229,12 @@
       display: inline-flex;
     }
     nav.nav-open,
+    .sidebar-secondary.nav-open,
     .theme-toggle.nav-open {
       display: grid;
+    }
+    .sidebar-secondary.nav-open {
+      margin-top: 0;
     }
     .theme-toggle.nav-open {
       margin-top: 0;
@@ -983,6 +1243,14 @@
       min-height: auto;
       overflow: visible;
       padding-right: 0;
+    }
+    .settings-grid {
+      grid-template-columns: 1fr;
+    }
+    .section-head,
+    dl div,
+    .tool-row {
+      align-items: stretch;
     }
     .form { grid-template-columns: 1fr; }
     .list-item { flex-direction: column; align-items: stretch; }

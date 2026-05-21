@@ -8,6 +8,9 @@ const pickOutputJsonPath = vi.fn();
 const openInFileManager = vi.fn();
 const checkForAppUpdate = vi.fn();
 const installAppUpdate = vi.fn();
+const appConfigSummary = vi.fn();
+const validateRuntime = vi.fn();
+const runtimeContext = vi.fn();
 const authStoreMock = vi.hoisted(() => {
   let value: any = {
     lifecycle: 'licensed',
@@ -51,6 +54,12 @@ vi.mock('../lib/api/updaterClient', () => ({
   installAppUpdate: (...args: unknown[]) => installAppUpdate(...args)
 }));
 
+vi.mock('../lib/api/runtimeClient', () => ({
+  appConfigSummary: (...args: unknown[]) => appConfigSummary(...args),
+  validateRuntime: (...args: unknown[]) => validateRuntime(...args),
+  runtimeContext: (...args: unknown[]) => runtimeContext(...args)
+}));
+
 vi.mock('../lib/stores/authState', () => ({
   authState: authStoreMock.store
 }));
@@ -63,6 +72,38 @@ describe('test_ui flow parity', () => {
     openInFileManager.mockReset();
     checkForAppUpdate.mockReset();
     installAppUpdate.mockReset();
+    appConfigSummary.mockReset();
+    validateRuntime.mockReset();
+    runtimeContext.mockReset();
+    appConfigSummary.mockResolvedValue({
+      licenseBackendMode: 'hosted',
+      licenseWorkerEndpoint: 'licenses.example.test',
+      licenseWorkerEndpointKind: 'remote',
+      muapiConfigured: true,
+      openaiConfigured: false,
+      localWhisperModel: 'base',
+      localWhisperDevice: 'auto',
+      licenseWorkerTimeoutMs: 10000,
+      licenseWorkerRetryAttempts: 2
+    });
+    validateRuntime.mockResolvedValue({
+      runtime: 'python:python3',
+      bridge_entry: '../../python_legacy/bridge_entry.py',
+      bridge_entry_exists: true,
+      ok: true,
+      tools: [{ tool: 'python', ok: true, path: '/usr/bin/python3', source: 'path', message: 'ok' }]
+    });
+    runtimeContext.mockResolvedValue({
+      appVersion: '0.1.0',
+      platform: 'linux',
+      runtimeRoot: '/home/test/.local/share/app',
+      logDir: '/home/test/.local/share/app/logs',
+      logPath: '/home/test/.local/share/app/logs/app.log',
+      crashLogPath: '/home/test/.local/share/app/logs/crash.log',
+      configPath: '/home/test/.local/share/app/config/config.json',
+      protectedBasePath: '/home/test/.local/share/app/protected',
+      secureFallbackBasePath: '/home/test/.local/share/app/secure-fallback'
+    });
     authStoreMock.store.bootstrap.mockReset();
     authStoreMock.store.activate.mockReset();
     authStoreMock.store.requestReset.mockReset();
@@ -110,13 +151,48 @@ describe('test_ui flow parity', () => {
     expect(screen.queryByLabelText('YouTube video URL')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Generate' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Shorts Library' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Help & Trust' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Terms' })).toBeNull();
+
+    expect((screen.getByLabelText('License key') as HTMLInputElement).type).toBe('password');
 
     await fireEvent.input(screen.getByLabelText('License key'), { target: { value: 'LICENSE-1234' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
 
     expect(authStoreMock.store.activate).toHaveBeenCalledWith('LICENSE-1234');
     expect(JSON.stringify(localStorage)).not.toContain('LICENSE-1234');
+  });
+
+  it('test_settings_screen_shows_redacted_runtime_and_device_status', async () => {
+    authStoreMock.set({
+      lifecycle: 'licensed',
+      authState: {
+        status: 'licensed',
+        masked_license_key: '****-1234',
+        device_id: 'raw-device-id',
+        token_expires_at_ms: 1_700_000_000_000
+      },
+      resetRequestId: null,
+      error: null
+    });
+
+    render(Page);
+    expect(screen.queryByRole('button', { name: 'Help & Trust' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Terms' })).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+
+    expect(await screen.findByText('Runtime, license, and device status for this installation.')).toBeTruthy();
+    expect(screen.getByText('Registered on this device')).toBeTruthy();
+    expect(screen.getByText('****-1234')).toBeTruthy();
+    expect(screen.getByText('licenses.example.test')).toBeTruthy();
+    expect(screen.getByText('Available')).toBeTruthy();
+    expect(screen.queryByText('raw-device-id')).toBeNull();
+    expect(document.body.textContent).not.toContain('/home/test');
+    expect(appConfigSummary).toHaveBeenCalledTimes(1);
+    expect(validateRuntime).toHaveBeenCalledTimes(1);
+    expect(runtimeContext).toHaveBeenCalledTimes(1);
   });
 
   it('test_device_bound_state_shows_reset_request_form', async () => {
@@ -197,7 +273,7 @@ describe('test_ui flow parity', () => {
     });
 
     render(Page);
-    await fireEvent.click(screen.getByRole('button', { name: 'Help & Trust' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Check for Updates' }));
 
     expect(await screen.findByText('Update 0.2.0 is available.')).toBeTruthy();
@@ -221,7 +297,7 @@ describe('test_ui flow parity', () => {
     );
 
     render(Page);
-    await fireEvent.click(screen.getByRole('button', { name: 'Help & Trust' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
 
     expect(await screen.findByText('Crash Report Draft')).toBeTruthy();
     expect(screen.getByText('Error: boom')).toBeTruthy();
@@ -234,7 +310,8 @@ describe('test_ui flow parity', () => {
 
   it('test_legal_page_states_manual_7_day_refund_policy', async () => {
     render(Page);
-    await fireEvent.click(screen.getByRole('button', { name: 'Legal' }));
+    expect(screen.queryByRole('button', { name: 'Legal' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Terms' }));
 
     expect(screen.getByText('Refund Policy')).toBeTruthy();
     expect(screen.getByText(/within 7 days from purchase/)).toBeTruthy();
