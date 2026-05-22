@@ -3,9 +3,8 @@ use license_control_suite::core::{
         FakeDeviceIdentityProvider, FakeWorkerClient, FixedClock, InMemoryLocalStateStore,
         InMemorySecretStore,
     },
-    AccessToken, ActivationOutcome, AuthError, AuthService, BoundDeviceSummary,
-    DeviceFingerprint, DeviceId, DevicePublicKey, EntitlementStatus, LicenseKey,
-    MaskedLicenseKey, SessionState,
+    AccessToken, ActivationOutcome, AuthError, AuthService, BoundDeviceSummary, DeviceFingerprint,
+    DeviceId, DevicePublicKey, EntitlementStatus, LicenseKey, MaskedLicenseKey, SessionState,
 };
 use std::sync::Arc;
 

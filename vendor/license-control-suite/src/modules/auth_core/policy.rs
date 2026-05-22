@@ -4,7 +4,11 @@ pub enum OfflineDecision {
     Denied { reason: String },
 }
 
-pub fn offline_access(last_success_epoch_sec: u64, now_epoch_sec: u64, grace_window_sec: u64) -> OfflineDecision {
+pub fn offline_access(
+    last_success_epoch_sec: u64,
+    now_epoch_sec: u64,
+    grace_window_sec: u64,
+) -> OfflineDecision {
     if now_epoch_sec.saturating_sub(last_success_epoch_sec) <= grace_window_sec {
         OfflineDecision::Allowed
     } else {

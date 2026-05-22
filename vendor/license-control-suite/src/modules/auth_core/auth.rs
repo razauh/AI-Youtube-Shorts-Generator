@@ -1,6 +1,8 @@
 use thiserror::Error;
 
-use crate::modules::shared_contracts::dto::{ActivateRequest, ActivateResponse, SessionRenewResponse};
+use crate::modules::shared_contracts::dto::{
+    ActivateRequest, ActivateResponse, SessionRenewResponse,
+};
 use crate::modules::shared_contracts::errors::{ApiError, ErrorCode};
 
 use super::adapters::{ApiClient, LocalStore};

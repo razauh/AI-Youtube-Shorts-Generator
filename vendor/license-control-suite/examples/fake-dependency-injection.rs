@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use license_control_suite::core::{
     AccessToken, ActivationOutcome, ActivationRequest, AuthError, AuthService, BoundDeviceSummary,
-    Clock, DeviceFingerprint, DeviceId, DeviceIdentityProvider, DeviceKeyPair,
-    DevicePublicKey, DeviceResetRequest, DeviceResetStatus, EntitlementStatus, LicenseKey,
-    LocalStateStore, ResetRequestId, SecretStore, SessionState, ValidationOutcome, WorkerClient,
+    Clock, DeviceFingerprint, DeviceId, DeviceIdentityProvider, DeviceKeyPair, DevicePublicKey,
+    DeviceResetRequest, DeviceResetStatus, EntitlementStatus, LicenseKey, LocalStateStore,
+    ResetRequestId, SecretStore, SessionState, ValidationOutcome, WorkerClient,
 };
 use std::sync::{Arc, Mutex};
 
@@ -27,10 +27,7 @@ impl WorkerClient for ExampleWorkerClient {
         })
     }
 
-    async fn validate_session(
-        &self,
-        _token: AccessToken,
-    ) -> Result<ValidationOutcome, AuthError> {
+    async fn validate_session(&self, _token: AccessToken) -> Result<ValidationOutcome, AuthError> {
         Err(AuthError::WorkerUnreachable)
     }
 

@@ -1,3 +1,4 @@
+use crate::commands::runtime::secure_store_load;
 use crate::core::errors::ConfigError;
 use std::collections::HashSet;
 use std::path::Path;
@@ -67,16 +68,16 @@ impl LicenseBackendMode {
 
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
-        let muapi_api_key = read_env_trimmed("MUAPI_API_KEY", "");
+        let muapi_api_key = read_env_or_secure("MUAPI_API_KEY", "");
         let muapi_base_url = read_env_trimmed("MUAPI_BASE_URL", "https://api.muapi.ai/api/v1")
             .trim_end_matches('/')
             .to_string();
         let muapi_poll_interval_seconds = parse_float_env("MUAPI_POLL_INTERVAL", "5")?;
         let muapi_poll_timeout_seconds = parse_float_env("MUAPI_POLL_TIMEOUT", "600")?;
-        let openai_api_key = read_env_trimmed("OPENAI_API_KEY", "");
+        let openai_api_key = read_env_or_secure("OPENAI_API_KEY", "");
         let openai_model = read_env_trimmed("OPENAI_MODEL", "gpt-4o-mini");
-        let local_whisper_model = read_env_trimmed("LOCAL_WHISPER_MODEL", "base");
-        let local_whisper_device = read_env_trimmed("LOCAL_WHISPER_DEVICE", "auto");
+        let local_whisper_model = read_env_or_secure("LOCAL_WHISPER_MODEL", "base");
+        let local_whisper_device = read_env_or_secure("LOCAL_WHISPER_DEVICE", "auto");
         let local_output_dir = read_env_trimmed("LOCAL_OUTPUT_DIR", "output");
         let license_worker_base_url =
             read_env_trimmed("LICENSE_WORKER_BASE_URL", "http://127.0.0.1:8787")
@@ -164,6 +165,18 @@ fn read_env_trimmed(key: &str, default: &str) -> String {
         .unwrap_or_else(|_| default.to_string())
         .trim()
         .to_string()
+}
+
+fn read_env_or_secure(key: &str, default: &str) -> String {
+    if let Ok(value) = std::env::var(key) {
+        return value.trim().to_string();
+    }
+    secure_store_load(key.to_string())
+        .ok()
+        .flatten()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| default.to_string())
 }
 
 pub fn load_env_files_near_current_dir() {

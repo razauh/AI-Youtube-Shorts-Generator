@@ -243,7 +243,7 @@ async fn generation_auth_error(
     auth_state: &AuthAppState,
 ) -> Option<ErrorEnvelope> {
     match auth_state.service.get_auth_state().await {
-        Ok(SessionState::Licensed { .. }) => None,
+        Ok(SessionState::Licensed { .. } | SessionState::LicensedOfflineGrace { .. }) => None,
         Ok(_) => Some(auth_error_envelope(args, "license required")),
         Err(err) => Some(auth_error_envelope(args, &err.to_string())),
     }

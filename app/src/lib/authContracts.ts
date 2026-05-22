@@ -5,6 +5,17 @@ export type AuthStateView =
       masked_license_key: string;
       device_id: string;
       token_expires_at_ms: number;
+      last_validated_at_ms: number;
+      next_validation_due_ms: number;
+    }
+  | {
+      status: 'licensed_offline_grace';
+      masked_license_key: string;
+      device_id: string;
+      token_expires_at_ms: number;
+      last_validated_at_ms: number;
+      next_validation_due_ms: number;
+      grace_expires_at_ms: number;
     }
   | { status: 'reauth_required'; masked_license_key?: string | null }
   | {

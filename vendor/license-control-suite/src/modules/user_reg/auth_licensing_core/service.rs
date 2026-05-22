@@ -1,12 +1,15 @@
 use super::{
     domain::{
-        ActivationOutcome, ActivationRequest, AuthError, LicenseKey, MaskedLicenseKey,
-        DeviceResetRequest, PurchaseEmail, ResetRequestId, ValidationOutcome,
+        ActivationOutcome, ActivationRequest, AuthError, DeviceResetRequest, LicenseKey,
+        MaskedLicenseKey, PurchaseEmail, ResetRequestId, ValidationOutcome,
     },
     state::{DeviceResetStatus, SessionState},
     traits::{Clock, DeviceIdentityProvider, LocalStateStore, SecretStore, WorkerClient},
 };
 use std::sync::Arc;
+
+const VALIDATION_INTERVAL_MS: i64 = 24 * 60 * 60 * 1000;
+const OFFLINE_GRACE_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
 #[derive(Clone)]
 pub struct AuthService {
@@ -62,6 +65,8 @@ impl AuthService {
                 outcome.masked_license_key.clone(),
                 outcome.bound_device.clone(),
                 outcome.token_expires_at_ms,
+                self.clock.now_ms(),
+                VALIDATION_INTERVAL_MS,
             ))
             .await?;
 
@@ -87,6 +92,8 @@ impl AuthService {
                     masked_license_key,
                     bound_device,
                     token_expires_at_ms,
+                    self.clock.now_ms(),
+                    VALIDATION_INTERVAL_MS,
                 );
                 self.state.save_session_state(next.clone()).await?;
                 Ok(next)
@@ -98,7 +105,24 @@ impl AuthService {
                 self.state.save_session_state(next.clone()).await?;
                 Ok(next)
             }
-            Err(AuthError::WorkerUnreachable) => Err(AuthError::WorkerUnreachable),
+            Err(AuthError::WorkerUnreachable) => {
+                let current = self.state.load_session_state().await?;
+                match current
+                    .clone()
+                    .into_offline_grace(self.clock.now_ms(), OFFLINE_GRACE_MS)
+                {
+                    Ok(next) => {
+                        self.state.save_session_state(next.clone()).await?;
+                        Ok(next)
+                    }
+                    Err(_) => {
+                        let masked = masked_from_state(&current);
+                        let next = SessionState::require_reauth(masked);
+                        self.state.save_session_state(next.clone()).await?;
+                        Ok(next)
+                    }
+                }
+            }
             Err(err) => Err(err),
         }
     }
@@ -172,6 +196,9 @@ fn masked_from_state(state: &SessionState) -> Option<MaskedLicenseKey> {
         SessionState::Licensed {
             masked_license_key, ..
         }
+        | SessionState::LicensedOfflineGrace {
+            masked_license_key, ..
+        }
         | SessionState::ReauthRequired {
             masked_license_key: Some(masked_license_key),
         }
@@ -197,12 +224,12 @@ fn masked_from_state(state: &SessionState) -> Option<MaskedLicenseKey> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::domain::{
         AccessToken, BoundDeviceSummary, DeviceFingerprint, DeviceId, DevicePublicKey,
         EntitlementStatus,
     };
     use super::super::test_support::*;
+    use super::*;
 
     fn outcome() -> ActivationOutcome {
         let public_key = DevicePublicKey::new("public").unwrap();
@@ -297,6 +324,31 @@ mod tests {
         let state = harness.service.validate_session().await.unwrap();
         assert!(matches!(state, SessionState::ReauthRequired { .. }));
         assert!(harness.secrets.get_access_token().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn worker_unreachable_moves_licensed_session_to_offline_grace() {
+        let worker = FakeWorkerClient::new().with_validation(Err(AuthError::WorkerUnreachable));
+        let harness = TestService::new(worker);
+        harness
+            .secrets
+            .put_access_token(AccessToken::new("token").unwrap())
+            .await
+            .unwrap();
+        harness
+            .state
+            .save_session_state(SessionState::after_activation(
+                MaskedLicenseKey::new("••••-1234").unwrap(),
+                outcome().bound_device.clone(),
+                200,
+                10,
+                24 * 60 * 60 * 1000,
+            ))
+            .await
+            .unwrap();
+
+        let state = harness.service.validate_session().await.unwrap();
+        assert!(matches!(state, SessionState::LicensedOfflineGrace { .. }));
     }
 
     #[tokio::test]

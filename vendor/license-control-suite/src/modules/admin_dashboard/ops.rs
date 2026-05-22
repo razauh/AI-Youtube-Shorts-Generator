@@ -13,7 +13,9 @@ pub struct HealthOutput {
 }
 
 pub fn compute_health(input: HealthInput) -> HealthOutput {
-    let elapsed = input.now_epoch_sec.saturating_sub(input.last_event_epoch_sec);
+    let elapsed = input
+        .now_epoch_sec
+        .saturating_sub(input.last_event_epoch_sec);
     HealthOutput {
         pending_count: input.pending_count,
         is_stale: elapsed > input.stale_threshold_sec,

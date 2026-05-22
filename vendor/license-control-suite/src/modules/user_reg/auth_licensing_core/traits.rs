@@ -8,10 +8,7 @@ use async_trait::async_trait;
 #[async_trait]
 pub trait WorkerClient: Send + Sync {
     async fn activate(&self, request: ActivationRequest) -> Result<ActivationOutcome, AuthError>;
-    async fn validate_session(
-        &self,
-        token: AccessToken,
-    ) -> Result<ValidationOutcome, AuthError>;
+    async fn validate_session(&self, token: AccessToken) -> Result<ValidationOutcome, AuthError>;
     async fn request_device_reset(
         &self,
         request: DeviceResetRequest,

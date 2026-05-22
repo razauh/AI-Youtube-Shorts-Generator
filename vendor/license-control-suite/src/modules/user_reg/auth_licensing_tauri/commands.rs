@@ -45,6 +45,16 @@ pub enum AuthStateView {
         masked_license_key: String,
         device_id: String,
         token_expires_at_ms: i64,
+        last_validated_at_ms: i64,
+        next_validation_due_ms: i64,
+    },
+    LicensedOfflineGrace {
+        masked_license_key: String,
+        device_id: String,
+        token_expires_at_ms: i64,
+        last_validated_at_ms: i64,
+        next_validation_due_ms: i64,
+        grace_expires_at_ms: i64,
     },
     ReauthRequired {
         masked_license_key: Option<String>,
@@ -103,6 +113,8 @@ pub async fn activate_license_with_service(
             outcome.masked_license_key.clone(),
             outcome.bound_device,
             outcome.token_expires_at_ms,
+            0,
+            24 * 60 * 60 * 1000,
         )),
         masked_license_key: outcome.masked_license_key.to_string(),
         entitlement: format!("{:?}", outcome.entitlement).to_ascii_lowercase(),
@@ -267,10 +279,29 @@ impl From<SessionState> for AuthStateView {
                 masked_license_key,
                 bound_device,
                 token_expires_at_ms,
+                last_validated_at_ms,
+                next_validation_due_ms,
             } => Self::Licensed {
                 masked_license_key: masked_license_key.to_string(),
                 device_id: bound_device.device_id.as_str().to_string(),
                 token_expires_at_ms,
+                last_validated_at_ms,
+                next_validation_due_ms,
+            },
+            SessionState::LicensedOfflineGrace {
+                masked_license_key,
+                bound_device,
+                token_expires_at_ms,
+                last_validated_at_ms,
+                next_validation_due_ms,
+                grace_expires_at_ms,
+            } => Self::LicensedOfflineGrace {
+                masked_license_key: masked_license_key.to_string(),
+                device_id: bound_device.device_id.as_str().to_string(),
+                token_expires_at_ms,
+                last_validated_at_ms,
+                next_validation_due_ms,
+                grace_expires_at_ms,
             },
             SessionState::ReauthRequired { masked_license_key } => Self::ReauthRequired {
                 masked_license_key: masked_license_key.map(|v| v.to_string()),
@@ -311,7 +342,9 @@ impl From<SessionState> for AuthStateView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::user_reg::auth_licensing_core::test_support::{FakeWorkerClient, TestService};
+    use crate::modules::user_reg::auth_licensing_core::test_support::{
+        FakeWorkerClient, TestService,
+    };
     use crate::modules::user_reg::auth_licensing_core::{
         AccessToken, ActivationOutcome, BoundDeviceSummary, DeviceFingerprint, DeviceId,
         DevicePublicKey, EntitlementStatus, MaskedLicenseKey,

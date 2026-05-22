@@ -46,6 +46,8 @@ describe('authState store', () => {
         masked_license_key: '****-1234',
         device_id: 'dev',
         token_expires_at_ms: 1,
+        last_validated_at_ms: 1,
+        next_validation_due_ms: 2,
       },
       masked_license_key: '****-1234',
       entitlement: 'active',
@@ -73,7 +75,24 @@ describe('authState store', () => {
 
     expect(get(state).lifecycle).toBe('device_bound_elsewhere');
     expect(get(state).error?.code).toBe('device_already_bound');
+    expect(get(state).error?.message).toBe('This license is already in use on another device.');
     expect(JSON.stringify(get(state))).not.toContain('LICENSE-1234');
+  });
+
+  it('does not surface raw backend auth error text to login UI state', async () => {
+    activateLicense.mockRejectedValue({
+      code: 'invalid_license_key',
+      message: 'backend validation failed: malformed payload id=abc123',
+    });
+    const { createAuthState } = await import('../lib/stores/authState');
+    const state = createAuthState();
+
+    await state.activate('LICENSE-1234');
+
+    expect(get(state).lifecycle).toBe('error');
+    expect(get(state).error?.code).toBe('invalid_license_key');
+    expect(get(state).error?.message).toBe('Invalid license key. Please check and try again.');
+    expect(get(state).error?.message).not.toContain('malformed payload');
   });
 
   it('tracks reset request and terminal polling state', async () => {

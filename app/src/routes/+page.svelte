@@ -153,13 +153,20 @@
   }
 
   function deviceRegistrationLabel() {
-    return $authState.authState?.status === 'licensed' && $authState.authState.device_id
+    return (
+      ($authState.authState?.status === 'licensed' ||
+        $authState.authState?.status === 'licensed_offline_grace') &&
+      $authState.authState.device_id
+    )
       ? 'Registered on this device'
       : 'Not registered on this device';
   }
 
   function tokenExpiryLabel() {
-    if ($authState.authState?.status !== 'licensed') {
+    if (
+      $authState.authState?.status !== 'licensed' &&
+      $authState.authState?.status !== 'licensed_offline_grace'
+    ) {
       return 'Unavailable';
     }
     return new Date($authState.authState.token_expires_at_ms).toLocaleString();
@@ -398,7 +405,7 @@
   }
 </script>
 
-{#if $authState.lifecycle !== 'licensed'}
+{#if $authState.lifecycle !== 'licensed' && $authState.lifecycle !== 'licensed_offline_grace'}
   <main class="license-shell">
     <div class="orb orb-a"></div>
     <div class="orb orb-b"></div>
@@ -873,8 +880,11 @@
 {/if}
 
 <style>
-  :global(body) {
+  :global(html),
+  :global(body),
+  :global(#app) {
     margin: 0;
+    min-height: 100%;
     font-family: var(--font-body-md);
     background: radial-gradient(circle at 8% 12%, var(--color-canvas-start) 0%, var(--color-canvas-mid) 42%, var(--color-canvas-end) 100%);
     color: var(--color-text-primary);
@@ -890,6 +900,7 @@
     gap: var(--space-lg);
     position: relative;
     overflow: hidden;
+    background: radial-gradient(circle at 8% 12%, var(--color-canvas-start) 0%, var(--color-canvas-mid) 42%, var(--color-canvas-end) 100%);
   }
 
   .license-shell {
@@ -900,6 +911,7 @@
     place-items: center;
     position: relative;
     overflow: hidden;
+    background: radial-gradient(circle at 8% 12%, var(--color-canvas-start) 0%, var(--color-canvas-mid) 42%, var(--color-canvas-end) 100%);
   }
 
   .license-card {

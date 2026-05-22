@@ -11,10 +11,19 @@ const installAppUpdate = vi.fn();
 const appConfigSummary = vi.fn();
 const validateRuntime = vi.fn();
 const runtimeContext = vi.fn();
+const secureStoreSave = vi.fn();
+const secureStoreDelete = vi.fn();
 const authStoreMock = vi.hoisted(() => {
   let value: any = {
     lifecycle: 'licensed',
-    authState: { status: 'licensed', masked_license_key: '****-1234', device_id: 'dev', token_expires_at_ms: 1 },
+    authState: {
+      status: 'licensed',
+      masked_license_key: '****-1234',
+      device_id: 'dev',
+      token_expires_at_ms: 1,
+      last_validated_at_ms: 1,
+      next_validation_due_ms: 2
+    },
     resetRequestId: null,
     error: null
   };
@@ -30,7 +39,8 @@ const authStoreMock = vi.hoisted(() => {
     bootstrap: vi.fn(),
     activate: vi.fn(),
     requestReset: vi.fn(),
-    pollResetStatus: vi.fn()
+    pollResetStatus: vi.fn(),
+    clearSession: vi.fn()
   };
   return {
     store,
@@ -57,7 +67,9 @@ vi.mock('../lib/api/updaterClient', () => ({
 vi.mock('../lib/api/runtimeClient', () => ({
   appConfigSummary: (...args: unknown[]) => appConfigSummary(...args),
   validateRuntime: (...args: unknown[]) => validateRuntime(...args),
-  runtimeContext: (...args: unknown[]) => runtimeContext(...args)
+  runtimeContext: (...args: unknown[]) => runtimeContext(...args),
+  secureStoreSave: (...args: unknown[]) => secureStoreSave(...args),
+  secureStoreDelete: (...args: unknown[]) => secureStoreDelete(...args)
 }));
 
 vi.mock('../lib/stores/authState', () => ({
@@ -75,6 +87,10 @@ describe('test_ui flow parity', () => {
     appConfigSummary.mockReset();
     validateRuntime.mockReset();
     runtimeContext.mockReset();
+    secureStoreSave.mockReset();
+    secureStoreDelete.mockReset();
+    secureStoreSave.mockResolvedValue(undefined);
+    secureStoreDelete.mockResolvedValue(undefined);
     appConfigSummary.mockResolvedValue({
       licenseBackendMode: 'hosted',
       licenseWorkerEndpoint: 'licenses.example.test',
@@ -108,9 +124,17 @@ describe('test_ui flow parity', () => {
     authStoreMock.store.activate.mockReset();
     authStoreMock.store.requestReset.mockReset();
     authStoreMock.store.pollResetStatus.mockReset();
+    authStoreMock.store.clearSession.mockReset();
     authStoreMock.set({
       lifecycle: 'licensed',
-      authState: { status: 'licensed', masked_license_key: '****-1234', device_id: 'dev', token_expires_at_ms: 1 },
+      authState: {
+        status: 'licensed',
+        masked_license_key: '****-1234',
+        device_id: 'dev',
+        token_expires_at_ms: 1,
+        last_validated_at_ms: 1,
+        next_validation_due_ms: 2
+      },
       resetRequestId: null,
       error: null
     });
@@ -154,6 +178,7 @@ describe('test_ui flow parity', () => {
     expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Help & Trust' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Terms' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Privacy' })).toBeNull();
 
     expect((screen.getByLabelText('License key') as HTMLInputElement).type).toBe('password');
 
@@ -171,7 +196,9 @@ describe('test_ui flow parity', () => {
         status: 'licensed',
         masked_license_key: '****-1234',
         device_id: 'raw-device-id',
-        token_expires_at_ms: 1_700_000_000_000
+        token_expires_at_ms: 1_700_000_000_000,
+        last_validated_at_ms: 1_699_999_000_000,
+        next_validation_due_ms: 1_700_086_400_000
       },
       resetRequestId: null,
       error: null
@@ -179,20 +206,77 @@ describe('test_ui flow parity', () => {
 
     render(Page);
     expect(screen.queryByRole('button', { name: 'Help & Trust' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Terms' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Terms' })).toBeNull();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
 
-    expect(await screen.findByText('Runtime, license, and device status for this installation.')).toBeTruthy();
+    expect(await screen.findByText('Configure API access, manage device licensing, and review diagnostics and policies.')).toBeTruthy();
+    expect(screen.getByText('License, device, and runtime status for this installation.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
+    expect(screen.queryByText('Open Folder is available for locally generated shorts.')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Overview' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Configuration' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Diagnostics' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Policies' })).toBeTruthy();
     expect(screen.getByText('Registered on this device')).toBeTruthy();
     expect(screen.getByText('****-1234')).toBeTruthy();
-    expect(screen.getByText('licenses.example.test')).toBeTruthy();
-    expect(screen.getByText('Available')).toBeTruthy();
+    expect(screen.queryByText('licenses.example.test')).toBeNull();
+    expect(screen.queryByText('Endpoint type')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Clear Local Session' })).toBeNull();
+    expect(screen.queryByText('App version')).toBeNull();
+    expect(screen.queryByText('Bridge entry')).toBeNull();
     expect(screen.queryByText('raw-device-id')).toBeNull();
     expect(document.body.textContent).not.toContain('/home/test');
     expect(appConfigSummary).toHaveBeenCalledTimes(1);
     expect(validateRuntime).toHaveBeenCalledTimes(1);
     expect(runtimeContext).toHaveBeenCalledTimes(1);
+    await fireEvent.input(screen.getByLabelText('Settings purchaser email'), { target: { value: 'buyer@example.com' } });
+    await fireEvent.input(screen.getByLabelText('Settings receipt reference'), { target: { value: 'receipt-2' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Request Device Reset' }));
+    expect(authStoreMock.store.requestReset).toHaveBeenCalledWith({
+      purchaser_email: 'buyer@example.com',
+      receipt_reference: 'receipt-2'
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Configuration' }));
+    expect(screen.getByText('API keys are stored securely and never shown after saving.')).toBeTruthy();
+    expect(screen.getAllByText('MuAPI key').length).toBeGreaterThan(0);
+    expect(screen.getByText('Local Processing')).toBeTruthy();
+    expect(screen.queryByText('License Worker')).toBeNull();
+    expect(screen.queryByText('Retry attempts')).toBeNull();
+    expect(screen.queryByText('licenses.example.test')).toBeNull();
+    await fireEvent.input(screen.getByLabelText('MuAPI key'), { target: { value: 'mu-secret' } });
+    await fireEvent.input(screen.getByLabelText('OpenAI key'), { target: { value: 'openai-secret' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Save API Keys' }));
+    expect(secureStoreSave).toHaveBeenCalledWith('MUAPI_API_KEY', 'mu-secret');
+    expect(secureStoreSave).toHaveBeenCalledWith('OPENAI_API_KEY', 'openai-secret');
+    expect(document.body.textContent).not.toContain('mu-secret');
+    expect(document.body.textContent).not.toContain('openai-secret');
+
+    await fireEvent.input(screen.getByLabelText('Whisper model'), { target: { value: 'small' } });
+    await fireEvent.input(screen.getByLabelText('Processing device'), { target: { value: 'cpu' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Save Local Processing' }));
+    expect(secureStoreSave).toHaveBeenCalledWith('LOCAL_WHISPER_MODEL', 'small');
+    expect(secureStoreSave).toHaveBeenCalledWith('LOCAL_WHISPER_DEVICE', 'cpu');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear API Keys' }));
+    expect(secureStoreDelete).toHaveBeenCalledWith('MUAPI_API_KEY');
+    expect(secureStoreDelete).toHaveBeenCalledWith('OPENAI_API_KEY');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }));
+    expect(screen.getByText('Check runtime tools, updates, and support data.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Refresh Status' })).toBeTruthy();
+    expect(screen.getByText('Runtime Tools')).toBeTruthy();
+    expect(screen.getByText('Available')).toBeTruthy();
+    expect(screen.getByText('Updates')).toBeTruthy();
+    expect(screen.getByText('Support')).toBeTruthy();
+
+    expect(screen.queryByRole('button', { name: 'Terms' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Policies' }));
+    expect(screen.getByText('Reference documents for use, privacy, refunds, and liability.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Terms' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Privacy' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Refund Policy' })).toBeTruthy();
   });
 
   it('test_device_bound_state_shows_reset_request_form', async () => {
@@ -274,6 +358,7 @@ describe('test_ui flow parity', () => {
 
     render(Page);
     await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Check for Updates' }));
 
     expect(await screen.findByText('Update 0.2.0 is available.')).toBeTruthy();
@@ -298,6 +383,7 @@ describe('test_ui flow parity', () => {
 
     render(Page);
     await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }));
 
     expect(await screen.findByText('Crash Report Draft')).toBeTruthy();
     expect(screen.getByText('Error: boom')).toBeTruthy();
@@ -311,9 +397,20 @@ describe('test_ui flow parity', () => {
   it('test_legal_page_states_manual_7_day_refund_policy', async () => {
     render(Page);
     expect(screen.queryByRole('button', { name: 'Legal' })).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: 'Terms' }));
+    expect(screen.queryByRole('button', { name: 'Terms' })).toBeNull();
 
-    expect(screen.getByText('Refund Policy')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    expect(screen.queryByText('Terms of Use')).toBeNull();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Policies' }));
+    expect(screen.getByText('Terms of Use')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Privacy' }));
+    expect(screen.getByText('Privacy Notice')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Refund Policy' }));
+
+    expect(screen.getAllByText('Refund Policy').length).toBeGreaterThan(0);
     expect(screen.getByText(/within 7 days from purchase/)).toBeTruthy();
     expect(screen.getByText('No automated refund engine is built into this app.')).toBeTruthy();
   });

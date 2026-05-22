@@ -7,7 +7,11 @@ use crate::modules::shared_contracts::errors::ApiError;
 use super::models::LocalSession;
 
 pub trait ApiClient {
-    fn activate(&self, req: &ActivateRequest, idempotency_key: &str) -> Result<ActivateResponse, ApiError>;
+    fn activate(
+        &self,
+        req: &ActivateRequest,
+        idempotency_key: &str,
+    ) -> Result<ActivateResponse, ApiError>;
     fn renew_session(&self, access_token: &str) -> Result<SessionRenewResponse, ApiError>;
     fn submit_reset(
         &self,

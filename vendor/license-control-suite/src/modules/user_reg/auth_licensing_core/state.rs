@@ -1,6 +1,10 @@
 use super::domain::{AuthError, BoundDeviceSummary, MaskedLicenseKey, ResetRequestId};
 use serde::{Deserialize, Serialize};
 
+fn default_zero_ms() -> i64 {
+    0
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SessionState {
     Unauthenticated,
@@ -8,6 +12,21 @@ pub enum SessionState {
         masked_license_key: MaskedLicenseKey,
         bound_device: BoundDeviceSummary,
         token_expires_at_ms: i64,
+        #[serde(default = "default_zero_ms")]
+        last_validated_at_ms: i64,
+        #[serde(default = "default_zero_ms")]
+        next_validation_due_ms: i64,
+    },
+    LicensedOfflineGrace {
+        masked_license_key: MaskedLicenseKey,
+        bound_device: BoundDeviceSummary,
+        token_expires_at_ms: i64,
+        #[serde(default = "default_zero_ms")]
+        last_validated_at_ms: i64,
+        #[serde(default = "default_zero_ms")]
+        next_validation_due_ms: i64,
+        #[serde(default = "default_zero_ms")]
+        grace_expires_at_ms: i64,
     },
     ReauthRequired {
         masked_license_key: Option<MaskedLicenseKey>,
@@ -41,11 +60,59 @@ impl SessionState {
         masked_license_key: MaskedLicenseKey,
         bound_device: BoundDeviceSummary,
         token_expires_at_ms: i64,
+        validated_at_ms: i64,
+        validation_interval_ms: i64,
     ) -> Self {
         Self::Licensed {
             masked_license_key,
             bound_device,
             token_expires_at_ms,
+            last_validated_at_ms: validated_at_ms,
+            next_validation_due_ms: validated_at_ms.saturating_add(validation_interval_ms),
+        }
+    }
+
+    pub fn into_offline_grace(
+        self,
+        now_ms: i64,
+        grace_ms: i64,
+    ) -> Result<Self, AuthError> {
+        match self {
+            SessionState::Licensed {
+                masked_license_key,
+                bound_device,
+                token_expires_at_ms,
+                last_validated_at_ms,
+                next_validation_due_ms,
+            } => Ok(SessionState::LicensedOfflineGrace {
+                masked_license_key,
+                bound_device,
+                token_expires_at_ms,
+                last_validated_at_ms,
+                next_validation_due_ms,
+                grace_expires_at_ms: now_ms.saturating_add(grace_ms),
+            }),
+            SessionState::LicensedOfflineGrace {
+                masked_license_key,
+                bound_device,
+                token_expires_at_ms,
+                last_validated_at_ms,
+                next_validation_due_ms,
+                grace_expires_at_ms,
+            } => {
+                if now_ms > grace_expires_at_ms {
+                    return Err(AuthError::ReauthRequired);
+                }
+                Ok(SessionState::LicensedOfflineGrace {
+                    masked_license_key,
+                    bound_device,
+                    token_expires_at_ms,
+                    last_validated_at_ms,
+                    next_validation_due_ms,
+                    grace_expires_at_ms,
+                })
+            }
+            _ => Err(AuthError::ReauthRequired),
         }
     }
 
@@ -121,8 +188,8 @@ impl DeviceResetStatus {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::domain::{DeviceFingerprint, DeviceId, DevicePublicKey};
+    use super::*;
 
     fn masked() -> MaskedLicenseKey {
         MaskedLicenseKey::new("••••-1234").unwrap()
@@ -144,8 +211,16 @@ mod tests {
 
     #[test]
     fn activation_moves_to_licensed() {
-        let state = SessionState::after_activation(masked(), bound_device(), 100);
+        let state = SessionState::after_activation(masked(), bound_device(), 100, 10, 1000);
         assert!(matches!(state, SessionState::Licensed { .. }));
+    }
+
+    #[test]
+    fn licensed_state_can_transition_to_offline_grace() {
+        let state = SessionState::after_activation(masked(), bound_device(), 100, 10, 1000)
+            .into_offline_grace(20, 5000)
+            .unwrap();
+        assert!(matches!(state, SessionState::LicensedOfflineGrace { .. }));
     }
 
     #[test]

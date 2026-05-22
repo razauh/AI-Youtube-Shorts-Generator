@@ -1,7 +1,5 @@
 #[cfg(feature = "desktop-tauri")]
-use license_control_suite::desktop::tauri::{
-    auth_command_handler, command_names,
-};
+use license_control_suite::desktop::tauri::{auth_command_handler, command_names};
 
 #[cfg(feature = "desktop-tauri")]
 pub fn composed_command_names() -> &'static [&'static str] {

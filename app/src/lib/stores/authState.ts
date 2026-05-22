@@ -14,6 +14,7 @@ export type AuthLifecycle =
   | 'unauthenticated'
   | 'activating'
   | 'licensed'
+  | 'licensed_offline_grace'
   | 'reauth_required'
   | 'device_bound_elsewhere'
   | 'reset_pending'
@@ -36,6 +37,25 @@ const initialState: AuthStateShape = {
   error: null,
 };
 
+function safeAuthMessage(code: string): string {
+  switch (code) {
+    case 'invalid_license_key':
+      return 'Invalid license key. Please check and try again.';
+    case 'device_already_bound':
+      return 'This license is already in use on another device.';
+    case 'reauth_required':
+      return 'Session expired. Re-enter your license key to continue.';
+    case 'worker_unreachable':
+      return 'Unable to reach the license service right now. Please try again shortly.';
+    case 'invalid_purchase_email':
+      return 'Invalid purchaser email. Please verify and try again.';
+    case 'reset_request_not_found':
+      return 'Reset request not found. Check the request ID and try again.';
+    default:
+      return 'Authentication failed. Please try again.';
+  }
+}
+
 function commandError(error: unknown): AuthCommandError {
   if (
     error &&
@@ -45,11 +65,12 @@ function commandError(error: unknown): AuthCommandError {
     typeof (error as { code: unknown }).code === 'string' &&
     typeof (error as { message: unknown }).message === 'string'
   ) {
-    return error as AuthCommandError;
+    const err = error as AuthCommandError;
+    return { code: err.code, message: safeAuthMessage(err.code) };
   }
   return {
     code: 'unknown',
-    message: error instanceof Error ? error.message : 'unknown auth error',
+    message: safeAuthMessage('unknown'),
   };
 }
 
@@ -57,6 +78,8 @@ function lifecycleFromAuthState(authState: AuthStateView): AuthLifecycle {
   switch (authState.status) {
     case 'licensed':
       return 'licensed';
+    case 'licensed_offline_grace':
+      return 'licensed_offline_grace';
     case 'reauth_required':
       return 'reauth_required';
     case 'reset_pending':

@@ -47,6 +47,8 @@ async fn licensed_auth_state() -> AuthAppState {
                     .expect("fingerprint"),
             },
             token_expires_at_ms: 1_700_000_000_000,
+            last_validated_at_ms: 1_700_000_000_000,
+            next_validation_due_ms: 1_700_086_400_000,
         })
         .await
         .expect("licensed state should be saved");

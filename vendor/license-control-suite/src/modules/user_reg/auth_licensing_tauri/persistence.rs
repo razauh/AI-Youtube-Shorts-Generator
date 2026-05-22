@@ -1,8 +1,8 @@
-use async_trait::async_trait;
 use crate::modules::user_reg::auth_licensing_core::{
     AccessToken, AuthError, DeviceKeyPair, DeviceResetStatus, LicenseKey, LocalStateStore,
     SecretStore, SessionState,
 };
+use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -178,10 +178,7 @@ impl KeychainSecretStore {
         )
     }
 
-    pub fn with_namespace(
-        service_name: impl Into<String>,
-        namespace: impl AsRef<str>,
-    ) -> Self {
+    pub fn with_namespace(service_name: impl Into<String>, namespace: impl AsRef<str>) -> Self {
         let namespace = namespace.as_ref();
         Self::with_entry_names(
             service_name,
@@ -294,7 +291,9 @@ impl SecretStore for KeychainSecretStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::user_reg::auth_licensing_core::{DevicePublicKey, MaskedLicenseKey, ResetRequestId};
+    use crate::modules::user_reg::auth_licensing_core::{
+        DevicePublicKey, MaskedLicenseKey, ResetRequestId,
+    };
 
     fn real_keyring_smoke_is_enabled_value(value: Option<&str>) -> bool {
         matches!(
@@ -312,7 +311,10 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("system time should be after epoch")
             .as_millis();
-        format!("license-control-suite.keyring-smoke.{stamp}.{}", std::process::id())
+        format!(
+            "license-control-suite.keyring-smoke.{stamp}.{}",
+            std::process::id()
+        )
     }
 
     fn disposable_keyring_test_store() -> KeychainSecretStore {
@@ -388,10 +390,17 @@ mod tests {
     #[test]
     fn real_keyring_test_uses_disposable_namespace() {
         let store = disposable_keyring_test_store();
-        assert_eq!(store.service_name(), "license-control-suite.real-keyring-smoke");
-        assert!(store.license_key_entry_name().starts_with("license-control-suite.keyring-smoke."));
+        assert_eq!(
+            store.service_name(),
+            "license-control-suite.real-keyring-smoke"
+        );
+        assert!(store
+            .license_key_entry_name()
+            .starts_with("license-control-suite.keyring-smoke."));
         assert!(store.access_token_entry_name().contains(".access_token"));
-        assert!(store.device_keypair_entry_name().contains(".device_keypair"));
+        assert!(store
+            .device_keypair_entry_name()
+            .contains(".device_keypair"));
     }
 
     #[tokio::test]
