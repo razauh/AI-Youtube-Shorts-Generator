@@ -19,12 +19,10 @@ fn license_state_serializes_to_canonical_values() {
 #[test]
 fn reset_request_state_serializes_to_canonical_values() {
     let cases = [
-        (ResetRequestState::Submitted, "\"SUBMITTED\""),
-        (ResetRequestState::UnderReview, "\"UNDER_REVIEW\""),
-        (ResetRequestState::Approved, "\"APPROVED\""),
-        (ResetRequestState::Rejected, "\"REJECTED\""),
-        (ResetRequestState::Expired, "\"EXPIRED\""),
-        (ResetRequestState::Cancelled, "\"CANCELLED\""),
+        (ResetRequestState::Pending, "\"pending\""),
+        (ResetRequestState::Approved, "\"approved\""),
+        (ResetRequestState::Rejected, "\"rejected\""),
+        (ResetRequestState::Expired, "\"expired\""),
     ];
 
     for (state, expected) in cases {

@@ -4,6 +4,7 @@ import sys
 import time
 
 from shorts_generator import generate_shorts
+from shorts_generator.local.transcriber import prefetch_local_model
 
 CONTRACT_VERSION = "1"
 
@@ -64,6 +65,18 @@ def main() -> int:
         return 0
 
     if action != "run_local":
+        if action == "prefetch_local_model":
+            try:
+                _ok(
+                    prefetch_local_model(
+                        model_name=payload.get("model", ""),
+                        device=payload.get("device", "auto"),
+                        cache_dir=payload.get("cache_dir"),
+                    )
+                )
+            except Exception as exc:
+                _err(str(exc), details={"stage": "prefetch_local_model"})
+            return 0
         _err(f"unknown action: {action}", code="BAD_ACTION")
         return 0
 

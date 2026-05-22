@@ -2,6 +2,10 @@ interface TauriCore {
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
 }
 
+interface TauriEventApi {
+  listen<T>(event: string, handler: (event: { payload: T }) => void): Promise<() => void>;
+}
+
 export interface DesktopRuntimeContext {
   appVersion: string;
   platform: string;
@@ -42,13 +46,67 @@ export interface AppConfigSummary {
   licenseWorkerRetryAttempts: number;
 }
 
+export type ApiKeyProvider = 'muapi' | 'openai';
+
+export interface ApiKeyProfile {
+  id: string;
+  label: string;
+  lastFour: string;
+  active: boolean;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface ApiKeyProfilesView {
+  provider: ApiKeyProvider;
+  envOverride: boolean;
+  profiles: ApiKeyProfile[];
+}
+
+export interface LocalModelProfile {
+  id: string;
+  label: string;
+  model: string;
+  device: string;
+  active: boolean;
+  downloadStatus: string;
+  error?: string | null;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface LocalModelProfilesView {
+  envOverride: boolean;
+  activeProfileId?: string | null;
+  profiles: LocalModelProfile[];
+}
+
+export interface LocalModelDownloadStatus {
+  active: boolean;
+  profileId?: string | null;
+  model?: string | null;
+  device?: string | null;
+  phase: string;
+  progress: number;
+  message: string;
+  error?: string | null;
+}
+
 let corePromise: Promise<TauriCore> | null = null;
+let eventPromise: Promise<TauriEventApi> | null = null;
 
 async function getCore(): Promise<TauriCore> {
   if (!corePromise) {
     corePromise = import('@tauri-apps/api/core') as Promise<TauriCore>;
   }
   return corePromise;
+}
+
+async function getEventApi(): Promise<TauriEventApi> {
+  if (!eventPromise) {
+    eventPromise = import('@tauri-apps/api/event') as Promise<TauriEventApi>;
+  }
+  return eventPromise;
 }
 
 export async function isDesktopRuntime(): Promise<boolean> {
@@ -131,4 +189,61 @@ export function secureStoreDelete(key: string): Promise<void> {
 
 export function secureStoreExists(key: string): Promise<boolean> {
   return invoke<boolean>('secure_store_exists', { key });
+}
+
+export function apiKeyProfiles(provider: ApiKeyProvider): Promise<ApiKeyProfilesView> {
+  return invoke<ApiKeyProfilesView>('api_key_profiles', { provider });
+}
+
+export function apiKeyProfileAdd(
+  provider: ApiKeyProvider,
+  label: string,
+  key: string,
+  activate = true
+): Promise<ApiKeyProfilesView> {
+  return invoke<ApiKeyProfilesView>('api_key_profile_add', { provider, label, key, activate });
+}
+
+export function apiKeyProfileActivate(provider: ApiKeyProvider, profileId: string): Promise<ApiKeyProfilesView> {
+  return invoke<ApiKeyProfilesView>('api_key_profile_activate', { provider, profileId });
+}
+
+export function apiKeyProfileDelete(provider: ApiKeyProvider, profileId: string): Promise<ApiKeyProfilesView> {
+  return invoke<ApiKeyProfilesView>('api_key_profile_delete', { provider, profileId });
+}
+
+export function localModelProfiles(): Promise<LocalModelProfilesView> {
+  return invoke<LocalModelProfilesView>('local_model_profiles');
+}
+
+export function localModelDownloadStatus(): Promise<LocalModelDownloadStatus> {
+  return invoke<LocalModelDownloadStatus>('local_model_download_status');
+}
+
+export function localModelProfileAdd(
+  label: string,
+  model: string,
+  device: string,
+  activate = true
+): Promise<LocalModelProfilesView> {
+  return invoke<LocalModelProfilesView>('local_model_profile_add', { label, model, device, activate });
+}
+
+export function localModelProfileActivate(profileId: string): Promise<LocalModelProfilesView> {
+  return invoke<LocalModelProfilesView>('local_model_profile_activate', { profileId });
+}
+
+export function localModelProfileDelete(profileId: string): Promise<LocalModelProfilesView> {
+  return invoke<LocalModelProfilesView>('local_model_profile_delete', { profileId });
+}
+
+export function localModelProfileRetryDownload(profileId: string): Promise<LocalModelProfilesView> {
+  return invoke<LocalModelProfilesView>('local_model_profile_retry_download', { profileId });
+}
+
+export async function listenLocalModelDownloadProgress(
+  handler: (status: LocalModelDownloadStatus) => void
+): Promise<() => void> {
+  const events = await getEventApi();
+  return events.listen<LocalModelDownloadStatus>('local-model-download-progress', (event) => handler(event.payload));
 }

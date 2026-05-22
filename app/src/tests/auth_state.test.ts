@@ -121,4 +121,32 @@ describe('authState store', () => {
     await state.pollResetStatus('reset-1');
     expect(get(state).lifecycle).toBe('reset_approved_unbound');
   });
+
+  it('can preserve licensed shell state after settings reset request', async () => {
+    requestDeviceReset.mockResolvedValue({
+      request_id: 'reset-1',
+      status: 'pending',
+      auth_state: { status: 'reset_pending', request_id: 'reset-1', masked_license_key: '****-1234' },
+    });
+    const { createAuthState } = await import('../lib/stores/authState');
+    const state = createAuthState();
+    state.reset();
+    getAuthState.mockResolvedValue({
+      status: 'licensed',
+      masked_license_key: '****-1234',
+      device_id: 'dev',
+      token_expires_at_ms: 1,
+      last_validated_at_ms: 1,
+      next_validation_due_ms: 2,
+    });
+
+    await state.bootstrap();
+    await state.requestReset(
+      { purchaser_email: 'buyer@example.com', receipt_reference: null },
+      { preserveLicensedSession: true },
+    );
+
+    expect(get(state).lifecycle).toBe('licensed');
+    expect(get(state).resetRequestId).toBe('reset-1');
+  });
 });

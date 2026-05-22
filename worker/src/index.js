@@ -10,6 +10,9 @@ import {
   writeAuditEvent,
   upsertResetRequest,
   getResetRequest,
+  listResetRequestsByStatus,
+  updateResetRequestStatus,
+  deactivateDeviceBindingsByLicenseHash,
 } from "./store.js";
 
 export default {
@@ -33,6 +36,15 @@ export default {
     }
     if (method === "POST" && path === "/v1/license/reset/status") {
       return handleResetStatus(request, env);
+    }
+    if (method === "GET" && path === "/v1/admin/reset/requests") {
+      return handleAdminListResetRequests(request, env);
+    }
+    if (method === "POST" && path === "/v1/admin/reset/approve") {
+      return handleAdminResetDecision(request, env, "approved");
+    }
+    if (method === "POST" && path === "/v1/admin/reset/reject") {
+      return handleAdminResetDecision(request, env, "rejected");
     }
     if (method === "POST" && path === "/v1/license/webhooks/gumroad") {
       return handleGumroadWebhook(request, env);
@@ -174,7 +186,11 @@ async function handleValidate(request, env) {
   }
 
   const binding = await getDeviceBinding(env.DB, tokenPayload.data.device_id);
-  if (!binding || binding.license_key_hash !== tokenPayload.data.license_key_hash) {
+  if (
+    !binding ||
+    binding.license_key_hash !== tokenPayload.data.license_key_hash ||
+    String(binding.status).toLowerCase() !== "active"
+  ) {
     return err("reauth_required", "Session device binding no longer exists.", rid, false, 401);
   }
 
@@ -298,6 +314,116 @@ async function handleResetStatus(request, env) {
   }
 
   return ok({ request_id: reqId, status });
+}
+
+async function handleAdminListResetRequests(request, env) {
+  const rid = requestId();
+  const auth = requireAdminAuth(request, env, rid);
+  if (auth) return auth;
+  if (!env?.DB) {
+    return err("storage", "D1 database binding is not configured.", rid, false, 503);
+  }
+
+  const url = new URL(request.url);
+  const status = url.searchParams.get("status") || "pending";
+  if (!RESET_STATUS.has(status)) {
+    return err("bad_request", "Invalid reset request status filter.", rid, false, 400);
+  }
+
+  try {
+    const result = await listResetRequestsByStatus(env.DB, status);
+    return ok({
+      requests: normalizeD1Results(result).map((row) => adminResetView(row)),
+    });
+  } catch {
+    return err("storage", "Failed to load reset requests.", rid, true, 503);
+  }
+}
+
+async function handleAdminResetDecision(request, env, decision) {
+  const rid = requestId();
+  const auth = requireAdminAuth(request, env, rid);
+  if (auth) return auth;
+  if (!env?.DB) {
+    return err("storage", "D1 database binding is not configured.", rid, false, 503);
+  }
+
+  const idem = request.headers.get("x-idempotency-key");
+  if (!idem) {
+    return err("bad_request", "Missing required header: X-Idempotency-Key", rid, false, 400);
+  }
+
+  const body = await readJson(request);
+  const requestIdValue = body?.request_id;
+  if (!requestIdValue) {
+    return err("bad_request", "Invalid admin reset decision payload.", rid, false, 400);
+  }
+
+  const payloadHash = stableHash({ decision, request_id: requestIdValue, reason: body.reason || null });
+  const replay = await getD1Idempotent(env.DB, `admin_reset_${decision}`, idem);
+  if (replay) {
+    if (replay.payload_hash !== payloadHash) {
+      return err(
+        "invalid_transition",
+        "Idempotency key reuse does not match original request payload.",
+        rid,
+        false,
+        409,
+      );
+    }
+    return new Response(replay.response_body, {
+      status: replay.response_status,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  }
+
+  const reset = await getResetRequest(env.DB, requestIdValue);
+  if (!reset) {
+    return err("reset_request_not_found", "Reset request was not found.", rid, false, 404);
+  }
+  if (reset.status !== "pending") {
+    return err("invalid_transition", "Reset request has already been decided.", rid, false, 409);
+  }
+  if (decision === "approved" && !reset.license_key_hash) {
+    return err("invalid_transition", "Reset request cannot be approved without a bound license.", rid, false, 409);
+  }
+
+  const now = Date.now();
+  try {
+    await updateResetRequestStatus(env.DB, reset.request_id, decision, now);
+    if (decision === "approved") {
+      await deactivateDeviceBindingsByLicenseHash(env.DB, reset.license_key_hash, now);
+    }
+    await writeAuditEvent(
+      env.DB,
+      decision === "approved" ? "device_reset_approved" : "device_reset_rejected",
+      "admin",
+      JSON.stringify({
+        request_id: reset.request_id,
+        has_license_hash: Boolean(reset.license_key_hash),
+        reason_present: Boolean(body.reason),
+      }),
+      now,
+    );
+  } catch {
+    return err("storage", "Failed to persist admin reset decision.", rid, true, 503);
+  }
+
+  const response = ok({
+    reset_request_id: reset.request_id,
+    status: decision,
+    license_state: decision === "approved" ? "UNBOUND" : "BOUND_ACTIVE",
+  });
+  const responseBody = await response.clone().text();
+  await putD1Idempotent(
+    env.DB,
+    `admin_reset_${decision}`,
+    idem,
+    payloadHash,
+    { status: response.status, body: responseBody },
+    now,
+  );
+  return response;
 }
 
 async function handleGumroadWebhook(request, env) {
@@ -526,6 +652,44 @@ function normalizeLicenseKey(value) {
 function maskLicenseKey(licenseKey) {
   const tail = String(licenseKey).slice(-4).toUpperCase();
   return `••••-${tail}`;
+}
+
+function maskEmail(value) {
+  const email = String(value || "");
+  const [local, domain] = email.split("@");
+  if (!local || !domain) return "";
+  const prefix = local.slice(0, 1);
+  return `${prefix}***@${domain}`;
+}
+
+function requireAdminAuth(request, env, requestIdValue) {
+  if (!env?.ADMIN_API_TOKEN) {
+    return err("unauthorized", "Admin API token is not configured.", requestIdValue, false, 401);
+  }
+  const header = request.headers.get("authorization") || "";
+  const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : "";
+  if (!token || token !== env.ADMIN_API_TOKEN) {
+    return err("unauthorized", "Admin authorization failed.", requestIdValue, false, 401);
+  }
+  return null;
+}
+
+function normalizeD1Results(result) {
+  if (Array.isArray(result)) return result;
+  if (Array.isArray(result?.results)) return result.results;
+  return [];
+}
+
+function adminResetView(row) {
+  return {
+    reset_request_id: row.request_id,
+    status: row.status,
+    license_state: row.status === "approved" ? "UNBOUND" : "BOUND_ACTIVE",
+    message: row.status,
+    purchaser_email: maskEmail(row.purchaser_email),
+    created_at_ms: row.created_at_ms,
+    updated_at_ms: row.updated_at_ms,
+  };
 }
 
 function base64UrlEncode(value) {

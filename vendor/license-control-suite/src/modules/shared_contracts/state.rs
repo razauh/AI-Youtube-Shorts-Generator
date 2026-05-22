@@ -11,12 +11,10 @@ pub enum LicenseState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[serde(rename_all = "snake_case")]
 pub enum ResetRequestState {
-    Submitted,
-    UnderReview,
+    Pending,
     Approved,
     Rejected,
     Expired,
-    Cancelled,
 }

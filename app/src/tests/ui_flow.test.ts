@@ -13,6 +13,17 @@ const validateRuntime = vi.fn();
 const runtimeContext = vi.fn();
 const secureStoreSave = vi.fn();
 const secureStoreDelete = vi.fn();
+const localModelProfiles = vi.fn();
+const localModelDownloadStatus = vi.fn();
+const localModelProfileAdd = vi.fn();
+const localModelProfileActivate = vi.fn();
+const localModelProfileDelete = vi.fn();
+const localModelProfileRetryDownload = vi.fn();
+const listenLocalModelDownloadProgress = vi.fn();
+const apiKeyProfiles = vi.fn();
+const apiKeyProfileAdd = vi.fn();
+const apiKeyProfileActivate = vi.fn();
+const apiKeyProfileDelete = vi.fn();
 const authStoreMock = vi.hoisted(() => {
   let value: any = {
     lifecycle: 'licensed',
@@ -69,7 +80,18 @@ vi.mock('../lib/api/runtimeClient', () => ({
   validateRuntime: (...args: unknown[]) => validateRuntime(...args),
   runtimeContext: (...args: unknown[]) => runtimeContext(...args),
   secureStoreSave: (...args: unknown[]) => secureStoreSave(...args),
-  secureStoreDelete: (...args: unknown[]) => secureStoreDelete(...args)
+  secureStoreDelete: (...args: unknown[]) => secureStoreDelete(...args),
+  localModelProfiles: (...args: unknown[]) => localModelProfiles(...args),
+  localModelDownloadStatus: (...args: unknown[]) => localModelDownloadStatus(...args),
+  localModelProfileAdd: (...args: unknown[]) => localModelProfileAdd(...args),
+  localModelProfileActivate: (...args: unknown[]) => localModelProfileActivate(...args),
+  localModelProfileDelete: (...args: unknown[]) => localModelProfileDelete(...args),
+  localModelProfileRetryDownload: (...args: unknown[]) => localModelProfileRetryDownload(...args),
+  listenLocalModelDownloadProgress: (...args: unknown[]) => listenLocalModelDownloadProgress(...args),
+  apiKeyProfiles: (...args: unknown[]) => apiKeyProfiles(...args),
+  apiKeyProfileAdd: (...args: unknown[]) => apiKeyProfileAdd(...args),
+  apiKeyProfileActivate: (...args: unknown[]) => apiKeyProfileActivate(...args),
+  apiKeyProfileDelete: (...args: unknown[]) => apiKeyProfileDelete(...args)
 }));
 
 vi.mock('../lib/stores/authState', () => ({
@@ -89,8 +111,73 @@ describe('test_ui flow parity', () => {
     runtimeContext.mockReset();
     secureStoreSave.mockReset();
     secureStoreDelete.mockReset();
+    localModelProfiles.mockReset();
+    localModelDownloadStatus.mockReset();
+    localModelProfileAdd.mockReset();
+    localModelProfileActivate.mockReset();
+    localModelProfileDelete.mockReset();
+    localModelProfileRetryDownload.mockReset();
+    listenLocalModelDownloadProgress.mockReset();
+    apiKeyProfiles.mockReset();
+    apiKeyProfileAdd.mockReset();
+    apiKeyProfileActivate.mockReset();
+    apiKeyProfileDelete.mockReset();
     secureStoreSave.mockResolvedValue(undefined);
     secureStoreDelete.mockResolvedValue(undefined);
+    localModelProfiles.mockResolvedValue({
+      envOverride: false,
+      activeProfileId: 'local-1',
+      profiles: [{ id: 'local-1', label: 'Base local', model: 'base', device: 'auto', active: true, downloadStatus: 'ready', error: null, createdAtMs: 1, updatedAtMs: 1 }]
+    });
+    localModelDownloadStatus.mockResolvedValue({
+      active: false,
+      profileId: null,
+      model: null,
+      device: null,
+      phase: 'idle',
+      progress: 0,
+      message: 'No local model download is running.',
+      error: null
+    });
+    localModelProfileAdd.mockImplementation((label: string, model: string, device: string) => Promise.resolve({
+      envOverride: false,
+      activeProfileId: 'local-new',
+      profiles: [{ id: 'local-new', label, model, device, active: true, downloadStatus: 'downloading', error: null, createdAtMs: 2, updatedAtMs: 2 }]
+    }));
+    localModelProfileActivate.mockImplementation((profileId: string) => Promise.resolve({
+      envOverride: false,
+      activeProfileId: profileId,
+      profiles: [{ id: profileId, label: 'Activated local', model: 'small', device: 'cpu', active: true, downloadStatus: 'ready', error: null, createdAtMs: 1, updatedAtMs: 2 }]
+    }));
+    localModelProfileDelete.mockResolvedValue({ envOverride: false, activeProfileId: null, profiles: [] });
+    localModelProfileRetryDownload.mockImplementation((profileId: string) => Promise.resolve({
+      envOverride: false,
+      activeProfileId: profileId,
+      profiles: [{ id: profileId, label: 'Retry local', model: 'small', device: 'cpu', active: true, downloadStatus: 'downloading', error: null, createdAtMs: 1, updatedAtMs: 2 }]
+    }));
+    listenLocalModelDownloadProgress.mockResolvedValue(() => {});
+    apiKeyProfiles.mockImplementation((provider: 'muapi' | 'openai') => Promise.resolve({
+      provider,
+      envOverride: false,
+      profiles: provider === 'muapi'
+        ? [{ id: 'muapi-1', label: 'Current MuAPI key', lastFour: '1111', active: true, createdAtMs: 1, updatedAtMs: 1 }]
+        : [{ id: 'openai-1', label: 'Current OpenAI key', lastFour: '2222', active: true, createdAtMs: 1, updatedAtMs: 1 }]
+    }));
+    apiKeyProfileAdd.mockImplementation((provider: 'muapi' | 'openai', label: string) => Promise.resolve({
+      provider,
+      envOverride: false,
+      profiles: [{ id: `${provider}-new`, label, lastFour: provider === 'muapi' ? 'cret' : 'cret', active: true, createdAtMs: 2, updatedAtMs: 2 }]
+    }));
+    apiKeyProfileActivate.mockImplementation((provider: 'muapi' | 'openai', profileId: string) => Promise.resolve({
+      provider,
+      envOverride: false,
+      profiles: [{ id: profileId, label: 'Activated profile', lastFour: '9999', active: true, createdAtMs: 1, updatedAtMs: 2 }]
+    }));
+    apiKeyProfileDelete.mockImplementation((provider: 'muapi' | 'openai') => Promise.resolve({
+      provider,
+      envOverride: false,
+      profiles: []
+    }));
     appConfigSummary.mockResolvedValue({
       licenseBackendMode: 'hosted',
       licenseWorkerEndpoint: 'licenses.example.test',
@@ -218,16 +305,26 @@ describe('test_ui flow parity', () => {
     expect(screen.getByRole('tab', { name: 'Configuration', selected: true })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Diagnostics' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Policies' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Local Processing', selected: true })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'API Providers' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Device Reset' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Local Processing help' })).toBeTruthy();
+    expect(screen.getByText('On-device pipeline')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'MuAPI Access help' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'OpenAI Access help' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Device Reset help' })).toBeNull();
+
+    await fireEvent.click(screen.getByRole('tab', { name: 'API Providers' }));
     expect(screen.getByRole('button', { name: 'MuAPI Access help' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'OpenAI Access help' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Local Processing help' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Device Reset help' })).toBeTruthy();
     expect(screen.getByText('Video provider')).toBeTruthy();
     expect(screen.getByText('LLM provider')).toBeTruthy();
-    expect(screen.getByText('On-device pipeline')).toBeTruthy();
-    expect(screen.getByText('License support')).toBeTruthy();
     expect(screen.getByText('MuAPI Configured')).toBeTruthy();
     expect(screen.getByText('OpenAI Configured')).toBeTruthy();
+    expect(screen.getByText('Current MuAPI key')).toBeTruthy();
+    expect(screen.getByText('Current OpenAI key')).toBeTruthy();
+    expect(screen.getAllByText('Active').length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText('License support')).toBeNull();
     expect(screen.queryByText('Model base')).toBeNull();
     expect(screen.queryByText('Device auto')).toBeNull();
     expect(screen.queryByText('licenses.example.test')).toBeNull();
@@ -240,41 +337,55 @@ describe('test_ui flow parity', () => {
     expect(appConfigSummary).toHaveBeenCalledTimes(1);
     expect(validateRuntime).toHaveBeenCalledTimes(1);
     expect(runtimeContext).toHaveBeenCalledTimes(1);
+    await fireEvent.click(screen.getByRole('tab', { name: 'Device Reset' }));
+    expect(screen.getByRole('button', { name: 'Device Reset help' })).toBeTruthy();
+    expect(screen.getByText('License support')).toBeTruthy();
     await fireEvent.input(screen.getByLabelText('Settings purchaser email'), { target: { value: 'buyer@example.com' } });
     await fireEvent.input(screen.getByLabelText('Settings receipt reference'), { target: { value: 'receipt-2' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Request Device Reset' }));
     expect(authStoreMock.store.requestReset).toHaveBeenCalledWith({
       purchaser_email: 'buyer@example.com',
       receipt_reference: 'receipt-2'
-    });
+    }, { preserveLicensedSession: true });
+    expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('tab', { name: 'Configuration' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'API Providers' }));
     expect(screen.getByText('MuAPI Access')).toBeTruthy();
     expect(screen.getByText('OpenAI Access')).toBeTruthy();
-    expect(screen.getAllByText('MuAPI key').length).toBeGreaterThan(0);
-    expect(screen.getByText('Local Processing')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Local Processing' })).toBeNull();
     expect(screen.queryByText('License Worker')).toBeNull();
     expect(screen.queryByText('Retry attempts')).toBeNull();
     expect(screen.queryByText('licenses.example.test')).toBeNull();
+    await fireEvent.input(screen.getByLabelText('MuAPI profile name'), { target: { value: 'Client MuAPI' } });
     await fireEvent.input(screen.getByLabelText('MuAPI key'), { target: { value: 'mu-secret' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save MuAPI Key' }));
-    expect(secureStoreSave).toHaveBeenCalledWith('MUAPI_API_KEY', 'mu-secret');
+    await fireEvent.click(screen.getByRole('button', { name: 'Add MuAPI Profile' }));
+    expect(apiKeyProfileAdd).toHaveBeenCalledWith('muapi', 'Client MuAPI', 'mu-secret', true);
+    await fireEvent.input(screen.getByLabelText('OpenAI profile name'), { target: { value: 'Client OpenAI' } });
     await fireEvent.input(screen.getByLabelText('OpenAI key'), { target: { value: 'openai-secret' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save OpenAI Key' }));
-    expect(secureStoreSave).toHaveBeenCalledWith('OPENAI_API_KEY', 'openai-secret');
+    await fireEvent.click(screen.getByRole('button', { name: 'Add OpenAI Profile' }));
+    expect(apiKeyProfileAdd).toHaveBeenCalledWith('openai', 'Client OpenAI', 'openai-secret', true);
     expect(document.body.textContent).not.toContain('mu-secret');
     expect(document.body.textContent).not.toContain('openai-secret');
 
-    await fireEvent.input(screen.getByLabelText('Whisper model'), { target: { value: 'small' } });
-    await fireEvent.input(screen.getByLabelText('Processing device'), { target: { value: 'cpu' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save Local Processing' }));
-    expect(secureStoreSave).toHaveBeenCalledWith('LOCAL_WHISPER_MODEL', 'small');
-    expect(secureStoreSave).toHaveBeenCalledWith('LOCAL_WHISPER_DEVICE', 'cpu');
+    await fireEvent.click(screen.getByRole('tab', { name: 'Local Processing' }));
+    await fireEvent.click(screen.getByLabelText('Whisper model'));
+    await fireEvent.click(screen.getByRole('option', { name: 'Small - better accuracy, still practical on CPU' }));
+    expect(screen.queryByRole('option', { name: 'Small - better accuracy, still practical on CPU' })).toBeNull();
+    await fireEvent.click(screen.getByLabelText('Whisper model'));
+    expect(screen.getByRole('option', { name: 'Medium - slower, higher accuracy' })).toBeTruthy();
+    await fireEvent.click(document.body);
+    expect(screen.queryByRole('option', { name: 'Medium - slower, higher accuracy' })).toBeNull();
+    await fireEvent.input(screen.getByLabelText('Local model profile name'), { target: { value: 'Small CPU' } });
+    await fireEvent.click(screen.getByLabelText('Processing device'));
+    await fireEvent.click(screen.getByRole('option', { name: 'CPU - most compatible' }));
+    expect(screen.queryByRole('option', { name: 'CPU - most compatible' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Save and Download' }));
+    expect(localModelProfileAdd).toHaveBeenCalledWith('Small CPU', 'small', 'cpu', true);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Clear MuAPI Key' }));
-    expect(secureStoreDelete).toHaveBeenCalledWith('MUAPI_API_KEY');
-    await fireEvent.click(screen.getByRole('button', { name: 'Clear OpenAI Key' }));
-    expect(secureStoreDelete).toHaveBeenCalledWith('OPENAI_API_KEY');
+    await fireEvent.click(screen.getByRole('tab', { name: 'API Providers' }));
+    await fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0]);
+    expect(apiKeyProfileDelete).toHaveBeenCalledWith('muapi', 'muapi-1');
 
     await fireEvent.click(screen.getByRole('tab', { name: 'Diagnostics' }));
     expect(screen.getByRole('tab', { name: 'Diagnostics', selected: true })).toBeTruthy();

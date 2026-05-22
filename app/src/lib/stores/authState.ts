@@ -30,6 +30,10 @@ export interface AuthStateShape {
   error: AuthCommandError | null;
 }
 
+interface RequestResetOptions {
+  preserveLicensedSession?: boolean;
+}
+
 const initialState: AuthStateShape = {
   lifecycle: 'checking',
   authState: null,
@@ -157,14 +161,26 @@ export function createAuthState() {
         });
       }
     },
-    requestReset: async (input: DeviceResetInput) => {
+    requestReset: async (input: DeviceResetInput, options: RequestResetOptions = {}) => {
       try {
         const view = await requestDeviceReset(input);
-        set({
-          lifecycle: 'reset_pending',
-          authState: view.auth_state,
-          resetRequestId: view.request_id,
-          error: null,
+        update((state) => {
+          if (
+            options.preserveLicensedSession &&
+            (state.lifecycle === 'licensed' || state.lifecycle === 'licensed_offline_grace')
+          ) {
+            return {
+              ...state,
+              resetRequestId: view.request_id,
+              error: null,
+            };
+          }
+          return {
+            lifecycle: 'reset_pending',
+            authState: view.auth_state,
+            resetRequestId: view.request_id,
+            error: null,
+          };
         });
       } catch (error) {
         update((state) => ({ ...state, lifecycle: 'error', error: commandError(error) }));

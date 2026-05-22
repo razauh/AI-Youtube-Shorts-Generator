@@ -25,7 +25,7 @@ impl ApiClient for FakeApi {
     fn activate(&self, _req: &ActivateRequest, _idempotency_key: &str) -> Result<ActivateResponse, ApiError> { unimplemented!() }
     fn renew_session(&self, _access_token: &str) -> Result<SessionRenewResponse, ApiError> { unimplemented!() }
     fn submit_reset(&self, _req: &DeviceResetRequest, _idempotency_key: &str) -> Result<DeviceResetRequestAccepted, ApiError> {
-        Ok(DeviceResetRequestAccepted { reset_request_id: "rr_123".into(), status: ResetRequestState::Submitted })
+        Ok(DeviceResetRequestAccepted { reset_request_id: "rr_123".into(), status: ResetRequestState::Pending })
     }
     fn reset_status(&self, _id: &str) -> Result<DeviceResetStatusResponse, ApiError> {
         Ok(DeviceResetStatusResponse {

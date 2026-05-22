@@ -29,7 +29,7 @@ fn reset_status_approved_message_is_stable() {
     };
 
     let json = serde_json::to_value(&res).unwrap();
-    assert_eq!(json["status"], "APPROVED");
+    assert_eq!(json["status"], "approved");
     assert_eq!(json["license_state"], "UNBOUND");
 }
 

@@ -7,6 +7,7 @@ class MockD1Database {
     this.idempotency = new Map();
     this.licenses = new Map();
     this.resetRequests = new Map();
+    this.deviceBindings = new Map();
     this.auditEvents = [];
   }
 
@@ -55,6 +56,16 @@ class MockStatement {
     return null;
   }
 
+  async all() {
+    if (this.sql.includes('FROM reset_requests')) {
+      const [status] = this.args;
+      return {
+        results: Array.from(this.db.resetRequests.values()).filter((row) => row.status === status),
+      };
+    }
+    return { results: [] };
+  }
+
   async run() {
     if (this.sql.includes('INSERT INTO idempotency_records')) {
       const [op, key, payloadHash, responseStatus, responseBody] = this.args;
@@ -81,7 +92,6 @@ class MockStatement {
 
     if (this.sql.includes('INSERT INTO device_bindings')) {
       const [deviceId, licenseKeyHash, publicKey, fingerprintJson, status, updatedAtMs] = this.args;
-      if (!this.db.deviceBindings) this.db.deviceBindings = new Map();
       this.db.deviceBindings.set(deviceId, {
         device_id: deviceId,
         license_key_hash: licenseKeyHash,
@@ -90,6 +100,33 @@ class MockStatement {
         status,
         updated_at_ms: updatedAtMs,
       });
+      return { success: true };
+    }
+
+    if (this.sql.includes('UPDATE reset_requests')) {
+      const [status, updatedAtMs, requestId] = this.args;
+      const existing = this.db.resetRequests.get(requestId);
+      if (existing) {
+        this.db.resetRequests.set(requestId, {
+          ...existing,
+          status,
+          updated_at_ms: updatedAtMs,
+        });
+      }
+      return { success: true };
+    }
+
+    if (this.sql.includes('UPDATE device_bindings')) {
+      const [updatedAtMs, licenseKeyHash] = this.args;
+      for (const [deviceId, binding] of this.db.deviceBindings.entries()) {
+        if (binding.license_key_hash === licenseKeyHash && binding.status === 'active') {
+          this.db.deviceBindings.set(deviceId, {
+            ...binding,
+            status: 'inactive',
+            updated_at_ms: updatedAtMs,
+          });
+        }
+      }
       return { success: true };
     }
 
@@ -205,6 +242,150 @@ test('reset request and reset status use D1 authoritative state', async () => {
   const statusJson = await status.json();
   assert.equal(statusJson.ok, true);
   assert.equal(statusJson.data.status, 'pending');
+});
+
+test('admin reset routes require bearer token', async () => {
+  const res = await call('/v1/admin/reset/requests?status=pending', {
+    method: 'GET',
+    env: { DB: new MockD1Database(), ADMIN_API_TOKEN: 'admin-secret' },
+  });
+  assert.equal(res.status, 401);
+  const json = await res.json();
+  assert.equal(json.error.code, 'unauthorized');
+});
+
+test('admin lists pending reset requests without raw purchaser email', async () => {
+  const db = new MockD1Database();
+  db.resetRequests.set('reset-1', {
+    request_id: 'reset-1',
+    license_key_hash: 'hash-1',
+    purchaser_email: 'buyer@example.com',
+    status: 'pending',
+    created_at_ms: 1,
+    updated_at_ms: 1,
+  });
+
+  const res = await call('/v1/admin/reset/requests?status=pending', {
+    method: 'GET',
+    headers: { authorization: 'Bearer admin-secret' },
+    env: { DB: db, ADMIN_API_TOKEN: 'admin-secret' },
+  });
+  assert.equal(res.status, 200);
+  const json = await res.json();
+  assert.equal(json.ok, true);
+  assert.equal(json.data.requests[0].status, 'pending');
+  assert.equal(json.data.requests[0].purchaser_email, 'b***@example.com');
+  assert.equal(JSON.stringify(json).includes('buyer@example.com'), false);
+});
+
+test('admin approve reset unbinds active device and idempotently replays', async () => {
+  const db = new MockD1Database();
+  const env = {
+    DB: db,
+    HASH_PEPPER: 'pepper_123',
+    TOKEN_SIGNING_SECRET: 'sign_123',
+    ADMIN_API_TOKEN: 'admin-secret',
+  };
+  const licenseKey = 'AAAA-BBBB-CCCC-DDDD';
+  const licenseHash = await sha256Hex(`${env.HASH_PEPPER}:${licenseKey}`);
+  db.licenses.set(licenseHash, {
+    license_key_hash: licenseHash,
+    purchaser_email: 'buyer@example.com',
+    entitlement_status: 'active',
+    provider: 'gumroad',
+    provider_sale_id: 'sale_9xy123',
+    updated_at_ms: Date.now(),
+  });
+
+  const activate = await call('/v1/license/activate', {
+    headers: { 'x-idempotency-key': 'act-admin-approve' },
+    body: {
+      license_key: licenseKey,
+      device_public_key: 'pubkey-abc-123',
+      fingerprint: { os_name: 'linux', platform_family: 'linux', arch: 'x86_64' },
+      app_version: '0.1.0',
+      timestamp_ms: Date.now(),
+    },
+    env,
+  });
+  const activateJson = await activate.json();
+
+  const reset = await call('/v1/license/reset/request', {
+    headers: { 'x-idempotency-key': 'reset-admin-approve' },
+    body: {
+      license_key: licenseKey,
+      masked_license_key: '••••-DDDD',
+      purchaser_email: 'buyer@example.com',
+      device_public_key: 'pubkey-abc-123',
+      fingerprint: { os_name: 'linux', platform_family: 'linux', arch: 'x86_64' },
+      app_version: '0.1.0',
+      timestamp_ms: Date.now(),
+      receipt_reference: null,
+    },
+    env,
+  });
+  const resetJson = await reset.json();
+
+  const approve = await call('/v1/admin/reset/approve', {
+    headers: { authorization: 'Bearer admin-secret', 'x-idempotency-key': 'approve-1' },
+    body: { request_id: resetJson.data.request_id },
+    env,
+  });
+  assert.equal(approve.status, 200);
+  const approveJson = await approve.json();
+  assert.equal(approveJson.data.status, 'approved');
+  assert.equal(approveJson.data.license_state, 'UNBOUND');
+  assert.equal(Array.from(db.deviceBindings.values())[0].status, 'inactive');
+
+  const replay = await call('/v1/admin/reset/approve', {
+    headers: { authorization: 'Bearer admin-secret', 'x-idempotency-key': 'approve-1' },
+    body: { request_id: resetJson.data.request_id },
+    env,
+  });
+  assert.equal(replay.status, 200);
+
+  const validate = await call('/v1/license/validate', {
+    body: { access_token: activateJson.data.access_token },
+    env,
+  });
+  assert.equal(validate.status, 401);
+  const validateJson = await validate.json();
+  assert.equal(validateJson.error.code, 'reauth_required');
+  assert.equal(db.auditEvents.at(-1).event_type, 'device_reset_approved');
+  assert.equal(JSON.stringify(db.auditEvents.at(-1)).includes('buyer@example.com'), false);
+});
+
+test('admin reject reset preserves active device binding', async () => {
+  const db = new MockD1Database();
+  db.resetRequests.set('reset-1', {
+    request_id: 'reset-1',
+    license_key_hash: 'hash-1',
+    purchaser_email: 'buyer@example.com',
+    status: 'pending',
+    created_at_ms: 1,
+    updated_at_ms: 1,
+  });
+  db.deviceBindings.set('dev-1', {
+    device_id: 'dev-1',
+    license_key_hash: 'hash-1',
+    public_key: 'pub',
+    fingerprint_json: '{}',
+    status: 'active',
+    updated_at_ms: 1,
+  });
+
+  const reject = await call('/v1/admin/reset/reject', {
+    headers: { authorization: 'Bearer admin-secret', 'x-idempotency-key': 'reject-1' },
+    body: { request_id: 'reset-1', reason: 'manual review failed' },
+    env: { DB: db, ADMIN_API_TOKEN: 'admin-secret' },
+  });
+  assert.equal(reject.status, 200);
+  const rejectJson = await reject.json();
+  assert.equal(rejectJson.data.status, 'rejected');
+  assert.equal(db.deviceBindings.get('dev-1').status, 'active');
+  assert.equal(db.resetRequests.get('reset-1').status, 'rejected');
+  assert.equal(db.auditEvents.at(-1).event_type, 'device_reset_rejected');
+  assert.equal(JSON.parse(db.auditEvents.at(-1).metadata_json).reason_present, true);
 });
 
 test('gumroad webhook accepts form-encoded ping payloads', async () => {

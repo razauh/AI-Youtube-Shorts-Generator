@@ -3,7 +3,22 @@
   import { runState } from '../lib/stores/runState';
   import { authState } from '../lib/stores/authState';
   import { openInFileManager, pickLocalVideoFile, pickOutputJsonPath, runGenerateAndStream } from '../lib/api/tauriClient';
-  import { appConfigSummary, runtimeContext, secureStoreDelete, secureStoreSave, validateRuntime } from '../lib/api/runtimeClient';
+  import {
+    apiKeyProfileActivate,
+    apiKeyProfileAdd,
+    apiKeyProfileDelete,
+    apiKeyProfiles,
+    appConfigSummary,
+    listenLocalModelDownloadProgress,
+    localModelDownloadStatus,
+    localModelProfileActivate,
+    localModelProfileAdd,
+    localModelProfileDelete,
+    localModelProfileRetryDownload,
+    localModelProfiles,
+    runtimeContext,
+    validateRuntime
+  } from '../lib/api/runtimeClient';
   import { checkForAppUpdate, installAppUpdate } from '../lib/api/updaterClient';
   import { CRASH_DRAFT_KEY, createCrashDraft, dismissCrashDraft, saveCrashDraft } from '../support/crashDraft';
   const LS = {
@@ -12,6 +27,23 @@
   };
   const APP_VERSION = import.meta.env?.VITE_APP_VERSION ?? '0.1.0';
   const CRASH_REPORT_ENDPOINT = import.meta.env?.VITE_CRASH_REPORT_ENDPOINT ?? '';
+  const WHISPER_MODEL_OPTIONS = [
+    { value: 'tiny', label: 'Tiny - fastest, lowest accuracy' },
+    { value: 'base', label: 'Base - default lightweight model' },
+    { value: 'small', label: 'Small - better accuracy, still practical on CPU' },
+    { value: 'medium', label: 'Medium - slower, higher accuracy' },
+    { value: 'large-v3', label: 'Large v3 - best quality, heavy' },
+    { value: 'large-v3-turbo', label: 'Large v3 Turbo - high quality, faster than large' },
+    { value: 'tiny.en', label: 'Tiny English - fastest for English only' },
+    { value: 'base.en', label: 'Base English - lightweight English only' },
+    { value: 'small.en', label: 'Small English - balanced English only' },
+    { value: 'medium.en', label: 'Medium English - accurate English only' }
+  ];
+  const WHISPER_DEVICE_OPTIONS = [
+    { value: 'auto', label: 'Auto - choose CUDA when available' },
+    { value: 'cpu', label: 'CPU - most compatible' },
+    { value: 'cuda', label: 'CUDA - NVIDIA GPU' }
+  ];
 
   let active = 'generate';
 
@@ -43,19 +75,27 @@
   let settingsRuntime = null;
   let settingsContext = null;
   let settingsTab = 'configuration';
+  let settingsConfigTab = 'local';
   let policiesTab = 'terms';
   let settingsResetEmail = '';
   let settingsResetReceipt = '';
+  let apiProfiles = { muapi: null, openai: null };
+  let localProfiles = null;
+  let localModelDownload = null;
+  let localProfileLabel = '';
+  let muapiProfileLabel = '';
   let muapiKeyInput = '';
+  let openaiProfileLabel = '';
   let openaiKeyInput = '';
-  let whisperModelInput = '';
-  let whisperDeviceInput = '';
+  let whisperModelInput = 'base';
+  let whisperDeviceInput = 'auto';
   let settingsActionStatus = '';
   let settingsActionTarget = '';
   let settingsActionKind = 'success';
   let settingsActionBusy = false;
   let theme = 'dark';
   let mobileNavOpen = false;
+  let openLocalDropdown = '';
 
   let projects = [];
   const localDraftStore = {
@@ -88,19 +128,45 @@
     $authState.lifecycle !== 'reset_expired';
   $: trimmedMuapiKey = muapiKeyInput.trim();
   $: trimmedOpenaiKey = openaiKeyInput.trim();
+  $: trimmedLocalProfileLabel = localProfileLabel.trim();
+  $: trimmedMuapiProfileLabel = muapiProfileLabel.trim();
+  $: trimmedOpenaiProfileLabel = openaiProfileLabel.trim();
   $: trimmedWhisperModel = whisperModelInput.trim();
   $: trimmedWhisperDevice = whisperDeviceInput.trim();
-  $: canSaveMuapiKey = Boolean(trimmedMuapiKey);
-  $: canSaveOpenaiKey = Boolean(trimmedOpenaiKey);
-  $: canClearMuapiKey = Boolean(settingsConfig?.muapiConfigured);
-  $: canClearOpenaiKey = Boolean(settingsConfig?.openaiConfigured);
-  $: canSaveLocalProcessing = Boolean(trimmedWhisperModel || trimmedWhisperDevice);
+  $: canSaveMuapiKey = Boolean(trimmedMuapiKey && trimmedMuapiProfileLabel);
+  $: canSaveOpenaiKey = Boolean(trimmedOpenaiKey && trimmedOpenaiProfileLabel);
+  $: canSaveLocalProcessing = Boolean(trimmedLocalProfileLabel && trimmedWhisperModel && trimmedWhisperDevice);
+  $: whisperModelOptions = optionListWithCurrent(WHISPER_MODEL_OPTIONS, settingsConfig?.localWhisperModel, 'Current custom model');
+  $: whisperDeviceOptions = optionListWithCurrent(WHISPER_DEVICE_OPTIONS, settingsConfig?.localWhisperDevice, 'Current custom device');
+  $: activeLocalModelProfile = localProfiles?.profiles?.find((profile) => profile.active) ?? null;
+  $: activeLocalModelDownloading =
+    Boolean(localModelDownload?.active && localModelDownload?.profileId === activeLocalModelProfile?.id) ||
+    activeLocalModelProfile?.downloadStatus === 'downloading' ||
+    activeLocalModelProfile?.downloadStatus === 'queued';
+  $: activeLocalModelFailed = activeLocalModelProfile?.downloadStatus === 'failed';
+  $: activeLocalModelNotReady =
+    Boolean(activeLocalModelProfile) &&
+    !['ready', 'downloading', 'queued'].includes(activeLocalModelProfile?.downloadStatus || '');
+  $: localRunBlocked = mode === 'local' && (activeLocalModelDownloading || activeLocalModelFailed || activeLocalModelNotReady);
+  $: localRunBlockedMessage = activeLocalModelDownloading
+    ? 'Local model is still downloading. You can use API mode now or wait for the local model to finish.'
+    : 'Active local model is not ready. Retry the download from Settings or use API mode.';
 
   onMount(() => {
+    let unlistenLocalModel = null;
     try {
       loadState();
       loadCrashDraftFromLocalStorage();
       authState.bootstrap();
+      loadLocalModelStatus();
+      listenLocalModelDownloadProgress((status) => {
+        localModelDownload = status;
+        loadLocalModelProfilesOnly();
+      }).then((unlisten) => {
+        unlistenLocalModel = unlisten;
+      }).catch(() => {
+        localModelDownload = null;
+      });
     } catch (_err) {
       projects = [];
       theme = 'dark';
@@ -113,6 +179,9 @@
     return () => {
       window.removeEventListener('error', captureWindowError);
       window.removeEventListener('unhandledrejection', captureUnhandledRejection);
+      if (unlistenLocalModel) {
+        unlistenLocalModel();
+      }
     };
   });
 
@@ -144,6 +213,7 @@
   function selectScreen(screen) {
     if (screen === 'settings') {
       settingsTab = 'configuration';
+      settingsConfigTab = 'local';
       policiesTab = 'terms';
       loadSettingsStatus();
       loadCrashDraftFromLocalStorage();
@@ -156,18 +226,49 @@
     settingsBusy = true;
     settingsError = '';
     try {
-      const [config, runtime, context] = await Promise.all([
+      const [config, runtime, context, muapiProfiles, openaiProfiles, modelProfiles, downloadStatus] = await Promise.all([
         appConfigSummary(),
         validateRuntime(),
-        runtimeContext()
+        runtimeContext(),
+        apiKeyProfiles('muapi'),
+        apiKeyProfiles('openai'),
+        localModelProfiles(),
+        localModelDownloadStatus()
       ]);
       settingsConfig = config;
       settingsRuntime = runtime;
       settingsContext = context;
+      apiProfiles = { muapi: muapiProfiles, openai: openaiProfiles };
+      localProfiles = modelProfiles;
+      localModelDownload = downloadStatus;
+      whisperModelInput = config.localWhisperModel || 'base';
+      whisperDeviceInput = config.localWhisperDevice || 'auto';
     } catch (err) {
       settingsError = err instanceof Error ? err.message : 'Unable to load settings status.';
     } finally {
       settingsBusy = false;
+    }
+  }
+
+  async function loadLocalModelStatus() {
+    try {
+      const [modelProfiles, downloadStatus] = await Promise.all([
+        localModelProfiles(),
+        localModelDownloadStatus()
+      ]);
+      localProfiles = modelProfiles;
+      localModelDownload = downloadStatus;
+    } catch (_err) {
+      localProfiles = null;
+      localModelDownload = null;
+    }
+  }
+
+  async function loadLocalModelProfilesOnly() {
+    try {
+      localProfiles = await localModelProfiles();
+    } catch (_err) {
+      // Keep the last known status; this is only a UI refresh helper.
     }
   }
 
@@ -194,7 +295,7 @@
       await authState.requestReset({
         purchaser_email,
         receipt_reference: settingsResetReceipt.trim() || null
-      });
+      }, { preserveLicensedSession: true });
       settingsResetReceipt = '';
       settingsActionStatus = 'Device reset request sent.';
       settingsActionTarget = 'reset';
@@ -209,7 +310,7 @@
       return;
     }
     if (!canSaveMuapiKey) {
-      settingsActionStatus = 'Please enter required values before continuing.';
+      settingsActionStatus = 'Enter a profile name and MuAPI key before continuing.';
       settingsActionTarget = 'muapi';
       settingsActionKind = 'error';
       return;
@@ -219,9 +320,13 @@
     settingsActionKind = 'success';
     settingsActionBusy = true;
     try {
-      await secureStoreSave('MUAPI_API_KEY', trimmedMuapiKey);
+      apiProfiles = {
+        ...apiProfiles,
+        muapi: await apiKeyProfileAdd('muapi', trimmedMuapiProfileLabel, trimmedMuapiKey, true)
+      };
       muapiKeyInput = '';
-      settingsActionStatus = 'MuAPI key saved.';
+      muapiProfileLabel = '';
+      settingsActionStatus = 'MuAPI profile saved and set active.';
       settingsActionTarget = 'muapi';
       settingsActionKind = 'success';
     } finally {
@@ -235,7 +340,7 @@
       return;
     }
     if (!canSaveOpenaiKey) {
-      settingsActionStatus = 'Please enter required values before continuing.';
+      settingsActionStatus = 'Enter a profile name and OpenAI key before continuing.';
       settingsActionTarget = 'openai';
       settingsActionKind = 'error';
       return;
@@ -245,9 +350,13 @@
     settingsActionKind = 'success';
     settingsActionBusy = true;
     try {
-      await secureStoreSave('OPENAI_API_KEY', trimmedOpenaiKey);
+      apiProfiles = {
+        ...apiProfiles,
+        openai: await apiKeyProfileAdd('openai', trimmedOpenaiProfileLabel, trimmedOpenaiKey, true)
+      };
       openaiKeyInput = '';
-      settingsActionStatus = 'OpenAI key saved.';
+      openaiProfileLabel = '';
+      settingsActionStatus = 'OpenAI profile saved and set active.';
       settingsActionTarget = 'openai';
       settingsActionKind = 'success';
     } finally {
@@ -256,14 +365,8 @@
     await loadSettingsStatus();
   }
 
-  async function clearMuapiKey() {
+  async function activateApiProfile(provider, profileId) {
     if (settingsActionBusy) {
-      return;
-    }
-    if (!canClearMuapiKey) {
-      settingsActionStatus = 'No saved values found for this action.';
-      settingsActionTarget = 'muapi';
-      settingsActionKind = 'error';
       return;
     }
     settingsActionStatus = '';
@@ -271,9 +374,12 @@
     settingsActionKind = 'success';
     settingsActionBusy = true;
     try {
-      await secureStoreDelete('MUAPI_API_KEY');
-      settingsActionStatus = 'MuAPI key cleared.';
-      settingsActionTarget = 'muapi';
+      apiProfiles = {
+        ...apiProfiles,
+        [provider]: await apiKeyProfileActivate(provider, profileId)
+      };
+      settingsActionStatus = `${provider === 'muapi' ? 'MuAPI' : 'OpenAI'} active profile updated.`;
+      settingsActionTarget = provider;
       settingsActionKind = 'success';
     } finally {
       settingsActionBusy = false;
@@ -281,14 +387,8 @@
     await loadSettingsStatus();
   }
 
-  async function clearOpenaiKey() {
+  async function deleteApiProfile(provider, profileId) {
     if (settingsActionBusy) {
-      return;
-    }
-    if (!canClearOpenaiKey) {
-      settingsActionStatus = 'No saved values found for this action.';
-      settingsActionTarget = 'openai';
-      settingsActionKind = 'error';
       return;
     }
     settingsActionStatus = '';
@@ -296,9 +396,12 @@
     settingsActionKind = 'success';
     settingsActionBusy = true;
     try {
-      await secureStoreDelete('OPENAI_API_KEY');
-      settingsActionStatus = 'OpenAI key cleared.';
-      settingsActionTarget = 'openai';
+      apiProfiles = {
+        ...apiProfiles,
+        [provider]: await apiKeyProfileDelete(provider, profileId)
+      };
+      settingsActionStatus = `${provider === 'muapi' ? 'MuAPI' : 'OpenAI'} profile deleted.`;
+      settingsActionTarget = provider;
       settingsActionKind = 'success';
     } finally {
       settingsActionBusy = false;
@@ -311,7 +414,7 @@
       return;
     }
     if (!canSaveLocalProcessing) {
-      settingsActionStatus = 'Please enter required values before continuing.';
+      settingsActionStatus = 'Enter a profile name, model, and processing device before continuing.';
       settingsActionTarget = 'local';
       settingsActionKind = 'error';
       return;
@@ -321,21 +424,115 @@
     settingsActionKind = 'success';
     settingsActionBusy = true;
     try {
-      if (trimmedWhisperModel) {
-        await secureStoreSave('LOCAL_WHISPER_MODEL', trimmedWhisperModel);
-      }
-      if (trimmedWhisperDevice) {
-        await secureStoreSave('LOCAL_WHISPER_DEVICE', trimmedWhisperDevice);
-      }
-      settingsActionStatus = 'Local processing settings saved.';
+      localProfiles = await localModelProfileAdd(
+        trimmedLocalProfileLabel,
+        trimmedWhisperModel,
+        trimmedWhisperDevice,
+        true
+      );
+      localProfileLabel = '';
+      settingsActionStatus = 'Local model profile saved. Download started in the background.';
       settingsActionTarget = 'local';
       settingsActionKind = 'success';
-      whisperModelInput = '';
-      whisperDeviceInput = '';
     } finally {
       settingsActionBusy = false;
     }
     await loadSettingsStatus();
+  }
+
+  async function activateLocalModelProfile(profileId) {
+    if (settingsActionBusy) {
+      return;
+    }
+    settingsActionBusy = true;
+    settingsActionTarget = 'local';
+    settingsActionKind = 'success';
+    settingsActionStatus = '';
+    try {
+      localProfiles = await localModelProfileActivate(profileId);
+      settingsActionStatus = 'Active local model profile updated.';
+    } finally {
+      settingsActionBusy = false;
+    }
+    await loadSettingsStatus();
+  }
+
+  async function retryLocalModelDownload(profileId) {
+    if (settingsActionBusy) {
+      return;
+    }
+    settingsActionBusy = true;
+    settingsActionTarget = 'local';
+    settingsActionKind = 'success';
+    settingsActionStatus = '';
+    try {
+      localProfiles = await localModelProfileRetryDownload(profileId);
+      settingsActionStatus = 'Local model download restarted.';
+    } finally {
+      settingsActionBusy = false;
+    }
+    await loadSettingsStatus();
+  }
+
+  async function deleteLocalModelProfile(profileId) {
+    if (settingsActionBusy) {
+      return;
+    }
+    settingsActionBusy = true;
+    settingsActionTarget = 'local';
+    settingsActionKind = 'success';
+    settingsActionStatus = '';
+    try {
+      localProfiles = await localModelProfileDelete(profileId);
+      settingsActionStatus = 'Local model profile deleted.';
+    } finally {
+      settingsActionBusy = false;
+    }
+    await loadSettingsStatus();
+  }
+
+  function localModelStatusLabel(status) {
+    const normalized = status || 'not_downloaded';
+    if (normalized === 'ready') return 'Ready';
+    if (normalized === 'downloading') return 'Downloading';
+    if (normalized === 'queued') return 'Queued';
+    if (normalized === 'failed') return 'Failed';
+    return 'Not downloaded';
+  }
+
+  function optionListWithCurrent(options, currentValue, currentLabel) {
+    const current = (currentValue || '').trim();
+    if (!current || options.some((option) => option.value === current)) {
+      return options;
+    }
+    return [{ value: current, label: currentLabel }, ...options];
+  }
+
+  function optionLabel(options, value) {
+    return options.find((option) => option.value === value)?.label ?? value;
+  }
+
+  function toggleLocalDropdown(name) {
+    openLocalDropdown = openLocalDropdown === name ? '' : name;
+  }
+
+  function chooseLocalOption(name, value) {
+    if (name === 'model') {
+      whisperModelInput = value;
+    } else {
+      whisperDeviceInput = value;
+    }
+    openLocalDropdown = '';
+  }
+
+  function closeLocalDropdown() {
+    openLocalDropdown = '';
+  }
+
+  function closeLocalDropdownOnEscape(event) {
+    if (event.key === 'Escape') {
+      openLocalDropdown = '';
+    }
   }
 
   function exportDebugLog() {
@@ -522,6 +719,15 @@
     if (sourceType === 'local') {
       mode = 'local';
     }
+    if (mode === 'local' && localRunBlocked) {
+      runState.onError({
+        error: localRunBlockedMessage,
+        mode,
+        source_video_url: url,
+        details: { stage: 'local_model_download' }
+      });
+      return;
+    }
     runState.start();
 
     try {
@@ -566,6 +772,9 @@
     }
   }
 </script>
+
+<svelte:body on:click|capture={closeLocalDropdown} />
+<svelte:window on:keydown={closeLocalDropdownOnEscape} />
 
 {#if $authState.lifecycle !== 'licensed' && $authState.lifecycle !== 'licensed_offline_grace'}
   <main class="license-shell">
@@ -666,6 +875,22 @@
     </aside>
 
     <section class="content">
+      {#if localModelDownload && (localModelDownload.active || localModelDownload.phase === 'failed' || localModelDownload.phase === 'ready')}
+        <section class="panel local-download-banner" aria-live="polite">
+          <div>
+            <p class="status-line">
+              Local model: {localModelDownload.message}
+              {#if localModelDownload.phase === 'failed' && localModelDownload.error}
+                <span class="error-text">{localModelDownload.error}</span>
+              {/if}
+            </p>
+            <div class="meter">
+              <span style={`width:${Math.max(0, Math.min(100, Math.round((localModelDownload.progress || 0) * 100)))}%`}></span>
+            </div>
+          </div>
+        </section>
+      {/if}
+
       {#if active === 'generate'}
       <section class="screen-header">
         <h2 class="screen-title">Generate Shorts</h2>
@@ -736,7 +961,10 @@
               <button type="button" on:click={chooseOutputJsonPath}>Choose Save Location</button>
             </div>
           </details>
-          <button type="submit">Run</button>
+          {#if localRunBlocked}
+            <p class="meta warn-text">{localRunBlockedMessage}</p>
+          {/if}
+          <button type="submit" disabled={localRunBlocked}>Run</button>
         </form>
       </section>
 
@@ -834,7 +1062,10 @@
             aria-selected={settingsTab === 'configuration'}
             aria-controls="settings-panel-configuration"
             class:active-tab={settingsTab === 'configuration'}
-            on:click={() => (settingsTab = 'configuration')}
+            on:click={() => {
+              settingsTab = 'configuration';
+              settingsConfigTab = 'local';
+            }}
           >Configuration</button>
           <button
             id="settings-tab-diagnostics"
@@ -863,10 +1094,36 @@
       {#if settingsTab === 'configuration'}
         <div
           id="settings-panel-configuration"
-          class="configuration-grid"
+          class="configuration-panel"
           role="tabpanel"
           aria-labelledby="settings-tab-configuration"
         >
+          <div class="config-subtabs" role="tablist" aria-label="Configuration sections">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={settingsConfigTab === 'local'}
+              class:active-tab={settingsConfigTab === 'local'}
+              on:click={() => (settingsConfigTab = 'local')}
+            >Local Processing</button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={settingsConfigTab === 'api'}
+              class:active-tab={settingsConfigTab === 'api'}
+              on:click={() => (settingsConfigTab = 'api')}
+            >API Providers</button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={settingsConfigTab === 'reset'}
+              class:active-tab={settingsConfigTab === 'reset'}
+              on:click={() => (settingsConfigTab = 'reset')}
+            >Device Reset</button>
+          </div>
+
+          <div class="configuration-grid" class:configuration-grid-single={settingsConfigTab !== 'api'}>
+          {#if settingsConfigTab === 'api'}
           <article class="panel config-card">
             <div class="config-card-head">
               <div>
@@ -883,13 +1140,38 @@
                 <span class:ok={settingsConfig?.muapiConfigured} class:warn={!settingsConfig?.muapiConfigured}>MuAPI {configuredLabel(settingsConfig?.muapiConfigured)}</span>
               </div>
             </div>
-            <form class="form config-form single-key-form" on:submit|preventDefault={saveMuapiKey}>
+            {#if apiProfiles.muapi?.envOverride}
+              <p class="meta warn-text">Environment variable override is active. Saved profiles are available, but runtime will use the environment key.</p>
+            {/if}
+            <form class="form config-form api-profile-form" on:submit|preventDefault={saveMuapiKey}>
+              <label>Profile name <input aria-label="MuAPI profile name" autocomplete="off" bind:value={muapiProfileLabel} placeholder="Personal MuAPI" /></label>
               <label>MuAPI key <input aria-label="MuAPI key" type="password" autocomplete="off" bind:value={muapiKeyInput} /></label>
               <div class="settings-actions">
-                <button type="submit" disabled={settingsActionBusy}>Save MuAPI Key</button>
-                <button class="button-secondary" type="button" on:click={clearMuapiKey} disabled={settingsActionBusy || !canClearMuapiKey}>Clear MuAPI Key</button>
+                <button type="submit" disabled={settingsActionBusy || !canSaveMuapiKey}>Add MuAPI Profile</button>
               </div>
             </form>
+            <div class="api-profile-list" aria-label="MuAPI key profiles">
+              {#if apiProfiles.muapi?.profiles?.length}
+                {#each apiProfiles.muapi.profiles as profile}
+                  <div class="api-profile-row">
+                    <div>
+                      <strong>{profile.label}</strong>
+                      <span class="meta">•••• {profile.lastFour}</span>
+                    </div>
+                    <div class="api-profile-actions">
+                      {#if profile.active}
+                        <span class="profile-active-badge">Active</span>
+                      {:else}
+                        <button class="button-secondary" type="button" on:click={() => activateApiProfile('muapi', profile.id)} disabled={settingsActionBusy}>Set active</button>
+                      {/if}
+                      <button class="button-secondary" type="button" on:click={() => deleteApiProfile('muapi', profile.id)} disabled={settingsActionBusy}>Delete</button>
+                    </div>
+                  </div>
+                {/each}
+              {:else}
+                <p class="meta">No MuAPI profiles yet. Add a named profile so saving does not silently replace another key.</p>
+              {/if}
+            </div>
             {#if settingsActionTarget === 'muapi' && settingsActionStatus}
               <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
             {/if}
@@ -911,18 +1193,45 @@
                 <span class:ok={settingsConfig?.openaiConfigured} class:warn={!settingsConfig?.openaiConfigured}>OpenAI {configuredLabel(settingsConfig?.openaiConfigured)}</span>
               </div>
             </div>
-            <form class="form config-form single-key-form" on:submit|preventDefault={saveOpenaiKey}>
+            {#if apiProfiles.openai?.envOverride}
+              <p class="meta warn-text">Environment variable override is active. Saved profiles are available, but runtime will use the environment key.</p>
+            {/if}
+            <form class="form config-form api-profile-form" on:submit|preventDefault={saveOpenaiKey}>
+              <label>Profile name <input aria-label="OpenAI profile name" autocomplete="off" bind:value={openaiProfileLabel} placeholder="Personal OpenAI" /></label>
               <label>OpenAI key <input aria-label="OpenAI key" type="password" autocomplete="off" bind:value={openaiKeyInput} /></label>
               <div class="settings-actions">
-                <button type="submit" disabled={settingsActionBusy}>Save OpenAI Key</button>
-                <button class="button-secondary" type="button" on:click={clearOpenaiKey} disabled={settingsActionBusy || !canClearOpenaiKey}>Clear OpenAI Key</button>
+                <button type="submit" disabled={settingsActionBusy || !canSaveOpenaiKey}>Add OpenAI Profile</button>
               </div>
             </form>
+            <div class="api-profile-list" aria-label="OpenAI key profiles">
+              {#if apiProfiles.openai?.profiles?.length}
+                {#each apiProfiles.openai.profiles as profile}
+                  <div class="api-profile-row">
+                    <div>
+                      <strong>{profile.label}</strong>
+                      <span class="meta">•••• {profile.lastFour}</span>
+                    </div>
+                    <div class="api-profile-actions">
+                      {#if profile.active}
+                        <span class="profile-active-badge">Active</span>
+                      {:else}
+                        <button class="button-secondary" type="button" on:click={() => activateApiProfile('openai', profile.id)} disabled={settingsActionBusy}>Set active</button>
+                      {/if}
+                      <button class="button-secondary" type="button" on:click={() => deleteApiProfile('openai', profile.id)} disabled={settingsActionBusy}>Delete</button>
+                    </div>
+                  </div>
+                {/each}
+              {:else}
+                <p class="meta">No OpenAI profiles yet. Add a named profile so saving does not silently replace another key.</p>
+              {/if}
+            </div>
             {#if settingsActionTarget === 'openai' && settingsActionStatus}
               <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
             {/if}
           </article>
+          {/if}
 
+          {#if settingsConfigTab === 'local'}
           <article class="panel config-card">
             <div class="config-card-head">
               <div>
@@ -936,18 +1245,123 @@
                 </div>
               </div>
             </div>
-            <form class="form config-form" on:submit|preventDefault={saveLocalProcessing}>
-              <label>Whisper model <input aria-label="Whisper model" bind:value={whisperModelInput} placeholder={settingsConfig?.localWhisperModel ?? ''} /></label>
-              <label>Processing device <input aria-label="Processing device" bind:value={whisperDeviceInput} placeholder={settingsConfig?.localWhisperDevice ?? ''} /></label>
+            {#if localProfiles?.envOverride}
+              <p class="meta warn-text">Environment variable override is active. Saved model profiles are available, but runtime will use the environment model/device.</p>
+            {/if}
+            <form class="form config-form local-processing-form" on:submit|preventDefault={saveLocalProcessing}>
+              <label>Profile name <input aria-label="Local model profile name" autocomplete="off" bind:value={localProfileLabel} placeholder="Balanced local model" /></label>
+              <label class="select-field">
+                <span class="field-label-row">
+                  Whisper model
+                  <span class="help-wrap field-help">
+                    <button class="help-button" type="button" aria-label="Whisper model help" aria-describedby="help-whisper-model">?</button>
+                    <span id="help-whisper-model" class="help-tooltip" role="tooltip">Small is the safest quality/speed upgrade from Base.</span>
+                  </span>
+                </span>
+                <div class="local-select" class:open={openLocalDropdown === 'model'}>
+                  <button
+                    class="local-select-button"
+                    type="button"
+                    aria-label="Whisper model"
+                    aria-haspopup="listbox"
+                    aria-expanded={openLocalDropdown === 'model'}
+                    on:click|preventDefault|stopPropagation={() => toggleLocalDropdown('model')}
+                  >
+                    <span>{optionLabel(whisperModelOptions, whisperModelInput)}</span>
+                  </button>
+                  {#if openLocalDropdown === 'model'}
+                    <div class="local-select-menu" role="listbox" aria-label="Whisper model options">
+                    {#each whisperModelOptions as option}
+                      <button
+                        class:active={whisperModelInput === option.value}
+                        type="button"
+                        role="option"
+                        aria-selected={whisperModelInput === option.value}
+                        on:click|preventDefault|stopPropagation={() => chooseLocalOption('model', option.value)}
+                      >
+                        {option.label}
+                      </button>
+                    {/each}
+                    </div>
+                  {/if}
+                </div>
+              </label>
+              <label class="select-field">
+                <span class="field-label-row">
+                  Processing device
+                  <span class="help-wrap field-help">
+                    <button class="help-button" type="button" aria-label="Processing device help" aria-describedby="help-processing-device">?</button>
+                    <span id="help-processing-device" class="help-tooltip" role="tooltip">This device choice is saved with the model profile and becomes active when that profile is selected.</span>
+                  </span>
+                </span>
+                <div class="local-select" class:open={openLocalDropdown === 'device'}>
+                  <button
+                    class="local-select-button"
+                    type="button"
+                    aria-label="Processing device"
+                    aria-haspopup="listbox"
+                    aria-expanded={openLocalDropdown === 'device'}
+                    on:click|preventDefault|stopPropagation={() => toggleLocalDropdown('device')}
+                  >
+                    <span>{optionLabel(whisperDeviceOptions, whisperDeviceInput)}</span>
+                  </button>
+                  {#if openLocalDropdown === 'device'}
+                    <div class="local-select-menu compact" role="listbox" aria-label="Processing device options">
+                    {#each whisperDeviceOptions as option}
+                      <button
+                        class:active={whisperDeviceInput === option.value}
+                        type="button"
+                        role="option"
+                        aria-selected={whisperDeviceInput === option.value}
+                        on:click|preventDefault|stopPropagation={() => chooseLocalOption('device', option.value)}
+                      >
+                        {option.label}
+                      </button>
+                    {/each}
+                    </div>
+                  {/if}
+                </div>
+              </label>
               <div class="settings-actions">
-                <button type="submit" disabled={settingsActionBusy}>Save Local Processing</button>
+                <button type="submit" disabled={settingsActionBusy || !canSaveLocalProcessing}>Save and Download</button>
               </div>
             </form>
+            <div class="api-profile-list local-model-list" aria-label="Local model profiles">
+              {#if localProfiles?.profiles?.length}
+                {#each localProfiles.profiles as profile}
+                  <div class="api-profile-row local-model-row">
+                    <div>
+                      <strong>{profile.label}</strong>
+                      <span class="meta">{profile.model} | {optionLabel(whisperDeviceOptions, profile.device)}</span>
+                      {#if profile.error}
+                        <span class="meta error-text">{profile.error}</span>
+                      {/if}
+                    </div>
+                    <div class="api-profile-actions">
+                      {#if profile.active}
+                        <span class="profile-active-badge">Active</span>
+                      {:else}
+                        <button class="button-secondary" type="button" on:click={() => activateLocalModelProfile(profile.id)} disabled={settingsActionBusy}>Set active</button>
+                      {/if}
+                      <span class:profile-ready-badge={profile.downloadStatus === 'ready'} class:profile-failed-badge={profile.downloadStatus === 'failed'} class="profile-status-badge">{localModelStatusLabel(profile.downloadStatus)}</span>
+                      {#if profile.downloadStatus === 'failed' || profile.downloadStatus === 'not_downloaded'}
+                        <button class="button-secondary" type="button" on:click={() => retryLocalModelDownload(profile.id)} disabled={settingsActionBusy}>Retry download</button>
+                      {/if}
+                      <button class="button-secondary" type="button" on:click={() => deleteLocalModelProfile(profile.id)} disabled={settingsActionBusy}>Delete</button>
+                    </div>
+                  </div>
+                {/each}
+              {:else}
+                <p class="meta">No local model profiles yet. Save a named profile to download and reuse a model.</p>
+              {/if}
+            </div>
             {#if settingsActionTarget === 'local' && settingsActionStatus}
               <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
             {/if}
           </article>
+          {/if}
 
+          {#if settingsConfigTab === 'reset'}
           <article class="panel config-card config-card-caution">
             <div class="config-card-head">
               <div>
@@ -966,10 +1380,15 @@
               <label>Receipt reference <input aria-label="Settings receipt reference" bind:value={settingsResetReceipt} /></label>
               <button class="button-danger" type="submit" disabled={settingsActionBusy}>Request Device Reset</button>
             </form>
+            {#if $authState.resetRequestId}
+              <p class="meta">Request: {$authState.resetRequestId}</p>
+            {/if}
             {#if settingsActionTarget === 'reset' && settingsActionStatus}
               <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
             {/if}
           </article>
+          {/if}
+          </div>
         </div>
       {/if}
 
@@ -1171,6 +1590,10 @@
     color: var(--color-state-error);
   }
 
+  .warn-text {
+    color: var(--color-state-warning);
+  }
+
   .content {
     display: grid;
     gap: var(--space-lg);
@@ -1351,11 +1774,58 @@
     border-color: color-mix(in srgb, var(--color-focus-ring) 45%, transparent);
   }
 
+  .configuration-panel {
+    display: grid;
+    gap: var(--space-md);
+  }
+
+  .config-subtabs {
+    display: inline-flex;
+    width: fit-content;
+    max-width: 100%;
+    gap: .18rem;
+    flex-wrap: wrap;
+    padding: .2rem;
+    border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--color-surface-input) 24%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border-strong) 12%, transparent);
+  }
+
+  .config-subtabs button {
+    flex: 0 1 auto;
+    padding: .48rem .72rem;
+    border-radius: var(--radius-pill);
+    color: var(--color-text-secondary);
+    background: transparent;
+    border: 1px solid transparent;
+    font-size: .82rem;
+    font-weight: 800;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+  }
+
+  .config-subtabs button.active-tab {
+    color: var(--color-secondary);
+    border-color: color-mix(in srgb, var(--color-secondary) 32%, transparent);
+    background: color-mix(in srgb, var(--color-secondary) 10%, transparent);
+  }
+
+  .config-subtabs button:not(.active-tab):hover {
+    color: var(--color-text-primary);
+    border-color: color-mix(in srgb, var(--color-border-strong) 28%, transparent);
+    background: color-mix(in srgb, var(--color-panel-card) 52%, transparent);
+  }
+
   .configuration-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-lg);
     align-items: start;
+  }
+
+  .configuration-grid-single {
+    grid-template-columns: minmax(0, 720px);
   }
 
   .config-card {
@@ -1480,8 +1950,191 @@
     align-items: end;
   }
 
-  .single-key-form label {
-    grid-column: 1 / -1;
+  .local-processing-form {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .local-download-banner {
+    padding: var(--space-md);
+  }
+
+  .local-model-row > div:first-child {
+    display: grid;
+    gap: .18rem;
+  }
+
+  .profile-status-badge {
+    padding: .34rem .55rem;
+    border-radius: var(--radius-pill);
+    color: var(--color-text-secondary);
+    border: 1px solid color-mix(in srgb, var(--color-border-strong) 26%, transparent);
+    background: color-mix(in srgb, var(--color-panel-card) 80%, transparent);
+    font-size: .78rem;
+    font-weight: 800;
+  }
+
+  .profile-ready-badge {
+    color: var(--color-state-success);
+    border-color: color-mix(in srgb, var(--color-state-success) 32%, transparent);
+  }
+
+  .profile-failed-badge {
+    color: var(--color-state-error);
+    border-color: color-mix(in srgb, var(--color-state-error) 32%, transparent);
+  }
+
+  .select-field {
+    min-width: 0;
+  }
+
+  .field-label-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    min-width: 0;
+  }
+
+  .field-help .help-tooltip {
+    max-width: 230px;
+    white-space: normal;
+  }
+
+  .local-select {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .local-select.open {
+    z-index: 30;
+  }
+
+  .local-select-button {
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 46px;
+    padding: .66rem 2.25rem .66rem .78rem;
+    text-align: left;
+    color: var(--color-text-primary);
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--color-surface-input) 92%, var(--color-panel-card)), var(--color-surface-input));
+    border: 1px solid color-mix(in srgb, var(--color-border-medium) 34%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, white 7%, transparent);
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  .local-select-button::after {
+    content: "";
+    position: absolute;
+    right: .85rem;
+    top: 50%;
+    width: .48rem;
+    height: .48rem;
+    border-right: 2px solid var(--color-text-tertiary);
+    border-bottom: 2px solid var(--color-text-tertiary);
+    transform: translateY(-62%) rotate(45deg);
+  }
+
+  .local-select-button span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .local-select-menu {
+    position: absolute;
+    top: calc(100% + .35rem);
+    left: 0;
+    right: 0;
+    display: grid;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    max-height: 220px;
+    overflow-y: auto;
+    padding: .35rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid color-mix(in srgb, var(--color-border-strong) 40%, transparent);
+    background: color-mix(in srgb, var(--color-panel-card) 94%, var(--color-surface-input));
+    box-shadow: 0 18px 44px rgba(0, 0, 0, .34);
+  }
+
+  .local-select-menu.compact {
+    max-height: 168px;
+  }
+
+  .local-select-menu button {
+    width: 100%;
+    min-width: 0;
+    padding: .58rem .62rem;
+    color: var(--color-text-secondary);
+    background: transparent;
+    border: 0;
+    border-radius: calc(var(--radius-sm) - 4px);
+    text-align: left;
+    font-weight: 650;
+    line-height: 1.25;
+  }
+
+  .local-select-menu button:hover,
+  .local-select-menu button:focus-visible {
+    color: var(--color-text-primary);
+    background: color-mix(in srgb, var(--color-primary) 18%, var(--color-panel-card));
+    outline: none;
+  }
+
+  .local-select-menu button.active {
+    color: var(--color-on-accent);
+    background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+  }
+
+  .api-profile-form label {
+    min-width: 0;
+  }
+
+  .api-profile-list {
+    display: grid;
+    gap: var(--space-sm);
+  }
+
+  .api-profile-row {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    align-items: center;
+    padding: .68rem;
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--color-surface-input) 44%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border-strong) 16%, transparent);
+  }
+
+  .api-profile-row strong {
+    display: block;
+    color: var(--color-text-primary);
+  }
+
+  .api-profile-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-xs);
+    flex-wrap: wrap;
+  }
+
+  .profile-active-badge {
+    padding: .34rem .55rem;
+    border-radius: var(--radius-pill);
+    color: var(--color-state-success);
+    border: 1px solid color-mix(in srgb, var(--color-state-success) 32%, transparent);
+    background: color-mix(in srgb, var(--color-state-success) 8%, transparent);
+    font-size: .78rem;
+    font-weight: 800;
   }
 
   .settings-actions {

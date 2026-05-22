@@ -10,6 +10,7 @@ fn main() {
             let auth_state = shorts_tauri_app::auth::build_auth_state(app.handle())
                 .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
             app.manage(auth_state);
+            app.manage(shorts_tauri_app::commands::runtime::LocalModelDownloadState::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -43,6 +44,16 @@ fn main() {
             shorts_tauri_app::commands::runtime::secure_store_load,
             shorts_tauri_app::commands::runtime::secure_store_delete,
             shorts_tauri_app::commands::runtime::secure_store_exists,
+            shorts_tauri_app::commands::runtime::api_key_profiles,
+            shorts_tauri_app::commands::runtime::api_key_profile_add,
+            shorts_tauri_app::commands::runtime::api_key_profile_activate,
+            shorts_tauri_app::commands::runtime::api_key_profile_delete,
+            shorts_tauri_app::commands::runtime::local_model_profiles,
+            shorts_tauri_app::commands::runtime::local_model_download_status,
+            shorts_tauri_app::commands::runtime::local_model_profile_add,
+            shorts_tauri_app::commands::runtime::local_model_profile_activate,
+            shorts_tauri_app::commands::runtime::local_model_profile_delete,
+            shorts_tauri_app::commands::runtime::local_model_profile_retry_download,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

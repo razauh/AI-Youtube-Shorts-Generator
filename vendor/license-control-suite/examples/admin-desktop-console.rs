@@ -41,14 +41,14 @@ impl AdminApi for ExampleAdminApi {
         Ok(AdminAuthVerifyResponse {
             admin_access_token: "desktop-admin-token".into(),
             expires_in_sec: 3600,
-            scopes: vec!["reset:read".into(), "reset:write".into()],
+            scopes: vec!["admin:read".into(), "admin:reset:write".into()],
         })
     }
 
     fn list_pending_resets(&self) -> Result<Vec<DeviceResetStatusResponse>, ApiError> {
         Ok(vec![DeviceResetStatusResponse {
             reset_request_id: "reset-1".into(),
-            status: ResetRequestState::UnderReview,
+            status: ResetRequestState::Pending,
             license_state: LicenseState::BoundActive,
             message: "pending".into(),
         }])

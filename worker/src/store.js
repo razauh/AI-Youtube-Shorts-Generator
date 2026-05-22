@@ -144,6 +144,18 @@ export async function getDeviceBinding(db, deviceId) {
     .first();
 }
 
+export async function listResetRequestsByStatus(db, status) {
+  return db
+    .prepare(
+      `SELECT request_id, license_key_hash, purchaser_email, status, created_at_ms, updated_at_ms
+       FROM reset_requests
+       WHERE status = ?
+       ORDER BY created_at_ms ASC`,
+    )
+    .bind(status)
+    .all();
+}
+
 export async function writeAuditEvent(db, eventType, actor, metadataJson, createdAtMs) {
   return db
     .prepare(
@@ -191,4 +203,26 @@ export async function getResetRequest(db, requestId) {
     )
     .bind(requestId)
     .first();
+}
+
+export async function updateResetRequestStatus(db, requestId, status, updatedAtMs) {
+  return db
+    .prepare(
+      `UPDATE reset_requests
+       SET status = ?, updated_at_ms = ?
+       WHERE request_id = ?`,
+    )
+    .bind(status, updatedAtMs, requestId)
+    .run();
+}
+
+export async function deactivateDeviceBindingsByLicenseHash(db, licenseKeyHash, updatedAtMs) {
+  return db
+    .prepare(
+      `UPDATE device_bindings
+       SET status = 'inactive', updated_at_ms = ?
+       WHERE license_key_hash = ? AND status = 'active'`,
+    )
+    .bind(updatedAtMs, licenseKeyHash)
+    .run();
 }

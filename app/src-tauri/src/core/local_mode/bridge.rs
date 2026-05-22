@@ -217,9 +217,42 @@ fn local_bridge_env() -> Result<Vec<(String, String)>, crate::core::errors::Conf
         ),
     ];
 
+    if let Ok(root) = std::env::var("LOCAL_MODEL_CACHE_DIR") {
+        if !root.trim().is_empty() {
+            env.push(("LOCAL_MODEL_CACHE_DIR".to_string(), root));
+        }
+    } else if let Some(cache_dir) = default_local_model_cache_dir() {
+        env.push(("LOCAL_MODEL_CACHE_DIR".to_string(), cache_dir));
+    }
+
     if !config.openai_api_key.is_empty() {
         env.push(("OPENAI_API_KEY".to_string(), config.openai_api_key));
     }
 
     Ok(env)
+}
+
+fn default_local_model_cache_dir() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        return std::env::var("APPDATA")
+            .ok()
+            .map(|root| format!("{root}\\ai-youtube-shorts-generator\\models\\huggingface"));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        return std::env::var("HOME").ok().map(|home| {
+            format!(
+                "{home}/Library/Application Support/ai-youtube-shorts-generator/models/huggingface"
+            )
+        });
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        std::env::var("HOME").ok().map(|home| {
+            format!("{home}/.local/share/ai-youtube-shorts-generator/models/huggingface")
+        })
+    }
 }
