@@ -96,7 +96,7 @@ describe('test_ui flow parity', () => {
       licenseWorkerEndpoint: 'licenses.example.test',
       licenseWorkerEndpointKind: 'remote',
       muapiConfigured: true,
-      openaiConfigured: false,
+      openaiConfigured: true,
       localWhisperModel: 'base',
       localWhisperDevice: 'auto',
       licenseWorkerTimeoutMs: 10000,
@@ -210,14 +210,26 @@ describe('test_ui flow parity', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
 
-    expect(await screen.findByText('Configure API access, manage device licensing, and review diagnostics and policies.')).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeTruthy();
+    expect(screen.queryByText('Configure API access, manage device licensing, and review diagnostics and policies.')).toBeNull();
     expect(screen.queryByText('License, device, and runtime status for this installation.')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
     expect(screen.queryByText('Open Folder is available for locally generated shorts.')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Configuration' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Diagnostics' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Policies' })).toBeTruthy();
-    expect(screen.getByText('API keys are stored securely and never shown after saving.')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Configuration', selected: true })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Diagnostics' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Policies' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'MuAPI Access help' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'OpenAI Access help' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Local Processing help' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Device Reset help' })).toBeTruthy();
+    expect(screen.getByText('Video provider')).toBeTruthy();
+    expect(screen.getByText('LLM provider')).toBeTruthy();
+    expect(screen.getByText('On-device pipeline')).toBeTruthy();
+    expect(screen.getByText('License support')).toBeTruthy();
+    expect(screen.getByText('MuAPI Configured')).toBeTruthy();
+    expect(screen.getByText('OpenAI Configured')).toBeTruthy();
+    expect(screen.queryByText('Model base')).toBeNull();
+    expect(screen.queryByText('Device auto')).toBeNull();
     expect(screen.queryByText('licenses.example.test')).toBeNull();
     expect(screen.queryByText('Endpoint type')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Clear Local Session' })).toBeNull();
@@ -236,17 +248,19 @@ describe('test_ui flow parity', () => {
       receipt_reference: 'receipt-2'
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Configuration' }));
-    expect(screen.getByText('API keys are stored securely and never shown after saving.')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('tab', { name: 'Configuration' }));
+    expect(screen.getByText('MuAPI Access')).toBeTruthy();
+    expect(screen.getByText('OpenAI Access')).toBeTruthy();
     expect(screen.getAllByText('MuAPI key').length).toBeGreaterThan(0);
     expect(screen.getByText('Local Processing')).toBeTruthy();
     expect(screen.queryByText('License Worker')).toBeNull();
     expect(screen.queryByText('Retry attempts')).toBeNull();
     expect(screen.queryByText('licenses.example.test')).toBeNull();
     await fireEvent.input(screen.getByLabelText('MuAPI key'), { target: { value: 'mu-secret' } });
-    await fireEvent.input(screen.getByLabelText('OpenAI key'), { target: { value: 'openai-secret' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save API Keys' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Save MuAPI Key' }));
     expect(secureStoreSave).toHaveBeenCalledWith('MUAPI_API_KEY', 'mu-secret');
+    await fireEvent.input(screen.getByLabelText('OpenAI key'), { target: { value: 'openai-secret' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Save OpenAI Key' }));
     expect(secureStoreSave).toHaveBeenCalledWith('OPENAI_API_KEY', 'openai-secret');
     expect(document.body.textContent).not.toContain('mu-secret');
     expect(document.body.textContent).not.toContain('openai-secret');
@@ -257,11 +271,13 @@ describe('test_ui flow parity', () => {
     expect(secureStoreSave).toHaveBeenCalledWith('LOCAL_WHISPER_MODEL', 'small');
     expect(secureStoreSave).toHaveBeenCalledWith('LOCAL_WHISPER_DEVICE', 'cpu');
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Clear API Keys' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear MuAPI Key' }));
     expect(secureStoreDelete).toHaveBeenCalledWith('MUAPI_API_KEY');
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear OpenAI Key' }));
     expect(secureStoreDelete).toHaveBeenCalledWith('OPENAI_API_KEY');
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Diagnostics' }));
+    expect(screen.getByRole('tab', { name: 'Diagnostics', selected: true })).toBeTruthy();
     expect(screen.getByText('Check runtime tools, updates, and support data.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Refresh Status' })).toBeTruthy();
     expect(screen.getByText('Runtime Tools')).toBeTruthy();
@@ -270,7 +286,8 @@ describe('test_ui flow parity', () => {
     expect(screen.getByText('Support')).toBeTruthy();
 
     expect(screen.queryByRole('button', { name: 'Terms' })).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: 'Policies' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Policies' }));
+    expect(screen.getByRole('tab', { name: 'Policies', selected: true })).toBeTruthy();
     expect(screen.getByText('Reference documents for use, privacy, refunds, and liability.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Terms' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Privacy' })).toBeTruthy();
@@ -356,7 +373,7 @@ describe('test_ui flow parity', () => {
 
     render(Page);
     await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Diagnostics' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Check for Updates' }));
 
     expect(await screen.findByText('Update 0.2.0 is available.')).toBeTruthy();
@@ -381,7 +398,7 @@ describe('test_ui flow parity', () => {
 
     render(Page);
     await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Diagnostics' }));
 
     expect(await screen.findByText('Crash Report Draft')).toBeTruthy();
     expect(screen.getByText('Error: boom')).toBeTruthy();
@@ -400,7 +417,7 @@ describe('test_ui flow parity', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     expect(screen.queryByText('Terms of Use')).toBeNull();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Policies' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Policies' }));
     expect(screen.getByText('Terms of Use')).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Privacy' }));

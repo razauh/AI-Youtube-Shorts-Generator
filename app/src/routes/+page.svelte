@@ -90,8 +90,10 @@
   $: trimmedOpenaiKey = openaiKeyInput.trim();
   $: trimmedWhisperModel = whisperModelInput.trim();
   $: trimmedWhisperDevice = whisperDeviceInput.trim();
-  $: canSaveApiKeys = Boolean(trimmedMuapiKey || trimmedOpenaiKey);
-  $: canClearApiKeys = Boolean(settingsConfig?.muapiConfigured || settingsConfig?.openaiConfigured);
+  $: canSaveMuapiKey = Boolean(trimmedMuapiKey);
+  $: canSaveOpenaiKey = Boolean(trimmedOpenaiKey);
+  $: canClearMuapiKey = Boolean(settingsConfig?.muapiConfigured);
+  $: canClearOpenaiKey = Boolean(settingsConfig?.openaiConfigured);
   $: canSaveLocalProcessing = Boolean(trimmedWhisperModel || trimmedWhisperDevice);
 
   onMount(() => {
@@ -202,13 +204,13 @@
     }
   }
 
-  async function saveApiKeys() {
+  async function saveMuapiKey() {
     if (settingsActionBusy) {
       return;
     }
-    if (!canSaveApiKeys) {
+    if (!canSaveMuapiKey) {
       settingsActionStatus = 'Please enter required values before continuing.';
-      settingsActionTarget = 'api';
+      settingsActionTarget = 'muapi';
       settingsActionKind = 'error';
       return;
     }
@@ -217,16 +219,10 @@
     settingsActionKind = 'success';
     settingsActionBusy = true;
     try {
-      if (trimmedMuapiKey) {
-        await secureStoreSave('MUAPI_API_KEY', trimmedMuapiKey);
-      }
-      if (trimmedOpenaiKey) {
-        await secureStoreSave('OPENAI_API_KEY', trimmedOpenaiKey);
-      }
+      await secureStoreSave('MUAPI_API_KEY', trimmedMuapiKey);
       muapiKeyInput = '';
-      openaiKeyInput = '';
-      settingsActionStatus = 'API keys saved.';
-      settingsActionTarget = 'api';
+      settingsActionStatus = 'MuAPI key saved.';
+      settingsActionTarget = 'muapi';
       settingsActionKind = 'success';
     } finally {
       settingsActionBusy = false;
@@ -234,13 +230,39 @@
     await loadSettingsStatus();
   }
 
-  async function clearApiKeys() {
+  async function saveOpenaiKey() {
     if (settingsActionBusy) {
       return;
     }
-    if (!canClearApiKeys) {
+    if (!canSaveOpenaiKey) {
+      settingsActionStatus = 'Please enter required values before continuing.';
+      settingsActionTarget = 'openai';
+      settingsActionKind = 'error';
+      return;
+    }
+    settingsActionStatus = '';
+    settingsActionTarget = '';
+    settingsActionKind = 'success';
+    settingsActionBusy = true;
+    try {
+      await secureStoreSave('OPENAI_API_KEY', trimmedOpenaiKey);
+      openaiKeyInput = '';
+      settingsActionStatus = 'OpenAI key saved.';
+      settingsActionTarget = 'openai';
+      settingsActionKind = 'success';
+    } finally {
+      settingsActionBusy = false;
+    }
+    await loadSettingsStatus();
+  }
+
+  async function clearMuapiKey() {
+    if (settingsActionBusy) {
+      return;
+    }
+    if (!canClearMuapiKey) {
       settingsActionStatus = 'No saved values found for this action.';
-      settingsActionTarget = 'api';
+      settingsActionTarget = 'muapi';
       settingsActionKind = 'error';
       return;
     }
@@ -250,9 +272,33 @@
     settingsActionBusy = true;
     try {
       await secureStoreDelete('MUAPI_API_KEY');
+      settingsActionStatus = 'MuAPI key cleared.';
+      settingsActionTarget = 'muapi';
+      settingsActionKind = 'success';
+    } finally {
+      settingsActionBusy = false;
+    }
+    await loadSettingsStatus();
+  }
+
+  async function clearOpenaiKey() {
+    if (settingsActionBusy) {
+      return;
+    }
+    if (!canClearOpenaiKey) {
+      settingsActionStatus = 'No saved values found for this action.';
+      settingsActionTarget = 'openai';
+      settingsActionKind = 'error';
+      return;
+    }
+    settingsActionStatus = '';
+    settingsActionTarget = '';
+    settingsActionKind = 'success';
+    settingsActionBusy = true;
+    try {
       await secureStoreDelete('OPENAI_API_KEY');
-      settingsActionStatus = 'API keys cleared.';
-      settingsActionTarget = 'api';
+      settingsActionStatus = 'OpenAI key cleared.';
+      settingsActionTarget = 'openai';
       settingsActionKind = 'success';
     } finally {
       settingsActionBusy = false;
@@ -777,14 +823,37 @@
     {#if active === 'settings'}
       <section class="screen-header">
         <h2 class="screen-title">Settings</h2>
-        <p class="meta">Configure API access, manage device licensing, and review diagnostics and policies.</p>
       </section>
 
-      <section class="panel">
-        <div class="settings-tabs" aria-label="Settings sections">
-          <button type="button" class:active-tab={settingsTab === 'configuration'} on:click={() => (settingsTab = 'configuration')}>Configuration</button>
-          <button type="button" class:active-tab={settingsTab === 'diagnostics'} on:click={() => (settingsTab = 'diagnostics')}>Diagnostics</button>
-          <button type="button" class:active-tab={settingsTab === 'policies'} on:click={() => (settingsTab = 'policies')}>Policies</button>
+      <section class="panel settings-nav-panel">
+        <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+          <button
+            id="settings-tab-configuration"
+            type="button"
+            role="tab"
+            aria-selected={settingsTab === 'configuration'}
+            aria-controls="settings-panel-configuration"
+            class:active-tab={settingsTab === 'configuration'}
+            on:click={() => (settingsTab = 'configuration')}
+          >Configuration</button>
+          <button
+            id="settings-tab-diagnostics"
+            type="button"
+            role="tab"
+            aria-selected={settingsTab === 'diagnostics'}
+            aria-controls="settings-panel-diagnostics"
+            class:active-tab={settingsTab === 'diagnostics'}
+            on:click={() => (settingsTab = 'diagnostics')}
+          >Diagnostics</button>
+          <button
+            id="settings-tab-policies"
+            type="button"
+            role="tab"
+            aria-selected={settingsTab === 'policies'}
+            aria-controls="settings-panel-policies"
+            class:active-tab={settingsTab === 'policies'}
+            on:click={() => (settingsTab = 'policies')}
+          >Policies</button>
         </div>
         {#if settingsError}
           <p class="meta error-text">{settingsError}</p>
@@ -792,51 +861,126 @@
       </section>
 
       {#if settingsTab === 'configuration'}
-        <section class="panel" role="tabpanel">
-          <h3>API Access</h3>
-          <p class="meta">API keys are stored securely and never shown after saving.</p>
-          <form class="form" on:submit|preventDefault={saveApiKeys}>
-            <label>MuAPI key <input aria-label="MuAPI key" type="password" autocomplete="off" bind:value={muapiKeyInput} /></label>
-            <label>OpenAI key <input aria-label="OpenAI key" type="password" autocomplete="off" bind:value={openaiKeyInput} /></label>
-            <button type="submit" disabled={settingsActionBusy}>Save API Keys</button>
-            <button type="button" on:click={clearApiKeys} disabled={settingsActionBusy}>Clear API Keys</button>
-          </form>
-          {#if settingsActionTarget === 'api' && settingsActionStatus}
-            <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
-          {/if}
-        </section>
-        <section class="panel" role="tabpanel">
-          <h3>Device Reset</h3>
-          <form class="form reset-form" on:submit|preventDefault={submitSettingsResetRequest}>
-            <label>Settings purchaser email <input aria-label="Settings purchaser email" type="email" bind:value={settingsResetEmail} /></label>
-            <label>Settings receipt reference <input aria-label="Settings receipt reference" bind:value={settingsResetReceipt} /></label>
-            <button type="submit" disabled={settingsActionBusy}>Request Device Reset</button>
-          </form>
-          {#if settingsActionTarget === 'reset' && settingsActionStatus}
-            <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
-          {/if}
-        </section>
-        <section class="panel" role="tabpanel">
-          <h3>Local Processing</h3>
-          <form class="form" on:submit|preventDefault={saveLocalProcessing}>
-            <label>Whisper model <input aria-label="Whisper model" bind:value={whisperModelInput} placeholder={settingsConfig?.localWhisperModel ?? ''} /></label>
-            <label>Processing device <input aria-label="Processing device" bind:value={whisperDeviceInput} placeholder={settingsConfig?.localWhisperDevice ?? ''} /></label>
-            <button type="submit" disabled={settingsActionBusy}>Save Local Processing</button>
-          </form>
-          {#if settingsActionTarget === 'local' && settingsActionStatus}
-            <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
-          {/if}
-        </section>
+        <div
+          id="settings-panel-configuration"
+          class="configuration-grid"
+          role="tabpanel"
+          aria-labelledby="settings-tab-configuration"
+        >
+          <article class="panel config-card">
+            <div class="config-card-head">
+              <div>
+                <p class="eyebrow">Video provider</p>
+                <div class="config-title-row">
+                  <h3>MuAPI Access</h3>
+                  <span class="help-wrap">
+                    <button class="help-button" type="button" aria-label="MuAPI Access help" aria-describedby="help-muapi">?</button>
+                    <span id="help-muapi" class="help-tooltip" role="tooltip">Store the MuAPI key used for hosted video processing.</span>
+                  </span>
+                </div>
+              </div>
+              <div class="status-chips" aria-label="MuAPI key status">
+                <span class:ok={settingsConfig?.muapiConfigured} class:warn={!settingsConfig?.muapiConfigured}>MuAPI {configuredLabel(settingsConfig?.muapiConfigured)}</span>
+              </div>
+            </div>
+            <form class="form config-form single-key-form" on:submit|preventDefault={saveMuapiKey}>
+              <label>MuAPI key <input aria-label="MuAPI key" type="password" autocomplete="off" bind:value={muapiKeyInput} /></label>
+              <div class="settings-actions">
+                <button type="submit" disabled={settingsActionBusy}>Save MuAPI Key</button>
+                <button class="button-secondary" type="button" on:click={clearMuapiKey} disabled={settingsActionBusy || !canClearMuapiKey}>Clear MuAPI Key</button>
+              </div>
+            </form>
+            {#if settingsActionTarget === 'muapi' && settingsActionStatus}
+              <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
+            {/if}
+          </article>
+
+          <article class="panel config-card">
+            <div class="config-card-head">
+              <div>
+                <p class="eyebrow">LLM provider</p>
+                <div class="config-title-row">
+                  <h3>OpenAI Access</h3>
+                  <span class="help-wrap">
+                    <button class="help-button" type="button" aria-label="OpenAI Access help" aria-describedby="help-openai">?</button>
+                    <span id="help-openai" class="help-tooltip" role="tooltip">Store the OpenAI key used for transcript and highlight generation.</span>
+                  </span>
+                </div>
+              </div>
+              <div class="status-chips" aria-label="OpenAI key status">
+                <span class:ok={settingsConfig?.openaiConfigured} class:warn={!settingsConfig?.openaiConfigured}>OpenAI {configuredLabel(settingsConfig?.openaiConfigured)}</span>
+              </div>
+            </div>
+            <form class="form config-form single-key-form" on:submit|preventDefault={saveOpenaiKey}>
+              <label>OpenAI key <input aria-label="OpenAI key" type="password" autocomplete="off" bind:value={openaiKeyInput} /></label>
+              <div class="settings-actions">
+                <button type="submit" disabled={settingsActionBusy}>Save OpenAI Key</button>
+                <button class="button-secondary" type="button" on:click={clearOpenaiKey} disabled={settingsActionBusy || !canClearOpenaiKey}>Clear OpenAI Key</button>
+              </div>
+            </form>
+            {#if settingsActionTarget === 'openai' && settingsActionStatus}
+              <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
+            {/if}
+          </article>
+
+          <article class="panel config-card">
+            <div class="config-card-head">
+              <div>
+                <p class="eyebrow">On-device pipeline</p>
+                <div class="config-title-row">
+                  <h3>Local Processing</h3>
+                  <span class="help-wrap">
+                    <button class="help-button" type="button" aria-label="Local Processing help" aria-describedby="help-local-processing">?</button>
+                    <span id="help-local-processing" class="help-tooltip" role="tooltip">Tune the local transcription defaults used when generation runs without API mode.</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <form class="form config-form" on:submit|preventDefault={saveLocalProcessing}>
+              <label>Whisper model <input aria-label="Whisper model" bind:value={whisperModelInput} placeholder={settingsConfig?.localWhisperModel ?? ''} /></label>
+              <label>Processing device <input aria-label="Processing device" bind:value={whisperDeviceInput} placeholder={settingsConfig?.localWhisperDevice ?? ''} /></label>
+              <div class="settings-actions">
+                <button type="submit" disabled={settingsActionBusy}>Save Local Processing</button>
+              </div>
+            </form>
+            {#if settingsActionTarget === 'local' && settingsActionStatus}
+              <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
+            {/if}
+          </article>
+
+          <article class="panel config-card config-card-caution">
+            <div class="config-card-head">
+              <div>
+                <p class="eyebrow">License support</p>
+                <div class="config-title-row">
+                  <h3>Device Reset</h3>
+                  <span class="help-wrap">
+                    <button class="help-button" type="button" aria-label="Device Reset help" aria-describedby="help-device-reset">?</button>
+                    <span id="help-device-reset" class="help-tooltip" role="tooltip">Request a reset only when this license needs to move to a different device.</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <form class="form reset-form" on:submit|preventDefault={submitSettingsResetRequest}>
+              <label>Purchaser email <input aria-label="Settings purchaser email" type="email" bind:value={settingsResetEmail} /></label>
+              <label>Receipt reference <input aria-label="Settings receipt reference" bind:value={settingsResetReceipt} /></label>
+              <button class="button-danger" type="submit" disabled={settingsActionBusy}>Request Device Reset</button>
+            </form>
+            {#if settingsActionTarget === 'reset' && settingsActionStatus}
+              <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
+            {/if}
+          </article>
+        </div>
       {/if}
 
       {#if settingsTab === 'diagnostics'}
-        <section class="panel" role="tabpanel">
+        <div id="settings-panel-diagnostics" class="panel" role="tabpanel" aria-labelledby="settings-tab-diagnostics">
           <h3>Diagnostics</h3>
           <p class="meta">Check runtime tools, updates, and support data.</p>
           <button type="button" on:click={loadSettingsStatus} disabled={settingsBusy}>
             {settingsBusy ? 'Refreshing...' : 'Refresh Status'}
           </button>
-        </section>
+        </div>
         {#if settingsRuntime?.tools?.length}
           <section class="panel">
             <h3>Runtime Tools</h3>
@@ -898,7 +1042,7 @@
         </section>
       {/if}
       {#if settingsTab === 'policies'}
-        <section class="panel" role="tabpanel">
+        <div id="settings-panel-policies" class="panel" role="tabpanel" aria-labelledby="settings-tab-policies">
           <h3>Policies</h3>
           <p class="meta">Reference documents for use, privacy, refunds, and liability.</p>
           <div class="row">
@@ -906,8 +1050,8 @@
             <button type="button" class:active-tab={policiesTab === 'privacy'} on:click={() => (policiesTab = 'privacy')}>Privacy</button>
             <button type="button" class:active-tab={policiesTab === 'refund'} on:click={() => (policiesTab = 'refund')}>Refund Policy</button>
           </div>
-        </section>
-        <section class="panel legal-copy" role="tabpanel">
+        </div>
+        <div class="panel legal-copy" role="tabpanel">
           {#if policiesTab === 'terms'}
             <h3>Terms of Use</h3>
             <p>By using this software, you confirm you have rights to process input media and comply with platform policies and local laws.</p>
@@ -929,7 +1073,7 @@
           <h3>Support and Contact</h3>
           <p>For enterprise support and data requests, use the Support section and attach generated debug logs.</p>
           <p class="meta">Last updated: May 8, 2026</p>
-        </section>
+        </div>
       {/if}
     {/if}
 
@@ -1146,6 +1290,10 @@
   }
 
   button { cursor: pointer; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); color: var(--color-on-accent); border: none; font-weight: 700; }
+  button:disabled {
+    cursor: not-allowed;
+    opacity: .58;
+  }
   nav button { text-align: left; background: color-mix(in srgb, var(--color-panel-card) 80%, transparent); color: var(--color-text-primary); border: 1px solid color-mix(in srgb, var(--color-border-strong) 25%, transparent); }
   nav button.active { border-color: var(--color-focus-ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-focus-ring) 25%, transparent); }
   .form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); align-items: end; }
@@ -1167,11 +1315,18 @@
 
   .toolbar { display: grid; gap: var(--space-sm); margin-bottom: var(--space-md); }
 
+  .settings-nav-panel {
+    padding: var(--space-sm);
+  }
+
   .settings-tabs {
     display: flex;
-    gap: var(--space-sm);
+    gap: var(--space-xs);
     flex-wrap: wrap;
-    margin-top: var(--space-sm);
+    padding: .22rem;
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--color-surface-input) 52%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border-strong) 16%, transparent);
   }
   .settings-tabs button,
   .row button.active-tab {
@@ -1179,10 +1334,173 @@
     color: var(--color-text-primary);
     border: 1px solid color-mix(in srgb, var(--color-border-strong) 25%, transparent);
   }
+  .settings-tabs button {
+    flex: 1 1 145px;
+    position: relative;
+    transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+  }
   .settings-tabs button.active-tab,
   .row button.active-tab {
     border-color: var(--color-focus-ring);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-focus-ring) 25%, transparent);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 28%, var(--color-panel-card)), color-mix(in srgb, var(--color-secondary) 18%, var(--color-panel-card)));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-focus-ring) 22%, transparent);
+  }
+
+  .settings-tabs button:not(.active-tab):hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--color-focus-ring) 45%, transparent);
+  }
+
+  .configuration-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-lg);
+    align-items: start;
+  }
+
+  .config-card {
+    display: grid;
+    gap: var(--space-md);
+    overflow: visible;
+    z-index: 1;
+  }
+
+  .config-card:hover,
+  .config-card:focus-within {
+    z-index: 8;
+  }
+
+  .config-card-caution {
+    border-color: color-mix(in srgb, var(--color-state-warning) 38%, transparent);
+  }
+
+  .config-card-head {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-md);
+    align-items: flex-start;
+  }
+
+  .eyebrow {
+    margin: 0 0 var(--space-xs);
+    color: var(--color-secondary);
+    font-size: .74rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .config-title-row {
+    display: flex;
+    gap: var(--space-xs);
+    align-items: center;
+  }
+
+  .config-title-row h3 {
+    margin-bottom: 0;
+  }
+
+  .help-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .help-button {
+    width: 1.35rem;
+    height: 1.35rem;
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    border-radius: var(--radius-pill);
+    color: var(--color-text-secondary);
+    background: color-mix(in srgb, var(--color-panel-card) 78%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border-strong) 30%, transparent);
+    font-size: .78rem;
+    line-height: 1;
+  }
+
+  .help-tooltip {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + var(--space-sm));
+    width: max-content;
+    max-width: 250px;
+    padding: .45rem .55rem;
+    border-radius: var(--radius-sm);
+    color: var(--color-text-primary);
+    background: color-mix(in srgb, var(--color-surface-input) 94%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border-strong) 28%, transparent);
+    box-shadow: 0 14px 36px rgba(0, 0, 0, .32);
+    font-size: .82rem;
+    line-height: 1.35;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, .2rem);
+    transition: opacity 140ms ease, transform 140ms ease;
+    z-index: 20;
+  }
+
+  .help-wrap:hover .help-tooltip,
+  .help-button:focus-visible + .help-tooltip {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+
+  .status-chips {
+    display: flex;
+    gap: var(--space-xs);
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 180px;
+  }
+
+  .status-chips span {
+    padding: .32rem .52rem;
+    border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--color-panel-card) 76%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border-strong) 18%, transparent);
+    color: var(--color-text-secondary);
+    font-size: .82rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .status-chips span.ok {
+    color: var(--color-state-success);
+    border-color: color-mix(in srgb, var(--color-state-success) 34%, transparent);
+  }
+
+  .status-chips span.warn {
+    color: var(--color-state-warning);
+    border-color: color-mix(in srgb, var(--color-state-warning) 32%, transparent);
+    text-align: left;
+  }
+
+  .config-form {
+    align-items: end;
+  }
+
+  .single-key-form label {
+    grid-column: 1 / -1;
+  }
+
+  .settings-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+  }
+
+  .button-secondary,
+  .button-danger {
+    color: var(--color-text-primary);
+    border: 1px solid color-mix(in srgb, var(--color-border-strong) 28%, transparent);
+    background: color-mix(in srgb, var(--color-panel-card) 82%, transparent);
+  }
+
+  .button-danger {
+    color: var(--color-state-warning);
+    border-color: color-mix(in srgb, var(--color-state-warning) 36%, transparent);
   }
 
   .tool-row {
@@ -1275,6 +1593,28 @@
       min-height: auto;
       overflow: visible;
       padding-right: 0;
+    }
+    .configuration-grid {
+      grid-template-columns: 1fr;
+    }
+    .config-card-head {
+      display: grid;
+    }
+    .help-tooltip {
+      left: auto;
+      right: 0;
+      transform: translate(0, .2rem);
+    }
+    .help-wrap:hover .help-tooltip,
+    .help-button:focus-visible + .help-tooltip {
+      transform: translate(0, 0);
+    }
+    .status-chips {
+      justify-content: flex-start;
+      min-width: 0;
+    }
+    .settings-actions {
+      display: grid;
     }
     .tool-row {
       align-items: stretch;

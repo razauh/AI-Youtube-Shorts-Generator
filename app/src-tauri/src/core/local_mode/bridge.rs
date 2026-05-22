@@ -1,7 +1,9 @@
+use crate::core::config::Config;
 use crate::core::contracts::{ErrorEnvelope, PipelineSuccess};
 use crate::runtime::python_runtime::{invoke_python, PythonInvokeRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::fmt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BridgeRequest {
@@ -38,11 +40,26 @@ pub struct BridgeError {
     pub stderr: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct BridgeConfig {
     pub python_bin: String,
     pub entry_script: String,
+    pub env: Vec<(String, String)>,
     pub timeout_ms: u64,
+}
+
+impl fmt::Debug for BridgeConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BridgeConfig")
+            .field("python_bin", &self.python_bin)
+            .field("entry_script", &self.entry_script)
+            .field(
+                "env_keys",
+                &self.env.iter().map(|(key, _)| key).collect::<Vec<_>>(),
+            )
+            .field("timeout_ms", &self.timeout_ms)
+            .finish()
+    }
 }
 
 pub fn run_local_bridge(
@@ -68,6 +85,7 @@ pub fn run_local_bridge(
     let proc = invoke_python(PythonInvokeRequest {
         python_bin: cfg.python_bin,
         entry_script: cfg.entry_script,
+        env: cfg.env,
         stdin_json,
         timeout_ms: cfg.timeout_ms,
     })
@@ -154,6 +172,12 @@ pub fn run_local_pipeline_bridge(
         python_bin: std::env::var("PYTHON_BRIDGE_BIN").unwrap_or_else(|_| "python3".to_string()),
         entry_script: std::env::var("PYTHON_BRIDGE_ENTRY")
             .unwrap_or_else(|_| "../../python_legacy/bridge_entry.py".to_string()),
+        env: local_bridge_env().map_err(|e| ErrorEnvelope {
+            mode: Some("local".to_string()),
+            source_video_url: None,
+            error: e.to_string(),
+            details: Some(json!({"stage": "local_bridge_config"})),
+        })?,
         timeout_ms: std::env::var("PYTHON_BRIDGE_TIMEOUT_MS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
@@ -178,4 +202,24 @@ pub fn run_local_pipeline_bridge(
         error: format!("invalid local bridge payload: {e}"),
         details: Some(json!({"stage": "local_bridge"})),
     })
+}
+
+fn local_bridge_env() -> Result<Vec<(String, String)>, crate::core::errors::ConfigError> {
+    let config = Config::from_env()?;
+    let mut env = vec![
+        (
+            "LOCAL_WHISPER_MODEL".to_string(),
+            config.local_whisper_model,
+        ),
+        (
+            "LOCAL_WHISPER_DEVICE".to_string(),
+            config.local_whisper_device,
+        ),
+    ];
+
+    if !config.openai_api_key.is_empty() {
+        env.push(("OPENAI_API_KEY".to_string(), config.openai_api_key));
+    }
+
+    Ok(env)
 }

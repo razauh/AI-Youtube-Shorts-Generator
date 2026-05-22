@@ -1,15 +1,32 @@
+use std::fmt;
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ProcessSpec {
     pub program: String,
     pub args: Vec<String>,
+    pub env: Vec<(String, String)>,
     pub stdin_bytes: Vec<u8>,
     pub timeout_ms: u64,
+}
+
+impl fmt::Debug for ProcessSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProcessSpec")
+            .field("program", &self.program)
+            .field("args", &self.args)
+            .field(
+                "env_keys",
+                &self.env.iter().map(|(key, _)| key).collect::<Vec<_>>(),
+            )
+            .field("stdin_bytes_len", &self.stdin_bytes.len())
+            .field("timeout_ms", &self.timeout_ms)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -40,11 +57,18 @@ fn read_pipe(
 }
 
 pub fn run_supervised(spec: ProcessSpec) -> Result<ProcessOutput, ProcessError> {
-    let mut child = Command::new(&spec.program)
+    let mut command = Command::new(&spec.program);
+    command
         .args(&spec.args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    for (key, value) in &spec.env {
+        command.env(key, value);
+    }
+
+    let mut child = command
         .spawn()
         .map_err(|e| ProcessError::Spawn(e.to_string()))?;
 
