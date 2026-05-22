@@ -211,15 +211,13 @@ describe('test_ui flow parity', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
 
     expect(await screen.findByText('Configure API access, manage device licensing, and review diagnostics and policies.')).toBeTruthy();
-    expect(screen.getByText('License, device, and runtime status for this installation.')).toBeTruthy();
+    expect(screen.queryByText('License, device, and runtime status for this installation.')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
     expect(screen.queryByText('Open Folder is available for locally generated shorts.')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Overview' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Configuration' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Diagnostics' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Policies' })).toBeTruthy();
-    expect(screen.getByText('Registered on this device')).toBeTruthy();
-    expect(screen.getByText('****-1234')).toBeTruthy();
+    expect(screen.getByText('API keys are stored securely and never shown after saving.')).toBeTruthy();
     expect(screen.queryByText('licenses.example.test')).toBeNull();
     expect(screen.queryByText('Endpoint type')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Clear Local Session' })).toBeNull();

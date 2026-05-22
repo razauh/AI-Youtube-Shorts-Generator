@@ -3,7 +3,7 @@
   import { runState } from '../lib/stores/runState';
   import { authState } from '../lib/stores/authState';
   import { openInFileManager, pickLocalVideoFile, pickOutputJsonPath, runGenerateAndStream } from '../lib/api/tauriClient';
-  import { appConfigSummary, runtimeContext, validateRuntime } from '../lib/api/runtimeClient';
+  import { appConfigSummary, runtimeContext, secureStoreDelete, secureStoreSave, validateRuntime } from '../lib/api/runtimeClient';
   import { checkForAppUpdate, installAppUpdate } from '../lib/api/updaterClient';
   import { CRASH_DRAFT_KEY, createCrashDraft, dismissCrashDraft, saveCrashDraft } from '../support/crashDraft';
   const LS = {
@@ -42,6 +42,18 @@
   let settingsConfig = null;
   let settingsRuntime = null;
   let settingsContext = null;
+  let settingsTab = 'configuration';
+  let policiesTab = 'terms';
+  let settingsResetEmail = '';
+  let settingsResetReceipt = '';
+  let muapiKeyInput = '';
+  let openaiKeyInput = '';
+  let whisperModelInput = '';
+  let whisperDeviceInput = '';
+  let settingsActionStatus = '';
+  let settingsActionTarget = '';
+  let settingsActionKind = 'success';
+  let settingsActionBusy = false;
   let theme = 'dark';
   let mobileNavOpen = false;
 
@@ -74,6 +86,13 @@
     $authState.lifecycle !== 'reset_pending' &&
     $authState.lifecycle !== 'reset_rejected' &&
     $authState.lifecycle !== 'reset_expired';
+  $: trimmedMuapiKey = muapiKeyInput.trim();
+  $: trimmedOpenaiKey = openaiKeyInput.trim();
+  $: trimmedWhisperModel = whisperModelInput.trim();
+  $: trimmedWhisperDevice = whisperDeviceInput.trim();
+  $: canSaveApiKeys = Boolean(trimmedMuapiKey || trimmedOpenaiKey);
+  $: canClearApiKeys = Boolean(settingsConfig?.muapiConfigured || settingsConfig?.openaiConfigured);
+  $: canSaveLocalProcessing = Boolean(trimmedWhisperModel || trimmedWhisperDevice);
 
   onMount(() => {
     try {
@@ -122,6 +141,8 @@
 
   function selectScreen(screen) {
     if (screen === 'settings') {
+      settingsTab = 'configuration';
+      policiesTab = 'terms';
       loadSettingsStatus();
       loadCrashDraftFromLocalStorage();
     }
@@ -148,32 +169,127 @@
     }
   }
 
-  function authStatusLabel() {
-    return $authState.lifecycle.replaceAll('_', ' ');
-  }
-
-  function deviceRegistrationLabel() {
-    return (
-      ($authState.authState?.status === 'licensed' ||
-        $authState.authState?.status === 'licensed_offline_grace') &&
-      $authState.authState.device_id
-    )
-      ? 'Registered on this device'
-      : 'Not registered on this device';
-  }
-
-  function tokenExpiryLabel() {
-    if (
-      $authState.authState?.status !== 'licensed' &&
-      $authState.authState?.status !== 'licensed_offline_grace'
-    ) {
-      return 'Unavailable';
-    }
-    return new Date($authState.authState.token_expires_at_ms).toLocaleString();
-  }
-
   function configuredLabel(value) {
     return value ? 'Configured' : 'Not configured';
+  }
+
+  async function submitSettingsResetRequest() {
+    const purchaser_email = settingsResetEmail.trim();
+    if (settingsActionBusy) {
+      return;
+    }
+    if (!purchaser_email) {
+      settingsActionStatus = 'Please enter purchaser email before continuing.';
+      settingsActionTarget = 'reset';
+      settingsActionKind = 'error';
+      return;
+    }
+    settingsActionStatus = '';
+    settingsActionTarget = '';
+    settingsActionKind = 'success';
+    settingsActionBusy = true;
+    try {
+      await authState.requestReset({
+        purchaser_email,
+        receipt_reference: settingsResetReceipt.trim() || null
+      });
+      settingsResetReceipt = '';
+      settingsActionStatus = 'Device reset request sent.';
+      settingsActionTarget = 'reset';
+      settingsActionKind = 'success';
+    } finally {
+      settingsActionBusy = false;
+    }
+  }
+
+  async function saveApiKeys() {
+    if (settingsActionBusy) {
+      return;
+    }
+    if (!canSaveApiKeys) {
+      settingsActionStatus = 'Please enter required values before continuing.';
+      settingsActionTarget = 'api';
+      settingsActionKind = 'error';
+      return;
+    }
+    settingsActionStatus = '';
+    settingsActionTarget = '';
+    settingsActionKind = 'success';
+    settingsActionBusy = true;
+    try {
+      if (trimmedMuapiKey) {
+        await secureStoreSave('MUAPI_API_KEY', trimmedMuapiKey);
+      }
+      if (trimmedOpenaiKey) {
+        await secureStoreSave('OPENAI_API_KEY', trimmedOpenaiKey);
+      }
+      muapiKeyInput = '';
+      openaiKeyInput = '';
+      settingsActionStatus = 'API keys saved.';
+      settingsActionTarget = 'api';
+      settingsActionKind = 'success';
+    } finally {
+      settingsActionBusy = false;
+    }
+    await loadSettingsStatus();
+  }
+
+  async function clearApiKeys() {
+    if (settingsActionBusy) {
+      return;
+    }
+    if (!canClearApiKeys) {
+      settingsActionStatus = 'No saved values found for this action.';
+      settingsActionTarget = 'api';
+      settingsActionKind = 'error';
+      return;
+    }
+    settingsActionStatus = '';
+    settingsActionTarget = '';
+    settingsActionKind = 'success';
+    settingsActionBusy = true;
+    try {
+      await secureStoreDelete('MUAPI_API_KEY');
+      await secureStoreDelete('OPENAI_API_KEY');
+      settingsActionStatus = 'API keys cleared.';
+      settingsActionTarget = 'api';
+      settingsActionKind = 'success';
+    } finally {
+      settingsActionBusy = false;
+    }
+    await loadSettingsStatus();
+  }
+
+  async function saveLocalProcessing() {
+    if (settingsActionBusy) {
+      return;
+    }
+    if (!canSaveLocalProcessing) {
+      settingsActionStatus = 'Please enter required values before continuing.';
+      settingsActionTarget = 'local';
+      settingsActionKind = 'error';
+      return;
+    }
+    settingsActionStatus = '';
+    settingsActionTarget = '';
+    settingsActionKind = 'success';
+    settingsActionBusy = true;
+    try {
+      if (trimmedWhisperModel) {
+        await secureStoreSave('LOCAL_WHISPER_MODEL', trimmedWhisperModel);
+      }
+      if (trimmedWhisperDevice) {
+        await secureStoreSave('LOCAL_WHISPER_DEVICE', trimmedWhisperDevice);
+      }
+      settingsActionStatus = 'Local processing settings saved.';
+      settingsActionTarget = 'local';
+      settingsActionKind = 'success';
+      whisperModelInput = '';
+      whisperDeviceInput = '';
+    } finally {
+      settingsActionBusy = false;
+    }
+    await loadSettingsStatus();
   }
 
   function exportDebugLog() {
@@ -498,9 +614,6 @@
         <button class:active={active === 'library'} on:click={() => selectScreen('library')}>Shorts Library</button>
         <button class:active={active === 'settings'} on:click={() => selectScreen('settings')}>Settings</button>
       </nav>
-      <div class="sidebar-secondary" class:nav-open={mobileNavOpen}>
-        <button class:active={active === 'legal'} type="button" on:click={() => selectScreen('legal')}>Terms</button>
-      </div>
       <button class="theme-toggle" class:nav-open={mobileNavOpen} type="button" on:click={toggleTheme}>
         {theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}
       </button>
@@ -508,8 +621,9 @@
 
     <section class="content">
       {#if active === 'generate'}
-      <section class="panel hero">
+      <section class="screen-header">
         <h2 class="screen-title">Generate Shorts</h2>
+        <p class="meta">Create and export short clips from YouTube URLs or local videos.</p>
       </section>
 
       <section class="panel">
@@ -619,7 +733,7 @@
     {/if}
 
     {#if active === 'library'}
-      <section class="panel hero">
+      <section class="screen-header">
         <h2 class="screen-title">Shorts Library</h2>
         <p class="meta">Open Folder is available for locally generated shorts.</p>
       </section>
@@ -661,174 +775,115 @@
     {/if}
 
     {#if active === 'settings'}
-      <section class="panel hero">
+      <section class="screen-header">
         <h2 class="screen-title">Settings</h2>
-        <p class="meta">Runtime, license, and device status for this installation.</p>
+        <p class="meta">Configure API access, manage device licensing, and review diagnostics and policies.</p>
       </section>
 
       <section class="panel">
-        <div class="section-head">
-          <div>
-            <h3>Status</h3>
-            <p class="meta">Values are read-only and redact sensitive material.</p>
-          </div>
-          <button type="button" on:click={loadSettingsStatus} disabled={settingsBusy}>
-            {settingsBusy ? 'Refreshing...' : 'Refresh'}
-          </button>
+        <div class="settings-tabs" aria-label="Settings sections">
+          <button type="button" class:active-tab={settingsTab === 'configuration'} on:click={() => (settingsTab = 'configuration')}>Configuration</button>
+          <button type="button" class:active-tab={settingsTab === 'diagnostics'} on:click={() => (settingsTab = 'diagnostics')}>Diagnostics</button>
+          <button type="button" class:active-tab={settingsTab === 'policies'} on:click={() => (settingsTab = 'policies')}>Policies</button>
         </div>
         {#if settingsError}
           <p class="meta error-text">{settingsError}</p>
         {/if}
       </section>
 
-      <section class="settings-grid">
-        <article class="panel status-card">
-          <p class="eyebrow">License</p>
-          <h3>{authStatusLabel()}</h3>
-          <dl>
-            <div>
-              <dt>Device registration</dt>
-              <dd>{deviceRegistrationLabel()}</dd>
-            </div>
-            <div>
-              <dt>License key</dt>
-              <dd>
-                {$authState.authState && 'masked_license_key' in $authState.authState && $authState.authState.masked_license_key
-                  ? $authState.authState.masked_license_key
-                  : 'Unavailable'}
-              </dd>
-            </div>
-            <div>
-              <dt>Session expires</dt>
-              <dd>{tokenExpiryLabel()}</dd>
-            </div>
-          </dl>
-        </article>
-
-        <article class="panel status-card">
-          <p class="eyebrow">Generation</p>
-          <h3>{mode}</h3>
-          <dl>
-            <div>
-              <dt>Source type</dt>
-              <dd>{sourceType === 'local' ? 'Local video file' : 'YouTube URL'}</dd>
-            </div>
-            <div>
-              <dt>API key</dt>
-              <dd>{settingsConfig ? configuredLabel(settingsConfig.muapiConfigured) : 'Unknown'}</dd>
-            </div>
-            <div>
-              <dt>Local model</dt>
-              <dd>{settingsConfig?.localWhisperModel ?? 'Unknown'}</dd>
-            </div>
-            <div>
-              <dt>Local device</dt>
-              <dd>{settingsConfig?.localWhisperDevice ?? 'Unknown'}</dd>
-            </div>
-          </dl>
-        </article>
-
-        <article class="panel status-card">
-          <p class="eyebrow">License Worker</p>
-          <h3>{settingsConfig?.licenseBackendMode ?? 'Unknown'}</h3>
-          <dl>
-            <div>
-              <dt>Endpoint</dt>
-              <dd>{settingsConfig?.licenseWorkerEndpoint ?? 'Unknown'}</dd>
-            </div>
-            <div>
-              <dt>Endpoint type</dt>
-              <dd>{settingsConfig?.licenseWorkerEndpointKind ?? 'Unknown'}</dd>
-            </div>
-            <div>
-              <dt>Timeout</dt>
-              <dd>{settingsConfig ? `${settingsConfig.licenseWorkerTimeoutMs} ms` : 'Unknown'}</dd>
-            </div>
-            <div>
-              <dt>Retry attempts</dt>
-              <dd>{settingsConfig?.licenseWorkerRetryAttempts ?? 'Unknown'}</dd>
-            </div>
-          </dl>
-        </article>
-
-        <article class="panel status-card">
-          <p class="eyebrow">Runtime</p>
-          <h3>{settingsRuntime ? (settingsRuntime.ok ? 'Ready' : 'Needs attention') : 'Unknown'}</h3>
-          <dl>
-            <div>
-              <dt>App version</dt>
-              <dd>{settingsContext?.appVersion ?? APP_VERSION}</dd>
-            </div>
-            <div>
-              <dt>Platform</dt>
-              <dd>{settingsContext?.platform ?? 'Unknown'}</dd>
-            </div>
-            <div>
-              <dt>Bridge entry</dt>
-              <dd>{settingsRuntime ? (settingsRuntime.bridge_entry_exists ? 'Found' : 'Missing') : 'Unknown'}</dd>
-            </div>
-            <div>
-              <dt>OpenAI key</dt>
-              <dd>{settingsConfig ? configuredLabel(settingsConfig.openaiConfigured) : 'Unknown'}</dd>
-            </div>
-          </dl>
-        </article>
-      </section>
-
-      {#if settingsRuntime?.tools?.length}
-        <section class="panel">
-          <h3>Runtime Tools</h3>
-          <div class="tool-list">
-            {#each settingsRuntime.tools as tool}
-              <div class="tool-row">
-                <span>{tool.tool}</span>
-                <span class:ok={tool.ok} class:warn={!tool.ok}>{tool.ok ? 'Available' : tool.message}</span>
-              </div>
-            {/each}
-          </div>
+      {#if settingsTab === 'configuration'}
+        <section class="panel" role="tabpanel">
+          <h3>API Access</h3>
+          <p class="meta">API keys are stored securely and never shown after saving.</p>
+          <form class="form" on:submit|preventDefault={saveApiKeys}>
+            <label>MuAPI key <input aria-label="MuAPI key" type="password" autocomplete="off" bind:value={muapiKeyInput} /></label>
+            <label>OpenAI key <input aria-label="OpenAI key" type="password" autocomplete="off" bind:value={openaiKeyInput} /></label>
+            <button type="submit" disabled={settingsActionBusy}>Save API Keys</button>
+            <button type="button" on:click={clearApiKeys} disabled={settingsActionBusy}>Clear API Keys</button>
+          </form>
+          {#if settingsActionTarget === 'api' && settingsActionStatus}
+            <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
+          {/if}
+        </section>
+        <section class="panel" role="tabpanel">
+          <h3>Device Reset</h3>
+          <form class="form reset-form" on:submit|preventDefault={submitSettingsResetRequest}>
+            <label>Settings purchaser email <input aria-label="Settings purchaser email" type="email" bind:value={settingsResetEmail} /></label>
+            <label>Settings receipt reference <input aria-label="Settings receipt reference" bind:value={settingsResetReceipt} /></label>
+            <button type="submit" disabled={settingsActionBusy}>Request Device Reset</button>
+          </form>
+          {#if settingsActionTarget === 'reset' && settingsActionStatus}
+            <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
+          {/if}
+        </section>
+        <section class="panel" role="tabpanel">
+          <h3>Local Processing</h3>
+          <form class="form" on:submit|preventDefault={saveLocalProcessing}>
+            <label>Whisper model <input aria-label="Whisper model" bind:value={whisperModelInput} placeholder={settingsConfig?.localWhisperModel ?? ''} /></label>
+            <label>Processing device <input aria-label="Processing device" bind:value={whisperDeviceInput} placeholder={settingsConfig?.localWhisperDevice ?? ''} /></label>
+            <button type="submit" disabled={settingsActionBusy}>Save Local Processing</button>
+          </form>
+          {#if settingsActionTarget === 'local' && settingsActionStatus}
+            <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
+          {/if}
         </section>
       {/if}
 
-      <section class="panel">
-        <h3>Privacy & Trust</h3>
-        <p>1. Add a source URL. 2. Choose mode and clip settings. 3. Run pipeline. 4. Review exported clips.</p>
-        <p class="meta">Progress events stream live so users can track each stage of the generation pipeline.</p>
-        <p>Project history and media library metadata are stored locally on this machine (browser local storage in this build).</p>
-        <p class="meta">No cloud sync is used for these screens unless you implement explicit remote storage later.</p>
-      </section>
-
-      <section class="panel">
-        <h3>Updates</h3>
-        <p class="meta">Update checks use the official Tauri updater plugin and signed release artifacts.</p>
-        <p>{updaterStatus}</p>
-        <div class="row">
-          <button type="button" on:click={checkForUpdates} disabled={updaterBusy}>
-            {updaterBusy ? 'Working...' : 'Check for Updates'}
+      {#if settingsTab === 'diagnostics'}
+        <section class="panel" role="tabpanel">
+          <h3>Diagnostics</h3>
+          <p class="meta">Check runtime tools, updates, and support data.</p>
+          <button type="button" on:click={loadSettingsStatus} disabled={settingsBusy}>
+            {settingsBusy ? 'Refreshing...' : 'Refresh Status'}
           </button>
-          {#if updateAvailable}
-            <button type="button" on:click={installUpdate} disabled={updaterBusy}>
-              Install Update {updateVersion}
-            </button>
-          {/if}
-        </div>
-      </section>
-
-      <section class="panel">
-        <h3>Support</h3>
-        <label>Message to support
-          <textarea rows="4" bind:value={supportMessage} placeholder="Describe your issue"></textarea>
-        </label>
-        <div class="row">
-          <button type="button" on:click={exportDebugLog}>Generate Debug Log</button>
-        </div>
-        {#if supportLog}
-          <label>Debug log
-            <textarea rows="8" readonly value={supportLog}></textarea>
-          </label>
+        </section>
+        {#if settingsRuntime?.tools?.length}
+          <section class="panel">
+            <h3>Runtime Tools</h3>
+            <div class="tool-list">
+              {#each settingsRuntime.tools as tool}
+                <div class="tool-row">
+                  <span>{tool.tool}</span>
+                  <span class:ok={tool.ok} class:warn={!tool.ok}>{tool.ok ? 'Available' : tool.message}</span>
+                </div>
+              {/each}
+            </div>
+          </section>
         {/if}
-      </section>
 
-      {#if crashDraft}
+        <section class="panel">
+          <h3>Updates</h3>
+          <p class="meta">Update checks use the official Tauri updater plugin and signed release artifacts.</p>
+          <p>{updaterStatus}</p>
+          <div class="row">
+            <button type="button" on:click={checkForUpdates} disabled={updaterBusy}>
+              {updaterBusy ? 'Working...' : 'Check for Updates'}
+            </button>
+            {#if updateAvailable}
+              <button type="button" on:click={installUpdate} disabled={updaterBusy}>
+                Install Update {updateVersion}
+              </button>
+            {/if}
+          </div>
+        </section>
+
+        <section class="panel">
+          <h3>Support</h3>
+          <label>Message to support
+            <textarea rows="4" bind:value={supportMessage} placeholder="Describe your issue"></textarea>
+          </label>
+          <div class="row">
+            <button type="button" on:click={exportDebugLog}>Generate Debug Log</button>
+          </div>
+          {#if supportLog}
+            <label>Debug log
+              <textarea rows="8" readonly value={supportLog}></textarea>
+            </label>
+          {/if}
+        </section>
+      {/if}
+
+      {#if settingsTab === 'diagnostics' && crashDraft}
         <section class="panel">
           <h3>Crash Report Draft</h3>
           <p class="meta">A previous fatal error was saved locally. Nothing is uploaded unless you choose to submit it.</p>
@@ -842,37 +897,40 @@
           </div>
         </section>
       {/if}
-    {/if}
-
-    {#if active === 'legal'}
-      <section class="panel hero">
-        <h2 class="screen-title">Legal</h2>
-        <p class="meta">Terms and Conditions.</p>
-      </section>
-
-      <section class="panel legal-copy">
-        <h3>Terms of Use</h3>
-        <p>By using this software, you confirm you have rights to process input media and comply with platform policies and local laws.</p>
-        <p>You are responsible for generated outputs, publication decisions, copyright compliance, and any third-party claims.</p>
-
-        <h3>Acceptable Use</h3>
-        <p>Do not use the app to generate unlawful, deceptive, harmful, or infringing content. Abuse may result in access suspension for paid services.</p>
-
-        <h3>Privacy Notice</h3>
-        <p>Local workspace data for generation history and library is stored on-device in this release build. Cloud operations only occur when API mode is selected for generation.</p>
-
-        <h3>Refund Policy</h3>
-        <p>Refund requests are handled manually within 7 days from purchase, subject to purchase records and platform dispute rules.</p>
-        <p>No automated refund engine is built into this app.</p>
-
-        <h3>Warranty and Liability</h3>
-        <p>The software is provided as-is without guarantees of uninterrupted service. Liability is limited to the maximum extent permitted by law.</p>
-
-        <h3>Support and Contact</h3>
-        <p>For enterprise support and data requests, use the Support section and attach generated debug logs.</p>
-
-        <p class="meta">Last updated: May 8, 2026</p>
-      </section>
+      {#if settingsTab === 'policies'}
+        <section class="panel" role="tabpanel">
+          <h3>Policies</h3>
+          <p class="meta">Reference documents for use, privacy, refunds, and liability.</p>
+          <div class="row">
+            <button type="button" class:active-tab={policiesTab === 'terms'} on:click={() => (policiesTab = 'terms')}>Terms</button>
+            <button type="button" class:active-tab={policiesTab === 'privacy'} on:click={() => (policiesTab = 'privacy')}>Privacy</button>
+            <button type="button" class:active-tab={policiesTab === 'refund'} on:click={() => (policiesTab = 'refund')}>Refund Policy</button>
+          </div>
+        </section>
+        <section class="panel legal-copy" role="tabpanel">
+          {#if policiesTab === 'terms'}
+            <h3>Terms of Use</h3>
+            <p>By using this software, you confirm you have rights to process input media and comply with platform policies and local laws.</p>
+            <p>You are responsible for generated outputs, publication decisions, copyright compliance, and any third-party claims.</p>
+            <h3>Acceptable Use</h3>
+            <p>Do not use the app to generate unlawful, deceptive, harmful, or infringing content. Abuse may result in access suspension for paid services.</p>
+          {/if}
+          {#if policiesTab === 'privacy'}
+            <h3>Privacy Notice</h3>
+            <p>Local workspace data for generation history and library is stored on-device in this release build. Cloud operations only occur when API mode is selected for generation.</p>
+          {/if}
+          {#if policiesTab === 'refund'}
+            <h3>Refund Policy</h3>
+            <p>Refund requests are handled manually within 7 days from purchase, subject to purchase records and platform dispute rules.</p>
+            <p>No automated refund engine is built into this app.</p>
+          {/if}
+          <h3>Warranty and Liability</h3>
+          <p>The software is provided as-is without guarantees of uninterrupted service. Liability is limited to the maximum extent permitted by law.</p>
+          <h3>Support and Contact</h3>
+          <p>For enterprise support and data requests, use the Support section and attach generated debug logs.</p>
+          <p class="meta">Last updated: May 8, 2026</p>
+        </section>
+      {/if}
     {/if}
 
   </section>
@@ -988,7 +1046,12 @@
     position: relative;
   }
 
-  .hero { padding: var(--space-xl); }
+  .screen-header {
+    display: grid;
+    gap: .2rem;
+    padding: 0;
+    margin: 0;
+  }
   .screen-title { margin: 0; font-size: clamp(1.15rem, 1.8vw, 1.45rem); font-weight: 700; }
   .meta { color: var(--color-text-tertiary); }
   h1, h2, h3, h4 { margin: 0 0 var(--space-sm); line-height: 1.3; }
@@ -1030,18 +1093,12 @@
     transform: translateY(-62%) rotate(45deg);
     pointer-events: none;
   }
-  nav,
-  .sidebar-secondary {
+  nav {
     display: grid;
     gap: var(--space-sm);
   }
-  .sidebar-secondary {
-    margin-top: auto;
-    padding-top: var(--space-sm);
-    border-top: 1px solid color-mix(in srgb, var(--color-border-strong) 18%, transparent);
-  }
   .theme-toggle {
-    margin-top: 0;
+    margin-top: auto;
   }
   .theme-toggle.compact {
     margin-top: 0;
@@ -1089,14 +1146,8 @@
   }
 
   button { cursor: pointer; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); color: var(--color-on-accent); border: none; font-weight: 700; }
-  nav button,
-  .sidebar-secondary button { text-align: left; background: color-mix(in srgb, var(--color-panel-card) 80%, transparent); color: var(--color-text-primary); border: 1px solid color-mix(in srgb, var(--color-border-strong) 25%, transparent); }
-  .sidebar-secondary button {
-    color: var(--color-text-tertiary);
-    font-weight: 600;
-  }
-  nav button.active,
-  .sidebar-secondary button.active { border-color: var(--color-focus-ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-focus-ring) 25%, transparent); }
+  nav button { text-align: left; background: color-mix(in srgb, var(--color-panel-card) 80%, transparent); color: var(--color-text-primary); border: 1px solid color-mix(in srgb, var(--color-border-strong) 25%, transparent); }
+  nav button.active { border-color: var(--color-focus-ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-focus-ring) 25%, transparent); }
   .form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); align-items: end; }
   label { display: grid; gap: var(--space-xs); }
   .advanced { grid-column: 1 / -1; }
@@ -1116,55 +1167,29 @@
 
   .toolbar { display: grid; gap: var(--space-sm); margin-bottom: var(--space-md); }
 
-  .section-head {
+  .settings-tabs {
     display: flex;
-    justify-content: space-between;
-    gap: var(--space-md);
-    align-items: center;
-  }
-
-  .settings-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-lg);
-  }
-
-  .status-card {
-    display: grid;
     gap: var(--space-sm);
+    flex-wrap: wrap;
+    margin-top: var(--space-sm);
+  }
+  .settings-tabs button,
+  .row button.active-tab {
+    background: color-mix(in srgb, var(--color-panel-card) 80%, transparent);
+    color: var(--color-text-primary);
+    border: 1px solid color-mix(in srgb, var(--color-border-strong) 25%, transparent);
+  }
+  .settings-tabs button.active-tab,
+  .row button.active-tab {
+    border-color: var(--color-focus-ring);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-focus-ring) 25%, transparent);
   }
 
-  .eyebrow {
-    margin: 0;
-    color: var(--color-text-tertiary);
-    font-size: .78rem;
-    font-weight: 700;
-    text-transform: uppercase;
-  }
-
-  dl {
-    display: grid;
-    gap: var(--space-sm);
-    margin: 0;
-  }
-
-  dl div,
   .tool-row {
     display: flex;
     justify-content: space-between;
     gap: var(--space-md);
     align-items: center;
-  }
-
-  dt {
-    color: var(--color-text-tertiary);
-  }
-
-  dd {
-    margin: 0;
-    color: var(--color-text-primary);
-    text-align: right;
-    overflow-wrap: anywhere;
   }
 
   .tool-list {
@@ -1233,7 +1258,6 @@
       width: auto;
     }
     nav,
-    .sidebar-secondary,
     .theme-toggle {
       display: none;
     }
@@ -1241,12 +1265,8 @@
       display: inline-flex;
     }
     nav.nav-open,
-    .sidebar-secondary.nav-open,
     .theme-toggle.nav-open {
       display: grid;
-    }
-    .sidebar-secondary.nav-open {
-      margin-top: 0;
     }
     .theme-toggle.nav-open {
       margin-top: 0;
@@ -1256,11 +1276,6 @@
       overflow: visible;
       padding-right: 0;
     }
-    .settings-grid {
-      grid-template-columns: 1fr;
-    }
-    .section-head,
-    dl div,
     .tool-row {
       align-items: stretch;
     }
