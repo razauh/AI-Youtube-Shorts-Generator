@@ -212,12 +212,11 @@ impl std::fmt::Debug for ValidationRequestBody {
 struct DeviceResetRequestBody {
     license_key: Option<String>,
     masked_license_key: Option<String>,
-    purchaser_email: String,
+    purchaser_email: Option<String>,
     device_public_key: String,
     fingerprint: DeviceFingerprint,
     app_version: String,
     timestamp_ms: i64,
-    receipt_reference: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -232,12 +231,13 @@ impl From<DeviceResetRequest> for DeviceResetRequestBody {
                 .license_key
                 .map(|license_key| license_key.expose_secret().to_string()),
             masked_license_key: value.masked_license_key.map(|key| key.as_str().to_string()),
-            purchaser_email: value.purchaser_email.as_str().to_string(),
+            purchaser_email: value
+                .purchaser_email
+                .map(|purchaser_email| purchaser_email.as_str().to_string()),
             device_public_key: value.device_public_key.as_str().to_string(),
             fingerprint: value.fingerprint,
             app_version: value.app_version,
             timestamp_ms: value.timestamp_ms,
-            receipt_reference: value.receipt_reference,
         }
     }
 }
@@ -255,7 +255,6 @@ impl std::fmt::Debug for DeviceResetRequestBody {
             .field("fingerprint", &self.fingerprint)
             .field("app_version", &self.app_version)
             .field("timestamp_ms", &self.timestamp_ms)
-            .field("receipt_reference", &self.receipt_reference)
             .finish()
     }
 }
@@ -655,8 +654,7 @@ mod tests {
                     "hostname_hash": null
                 },
                 "app_version": "1.0.0",
-                "timestamp_ms": 10,
-                "receipt_reference": null
+                "timestamp_ms": 10
             })))
             .respond_with(ResponseTemplate::new(200).set_body_json(success(json!({
                 "status": "pending",
@@ -668,12 +666,11 @@ mod tests {
         let request = DeviceResetRequest {
             license_key: Some(LicenseKey::new("SECRET-LICENSE").unwrap()),
             masked_license_key: None,
-            purchaser_email: PurchaseEmail::new("buyer@example.com").unwrap(),
+            purchaser_email: Some(PurchaseEmail::new("buyer@example.com").unwrap()),
             device_public_key: DevicePublicKey::new("public").unwrap(),
             fingerprint: DeviceFingerprint::new("linux", "linux", "x86_64", None).unwrap(),
             app_version: "1.0.0".into(),
             timestamp_ms: 10,
-            receipt_reference: None,
         };
         assert_eq!(
             client

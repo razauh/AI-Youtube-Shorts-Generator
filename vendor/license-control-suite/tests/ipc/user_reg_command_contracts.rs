@@ -112,10 +112,7 @@ async fn service_helper_functions_remain_behaviorally_equivalent() {
     assert!(matches!(validated.auth_state, AuthStateView::Licensed { .. }));
 
     let requested = request_device_reset_with_service(
-        DeviceResetInput {
-            purchaser_email: "buyer@example.com".into(),
-            receipt_reference: Some("receipt".into()),
-        },
+        DeviceResetInput {},
         &harness.service,
     )
     .await

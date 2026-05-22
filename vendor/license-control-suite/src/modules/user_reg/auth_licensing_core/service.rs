@@ -1,7 +1,7 @@
 use super::{
     domain::{
         ActivationOutcome, ActivationRequest, AuthError, DeviceResetRequest, LicenseKey,
-        MaskedLicenseKey, PurchaseEmail, ResetRequestId, ValidationOutcome,
+        MaskedLicenseKey, ResetRequestId, ValidationOutcome,
     },
     state::{DeviceResetStatus, SessionState},
     traits::{Clock, DeviceIdentityProvider, LocalStateStore, SecretStore, WorkerClient},
@@ -129,35 +129,34 @@ impl AuthService {
 
     pub async fn request_device_reset(
         &self,
-        purchaser_email: PurchaseEmail,
-        receipt_reference: Option<String>,
     ) -> Result<DeviceResetStatus, AuthError> {
+        let current = self.state.load_session_state().await?;
         let keypair = self.identity.get_or_create_keypair().await?;
         let fingerprint = self.identity.collect_fingerprint().await?;
         let license_key = self.secrets.get_license_key().await?;
-        let masked_license_key = match &license_key {
-            Some(key) => Some(key.masked()),
-            None => masked_from_state(&self.state.load_session_state().await?),
-        };
-        if license_key.is_none() && masked_license_key.is_none() {
+        if license_key.is_none() {
+            // Hosted reset requests require a real license key so the worker can authenticate
+            // the reset request. Older sessions might be licensed via access token without the
+            // original license key present in secure storage.
             return Err(AuthError::InvalidResetRequest);
         }
+        let masked_license_key = license_key.as_ref().map(|key| key.masked());
 
         let request = DeviceResetRequest {
             license_key,
             masked_license_key,
-            purchaser_email,
+            purchaser_email: None,
             device_public_key: keypair.public_key().clone(),
             fingerprint,
             app_version: self.app_version.clone(),
             timestamp_ms: self.clock.now_ms(),
-            receipt_reference,
         };
         let status = self.worker.request_device_reset(request).await?;
         self.state.save_reset_status(status.clone()).await?;
-        let current = self.state.load_session_state().await?;
-        let next = SessionState::after_reset_status(&status, masked_from_state(&current))?;
-        self.state.save_session_state(next).await?;
+        if !is_licensed_session(&current) {
+            let next = SessionState::after_reset_status(&status, masked_from_state(&current))?;
+            self.state.save_session_state(next).await?;
+        }
         Ok(status)
     }
 
@@ -171,11 +170,14 @@ impl AuthService {
         }
         self.state.save_reset_status(status.clone()).await?;
         let current = self.state.load_session_state().await?;
-        let next = SessionState::after_reset_status(&status, masked_from_state(&current))?;
         if matches!(status, DeviceResetStatus::Approved { .. }) {
+            let next = SessionState::after_reset_status(&status, masked_from_state(&current))?;
             self.secrets.clear_session_secrets().await?;
+            self.state.save_session_state(next).await?;
+        } else if !is_licensed_session(&current) {
+            let next = SessionState::after_reset_status(&status, masked_from_state(&current))?;
+            self.state.save_session_state(next).await?;
         }
-        self.state.save_session_state(next).await?;
         Ok(status)
     }
 
@@ -220,6 +222,13 @@ fn masked_from_state(state: &SessionState) -> Option<MaskedLicenseKey> {
         } => Some(masked_license_key.clone()),
         _ => None,
     }
+}
+
+fn is_licensed_session(state: &SessionState) -> bool {
+    matches!(
+        state,
+        SessionState::Licensed { .. } | SessionState::LicensedOfflineGrace { .. }
+    )
 }
 
 #[cfg(test)]
@@ -368,17 +377,13 @@ mod tests {
 
         harness
             .service
-            .request_device_reset(
-                PurchaseEmail::new("buyer@example.com").unwrap(),
-                Some("receipt".into()),
-            )
+            .request_device_reset()
             .await
             .unwrap();
 
         let calls = worker.reset_requests();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].purchaser_email.as_str(), "buyer@example.com");
-        assert_eq!(calls[0].receipt_reference.as_deref(), Some("receipt"));
+        assert!(calls[0].purchaser_email.is_none());
         assert_eq!(
             harness
                 .state
@@ -389,6 +394,72 @@ mod tests {
                 .request_id(),
             &request_id
         );
+    }
+
+    #[tokio::test]
+    async fn reset_request_does_not_force_logout_for_licensed_sessions() {
+        let request_id = ResetRequestId::new("reset-1").unwrap();
+        let status = DeviceResetStatus::Pending {
+            request_id,
+            created_at_ms: 10,
+        };
+        let worker = FakeWorkerClient::new().with_reset_request(Ok(status));
+        let harness = TestService::new(worker);
+        harness
+            .state
+            .save_session_state(SessionState::after_activation(
+                MaskedLicenseKey::new("••••-1234").unwrap(),
+                outcome().bound_device.clone(),
+                200,
+                10,
+                24 * 60 * 60 * 1000,
+            ))
+            .await
+            .unwrap();
+        harness
+            .secrets
+            .put_license_key(LicenseKey::new("LICENSE-1234").unwrap())
+            .await
+            .unwrap();
+
+        harness.service.request_device_reset().await.unwrap();
+
+        assert!(matches!(
+            harness.state.load_session_state().await.unwrap(),
+            SessionState::Licensed { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn pending_reset_status_preserves_licensed_state() {
+        let request_id = ResetRequestId::new("reset-1").unwrap();
+        let worker = FakeWorkerClient::new().with_reset_status(Ok(DeviceResetStatus::Pending {
+            request_id: request_id.clone(),
+            created_at_ms: 10,
+        }));
+        let harness = TestService::new(worker);
+        harness
+            .state
+            .save_session_state(SessionState::after_activation(
+                MaskedLicenseKey::new("••••-1234").unwrap(),
+                outcome().bound_device.clone(),
+                200,
+                10,
+                24 * 60 * 60 * 1000,
+            ))
+            .await
+            .unwrap();
+
+        harness
+            .service
+            .get_device_reset_status(request_id)
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            harness.state.load_session_state().await.unwrap(),
+            SessionState::Licensed { .. }
+        ));
     }
 
     #[tokio::test]

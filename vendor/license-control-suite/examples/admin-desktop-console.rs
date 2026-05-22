@@ -51,6 +51,9 @@ impl AdminApi for ExampleAdminApi {
             status: ResetRequestState::Pending,
             license_state: LicenseState::BoundActive,
             message: "pending".into(),
+            masked_license_key: Some("••••-1234".into()),
+            has_license_hash: Some(true),
+            purchaser_email: Some("b***@example.com".into()),
         }])
     }
 

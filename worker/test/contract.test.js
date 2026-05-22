@@ -131,10 +131,11 @@ class MockStatement {
     }
 
     if (this.sql.includes('INSERT INTO reset_requests')) {
-      const [requestId, licenseKeyHash, purchaserEmail, status, createdAtMs, updatedAtMs] = this.args;
+      const [requestId, licenseKeyHash, maskedLicenseKey, purchaserEmail, status, createdAtMs, updatedAtMs] = this.args;
       this.db.resetRequests.set(requestId, {
         request_id: requestId,
         license_key_hash: licenseKeyHash,
+        masked_license_key: maskedLicenseKey,
         purchaser_email: purchaserEmail,
         status,
         created_at_ms: createdAtMs,
@@ -220,12 +221,10 @@ test('reset request and reset status use D1 authoritative state', async () => {
     body: {
       license_key: 'AAAA-BBBB-CCCC-DDDD',
       masked_license_key: '••••-DDDD',
-      purchaser_email: 'buyer@example.com',
       device_public_key: 'pubkey-abc-123',
       fingerprint: { os_name: 'linux', platform_family: 'linux', arch: 'x86_64' },
       app_version: '0.1.0',
       timestamp_ms: Date.now(),
-      receipt_reference: 'sale_9xy123',
     },
     env,
   });
@@ -259,6 +258,7 @@ test('admin lists pending reset requests without raw purchaser email', async () 
   db.resetRequests.set('reset-1', {
     request_id: 'reset-1',
     license_key_hash: 'hash-1',
+    masked_license_key: '••••-DDDD',
     purchaser_email: 'buyer@example.com',
     status: 'pending',
     created_at_ms: 1,
@@ -274,6 +274,8 @@ test('admin lists pending reset requests without raw purchaser email', async () 
   const json = await res.json();
   assert.equal(json.ok, true);
   assert.equal(json.data.requests[0].status, 'pending');
+  assert.equal(json.data.requests[0].masked_license_key, '••••-DDDD');
+  assert.equal(json.data.requests[0].has_license_hash, true);
   assert.equal(json.data.requests[0].purchaser_email, 'b***@example.com');
   assert.equal(JSON.stringify(json).includes('buyer@example.com'), false);
 });
@@ -320,7 +322,6 @@ test('admin approve reset unbinds active device and idempotently replays', async
       fingerprint: { os_name: 'linux', platform_family: 'linux', arch: 'x86_64' },
       app_version: '0.1.0',
       timestamp_ms: Date.now(),
-      receipt_reference: null,
     },
     env,
   });
@@ -360,6 +361,7 @@ test('admin reject reset preserves active device binding', async () => {
   db.resetRequests.set('reset-1', {
     request_id: 'reset-1',
     license_key_hash: 'hash-1',
+    masked_license_key: '••••-DDDD',
     purchaser_email: 'buyer@example.com',
     status: 'pending',
     created_at_ms: 1,

@@ -224,10 +224,13 @@ async function handleResetRequest(request, env) {
   }
 
   const body = await readJson(request);
-  if (!body || !body.purchaser_email || !body.device_public_key || !body.fingerprint || !body.timestamp_ms) {
+  if (!body || !body.device_public_key || !body.fingerprint || !body.timestamp_ms) {
     return err("invalid_reset_request", "Invalid reset request payload", rid, false, 400);
   }
-  if (!String(body.purchaser_email).includes("@")) {
+  if (!body.license_key) {
+    return err("invalid_reset_request", "Reset request requires license context.", rid, false, 400);
+  }
+  if (body.purchaser_email && !String(body.purchaser_email).includes("@")) {
     return err("invalid_purchase_email", "Purchaser email format is invalid.", rid, false, 400);
   }
 
@@ -251,9 +254,13 @@ async function handleResetRequest(request, env) {
 
   const now = Date.now();
   let licenseKeyHash = null;
+  let maskedLicenseKey = null;
   if (body.license_key) {
     const normalizedLicenseKey = normalizeLicenseKey(body.license_key);
     licenseKeyHash = await sha256Hex(`${env?.HASH_PEPPER || ""}:${normalizedLicenseKey}`);
+    maskedLicenseKey = maskLicenseKey(normalizedLicenseKey);
+  } else if (body.masked_license_key) {
+    maskedLicenseKey = String(body.masked_license_key);
   }
   const requestIdValue = `reset_${crypto.randomUUID().slice(0, 8)}`;
   const response = ok({ request_id: requestIdValue, status: "pending" });
@@ -263,7 +270,8 @@ async function handleResetRequest(request, env) {
     await upsertResetRequest(env.DB, {
       requestId: requestIdValue,
       licenseKeyHash,
-      purchaserEmail: String(body.purchaser_email),
+      maskedLicenseKey,
+      purchaserEmail: body.purchaser_email ? String(body.purchaser_email) : null,
       status: "pending",
       createdAtMs: now,
       updatedAtMs: now,
@@ -274,7 +282,7 @@ async function handleResetRequest(request, env) {
       "desktop_client",
       JSON.stringify({
         request_id: requestIdValue,
-        purchaser_email: String(body.purchaser_email),
+        has_license_hash: Boolean(licenseKeyHash),
       }),
       now,
     );
@@ -686,6 +694,8 @@ function adminResetView(row) {
     status: row.status,
     license_state: row.status === "approved" ? "UNBOUND" : "BOUND_ACTIVE",
     message: row.status,
+    masked_license_key: row.masked_license_key || null,
+    has_license_hash: Boolean(row.license_key_hash),
     purchaser_email: maskEmail(row.purchaser_email),
     created_at_ms: row.created_at_ms,
     updated_at_ms: row.updated_at_ms,

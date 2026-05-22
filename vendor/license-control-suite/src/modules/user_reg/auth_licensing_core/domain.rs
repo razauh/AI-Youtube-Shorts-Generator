@@ -349,12 +349,11 @@ pub enum ValidationOutcome {
 pub struct DeviceResetRequest {
     pub license_key: Option<LicenseKey>,
     pub masked_license_key: Option<MaskedLicenseKey>,
-    pub purchaser_email: PurchaseEmail,
+    pub purchaser_email: Option<PurchaseEmail>,
     pub device_public_key: DevicePublicKey,
     pub fingerprint: DeviceFingerprint,
     pub app_version: String,
     pub timestamp_ms: i64,
-    pub receipt_reference: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

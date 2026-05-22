@@ -51,8 +51,6 @@ export interface SessionView {
 }
 
 export interface DeviceResetInput {
-  purchaser_email: string;
-  receipt_reference?: string | null;
 }
 
 export interface DeviceResetView {

@@ -48,7 +48,6 @@ pub struct StoredResetRequest {
     pub device_public_key: DevicePublicKey,
     pub fingerprint: crate::modules::user_reg::auth_licensing_core::DeviceFingerprint,
     pub app_version: String,
-    pub receipt_reference: Option<String>,
     pub status: DeviceResetStatus,
 }
 
@@ -231,11 +230,14 @@ impl WorkerApp {
                     .as_ref()
                     .map(|license_key| license_key.masked())
             }),
-            purchaser_email: request.purchaser_email.as_str().to_string(),
+            purchaser_email: request
+                .purchaser_email
+                .as_ref()
+                .map(|email| email.as_str().to_string())
+                .unwrap_or_default(),
             device_public_key: request.device_public_key,
             fingerprint: request.fingerprint,
             app_version: request.app_version,
-            receipt_reference: request.receipt_reference,
             status: status.clone(),
         };
         self.store
@@ -347,7 +349,11 @@ fn reset_id(request: &DeviceResetRequest) -> ResetRequestId {
         &hash_secret(&format!(
             "{}:{}:{}",
             key,
-            request.purchaser_email.as_str(),
+            request
+                .purchaser_email
+                .as_ref()
+                .map(|email| email.as_str())
+                .unwrap_or(""),
             request.timestamp_ms
         ))[..16]
     ))
@@ -377,12 +383,11 @@ mod tests {
         DeviceResetRequest {
             license_key: Some(license()),
             masked_license_key: None,
-            purchaser_email: PurchaseEmail::new("buyer@example.com").unwrap(),
+            purchaser_email: Some(PurchaseEmail::new("buyer@example.com").unwrap()),
             device_public_key: DevicePublicKey::new("public").unwrap(),
             fingerprint: DeviceFingerprint::new("linux", "linux", "x86_64", None).unwrap(),
             app_version: "1.0.0".into(),
             timestamp_ms: 20,
-            receipt_reference: Some("receipt".into()),
         }
     }
 
@@ -470,7 +475,6 @@ mod tests {
             .cloned()
             .unwrap();
         assert_eq!(stored.purchaser_email, "buyer@example.com");
-        assert_eq!(stored.receipt_reference.as_deref(), Some("receipt"));
     }
 
     #[test]

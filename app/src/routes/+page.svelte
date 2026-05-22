@@ -55,8 +55,6 @@
   let format = '720';
   let outputJson = '';
   let licenseKey = '';
-  let resetEmail = '';
-  let resetReceipt = '';
 
   let projectName = '';
   let shortsSearch = '';
@@ -77,8 +75,6 @@
   let settingsTab = 'configuration';
   let settingsConfigTab = 'local';
   let policiesTab = 'terms';
-  let settingsResetEmail = '';
-  let settingsResetReceipt = '';
   let apiProfiles = { muapi: null, openai: null };
   let localProfiles = null;
   let localModelDownload = null;
@@ -277,14 +273,7 @@
   }
 
   async function submitSettingsResetRequest() {
-    const purchaser_email = settingsResetEmail.trim();
     if (settingsActionBusy) {
-      return;
-    }
-    if (!purchaser_email) {
-      settingsActionStatus = 'Please enter purchaser email before continuing.';
-      settingsActionTarget = 'reset';
-      settingsActionKind = 'error';
       return;
     }
     settingsActionStatus = '';
@@ -292,14 +281,16 @@
     settingsActionKind = 'success';
     settingsActionBusy = true;
     try {
-      await authState.requestReset({
-        purchaser_email,
-        receipt_reference: settingsResetReceipt.trim() || null
-      }, { preserveLicensedSession: true });
-      settingsResetReceipt = '';
+      await authState.requestReset({}, { preserveLicensedSession: true });
       settingsActionStatus = 'Device reset request sent.';
       settingsActionTarget = 'reset';
       settingsActionKind = 'success';
+    } catch (err) {
+      // The auth store surfaces safe messages via `$authState.resetError`.
+      // Avoid duplicating the same error message in both places.
+      settingsActionStatus = '';
+      settingsActionTarget = 'reset';
+      settingsActionKind = 'error';
     } finally {
       settingsActionBusy = false;
     }
@@ -670,15 +661,7 @@
   }
 
   async function submitResetRequest() {
-    const purchaser_email = resetEmail.trim();
-    if (!purchaser_email) {
-      return;
-    }
-    await authState.requestReset({
-      purchaser_email,
-      receipt_reference: resetReceipt.trim() || null
-    });
-    resetReceipt = '';
+    await authState.requestReset({});
   }
 
   async function refreshResetStatus() {
@@ -808,8 +791,12 @@
             <p class="meta">Request: {$authState.resetRequestId}</p>
           {/if}
           {#if $authState.lifecycle === 'reset_approved_unbound'}
-            <p>Device reset approved. You can now use this license key to activate a device.</p>
-            <p class="meta">Your license is currently unbound. The next device activated with this license key will become the registered device.</p>
+            <p>Device reset complete.</p>
+            <p class="meta">This license is now unbound. You can:</p>
+            <ul class="meta">
+              <li>Activate again on this device using your license key.</li>
+              <li>Or activate on a different device if you’re moving.</li>
+            </ul>
           {/if}
           {#if $authState.lifecycle === 'reset_pending'}
             <button type="button" on:click={refreshResetStatus}>Refresh Reset Status</button>
@@ -838,8 +825,6 @@
         <div class="reset-box">
           <h2>Request Device Reset</h2>
           <form class="form reset-form" on:submit|preventDefault={submitResetRequest}>
-            <label>Purchaser email <input aria-label="Purchaser email" type="email" bind:value={resetEmail} required /></label>
-            <label>Receipt reference <input aria-label="Receipt reference" bind:value={resetReceipt} /></label>
             <button type="submit">Request Reset</button>
           </form>
         </div>
@@ -1376,12 +1361,19 @@
               </div>
             </div>
             <form class="form reset-form" on:submit|preventDefault={submitSettingsResetRequest}>
-              <label>Purchaser email <input aria-label="Settings purchaser email" type="email" bind:value={settingsResetEmail} /></label>
-              <label>Receipt reference <input aria-label="Settings receipt reference" bind:value={settingsResetReceipt} /></label>
               <button class="button-danger" type="submit" disabled={settingsActionBusy}>Request Device Reset</button>
             </form>
             {#if $authState.resetRequestId}
               <p class="meta">Request: {$authState.resetRequestId}</p>
+            {/if}
+            {#if $authState.resetStatus !== 'idle' && $authState.resetStatus !== 'error'}
+              <p class="meta">Status: {$authState.resetStatus}</p>
+              {#if $authState.resetStatusMessage}
+                <p class="meta">{$authState.resetStatusMessage}</p>
+              {/if}
+            {/if}
+            {#if $authState.resetError}
+              <p class="error-text">{$authState.resetError.message}</p>
             {/if}
             {#if settingsActionTarget === 'reset' && settingsActionStatus}
               <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>

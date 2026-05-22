@@ -4,7 +4,7 @@ use license_control_suite::modules::user_reg::auth_licensing_core::test_support:
 use license_control_suite::modules::user_reg::auth_licensing_core::{
     AccessToken, ActivationOutcome, BoundDeviceSummary, DeviceFingerprint, DeviceId,
     DevicePublicKey, DeviceResetStatus, EntitlementStatus, LicenseKey, MaskedLicenseKey,
-    PurchaseEmail, ResetRequestId, SessionState, ValidationOutcome,
+    ResetRequestId, SessionState, ValidationOutcome,
 };
 
 fn outcome() -> ActivationOutcome {
@@ -149,17 +149,13 @@ async fn reset_request_sends_required_metadata_and_persists_pending() {
 
     harness
         .service
-        .request_device_reset(
-            PurchaseEmail::new("buyer@example.com").unwrap(),
-            Some("receipt".into()),
-        )
+        .request_device_reset()
         .await
         .unwrap();
 
     let calls = worker.reset_requests();
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].purchaser_email.as_str(), "buyer@example.com");
-    assert_eq!(calls[0].receipt_reference.as_deref(), Some("receipt"));
+    assert!(calls[0].purchaser_email.is_none());
     assert_eq!(
         harness
             .state

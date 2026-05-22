@@ -57,6 +57,12 @@ pub struct DeviceResetStatusResponse {
     pub status: ResetRequestState,
     pub license_state: LicenseState,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub masked_license_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_license_hash: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purchaser_email: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

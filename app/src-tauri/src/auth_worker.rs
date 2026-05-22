@@ -138,7 +138,6 @@ impl fmt::Debug for WorkerResetContract {
             .field("fingerprint", &self.request.fingerprint)
             .field("app_version", &self.request.app_version)
             .field("timestamp_ms", &self.request.timestamp_ms)
-            .field("receipt_reference", &self.request.receipt_reference)
             .finish()
     }
 }

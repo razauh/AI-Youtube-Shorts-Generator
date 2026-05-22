@@ -29,11 +29,11 @@ describe('authClient', () => {
     invoke.mockResolvedValue({ request_id: 'reset-1', status: 'pending', auth_state: { status: 'reset_pending', request_id: 'reset-1' } });
 
     const { requestDeviceReset, getDeviceResetStatus } = await import('../lib/api/authClient');
-    await requestDeviceReset({ purchaser_email: 'buyer@example.com', receipt_reference: null });
+    await requestDeviceReset({});
     await getDeviceResetStatus('reset-1');
 
     expect(invoke).toHaveBeenNthCalledWith(1, 'request_device_reset', {
-      input: { purchaser_email: 'buyer@example.com', receipt_reference: null },
+      input: {},
     });
     expect(invoke).toHaveBeenNthCalledWith(2, 'get_device_reset_status', { requestId: 'reset-1' });
   });

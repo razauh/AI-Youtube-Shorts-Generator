@@ -147,7 +147,7 @@ export async function getDeviceBinding(db, deviceId) {
 export async function listResetRequestsByStatus(db, status) {
   return db
     .prepare(
-      `SELECT request_id, license_key_hash, purchaser_email, status, created_at_ms, updated_at_ms
+      `SELECT request_id, license_key_hash, masked_license_key, purchaser_email, status, created_at_ms, updated_at_ms
        FROM reset_requests
        WHERE status = ?
        ORDER BY created_at_ms ASC`,
@@ -172,32 +172,42 @@ export async function writeAuditEvent(db, eventType, actor, metadataJson, create
 
 export async function upsertResetRequest(
   db,
-  { requestId, licenseKeyHash, purchaserEmail, status, createdAtMs, updatedAtMs },
+  { requestId, licenseKeyHash, maskedLicenseKey, purchaserEmail, status, createdAtMs, updatedAtMs },
 ) {
   return db
     .prepare(
       `INSERT INTO reset_requests (
          request_id,
          license_key_hash,
+         masked_license_key,
          purchaser_email,
          status,
          created_at_ms,
          updated_at_ms
-       ) VALUES (?, ?, ?, ?, ?, ?)
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(request_id) DO UPDATE SET
          license_key_hash = excluded.license_key_hash,
+         masked_license_key = excluded.masked_license_key,
          purchaser_email = excluded.purchaser_email,
          status = excluded.status,
          updated_at_ms = excluded.updated_at_ms`,
     )
-    .bind(requestId, licenseKeyHash, purchaserEmail, status, createdAtMs, updatedAtMs)
+    .bind(
+      requestId,
+      licenseKeyHash,
+      maskedLicenseKey,
+      purchaserEmail,
+      status,
+      createdAtMs,
+      updatedAtMs,
+    )
     .run();
 }
 
 export async function getResetRequest(db, requestId) {
   return db
     .prepare(
-      `SELECT request_id, license_key_hash, purchaser_email, status, created_at_ms, updated_at_ms
+      `SELECT request_id, license_key_hash, masked_license_key, purchaser_email, status, created_at_ms, updated_at_ms
        FROM reset_requests
        WHERE request_id = ?`,
     )

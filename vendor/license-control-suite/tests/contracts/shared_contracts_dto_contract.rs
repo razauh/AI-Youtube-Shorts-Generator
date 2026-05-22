@@ -26,6 +26,9 @@ fn reset_status_approved_message_is_stable() {
         license_state: LicenseState::Unbound,
         message: "Device reset approved. You can now use this license key to activate a device."
             .to_string(),
+        masked_license_key: None,
+        has_license_hash: None,
+        purchaser_email: None,
     };
 
     let json = serde_json::to_value(&res).unwrap();

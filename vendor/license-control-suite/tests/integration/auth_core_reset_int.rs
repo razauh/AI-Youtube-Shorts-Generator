@@ -33,6 +33,9 @@ impl ApiClient for FakeApi {
             status: ResetRequestState::Approved,
             license_state: LicenseState::Unbound,
             message: "Device reset approved. You can now use this license key to activate a device.".into(),
+            masked_license_key: None,
+            has_license_hash: None,
+            purchaser_email: None,
         })
     }
 }

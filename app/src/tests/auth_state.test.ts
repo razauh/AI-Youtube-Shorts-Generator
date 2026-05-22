@@ -114,19 +114,28 @@ describe('authState store', () => {
     const { createAuthState } = await import('../lib/stores/authState');
     const state = createAuthState();
 
-    await state.requestReset({ purchaser_email: 'buyer@example.com', receipt_reference: null });
+    await state.requestReset({});
     expect(get(state).lifecycle).toBe('reset_pending');
     expect(get(state).resetRequestId).toBe('reset-1');
+    expect(get(state).resetStatus).toBe('pending');
 
     await state.pollResetStatus('reset-1');
     expect(get(state).lifecycle).toBe('reset_approved_unbound');
+    expect(get(state).resetStatus).toBe('approved');
   });
 
   it('can preserve licensed shell state after settings reset request', async () => {
     requestDeviceReset.mockResolvedValue({
       request_id: 'reset-1',
       status: 'pending',
-      auth_state: { status: 'reset_pending', request_id: 'reset-1', masked_license_key: '****-1234' },
+      auth_state: {
+        status: 'licensed',
+        masked_license_key: '****-1234',
+        device_id: 'dev',
+        token_expires_at_ms: 1,
+        last_validated_at_ms: 1,
+        next_validation_due_ms: 2,
+      },
     });
     const { createAuthState } = await import('../lib/stores/authState');
     const state = createAuthState();
@@ -142,11 +151,70 @@ describe('authState store', () => {
 
     await state.bootstrap();
     await state.requestReset(
-      { purchaser_email: 'buyer@example.com', receipt_reference: null },
+      {},
       { preserveLicensedSession: true },
     );
 
     expect(get(state).lifecycle).toBe('licensed');
     expect(get(state).resetRequestId).toBe('reset-1');
+    expect(get(state).resetStatus).toBe('pending');
+  });
+
+  it('surfaces reset request failures to settings callers without faking success', async () => {
+    requestDeviceReset.mockRejectedValue({
+      code: 'worker_unreachable',
+      message: 'backend unreachable',
+    });
+    const { createAuthState } = await import('../lib/stores/authState');
+    const state = createAuthState();
+
+    await expect(state.requestReset({}, { preserveLicensedSession: true })).rejects.toMatchObject({
+      code: 'worker_unreachable',
+      message: 'Unable to reach the license service right now. Please try again shortly.',
+    });
+    expect(get(state).resetStatus).toBe('error');
+    expect(get(state).resetError?.code).toBe('worker_unreachable');
+  });
+
+  it('surfaces reset request failures to non-preserved flows via primary auth error', async () => {
+    requestDeviceReset.mockRejectedValue({
+      code: 'worker_unreachable',
+      message: 'backend unreachable',
+    });
+    const { createAuthState } = await import('../lib/stores/authState');
+    const state = createAuthState();
+
+    await expect(state.requestReset({})).rejects.toMatchObject({
+      code: 'worker_unreachable',
+    });
+    expect(get(state).lifecycle).toBe('error');
+    expect(get(state).error?.code).toBe('worker_unreachable');
+  });
+
+  it('parses stringified command errors from bridge failures', async () => {
+    requestDeviceReset.mockRejectedValue('{"code":"worker_unreachable","message":"ignored"}');
+    const { createAuthState } = await import('../lib/stores/authState');
+    const state = createAuthState();
+
+    await expect(state.requestReset({})).rejects.toMatchObject({ code: 'worker_unreachable' });
+    expect(get(state).error?.message).toBe(
+      'Unable to reach the license service right now. Please try again shortly.',
+    );
+  });
+
+  it('maps invalid_reset_request to a specific user-facing message', async () => {
+    requestDeviceReset.mockRejectedValue({
+      code: 'invalid_reset_request',
+      message: 'raw backend message should not be shown',
+    });
+    const { createAuthState } = await import('../lib/stores/authState');
+    const state = createAuthState();
+
+    await expect(state.requestReset({}, { preserveLicensedSession: true })).rejects.toMatchObject({
+      code: 'invalid_reset_request',
+    });
+    expect(get(state).resetError?.message).toBe(
+      'Unable to request a device reset. This requires your license key on this device—activate again with your license key, then retry.',
+    );
   });
 });

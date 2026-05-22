@@ -22,12 +22,11 @@ fn reset_request(ts: i64) -> DeviceResetRequest {
     DeviceResetRequest {
         license_key: Some(license()),
         masked_license_key: None,
-        purchaser_email: PurchaseEmail::new("buyer@example.com").unwrap(),
+        purchaser_email: Some(PurchaseEmail::new("buyer@example.com").unwrap()),
         device_public_key: DevicePublicKey::new("public").unwrap(),
         fingerprint: DeviceFingerprint::new("linux", "linux", "x86_64", None).unwrap(),
         app_version: "1.0.0".into(),
         timestamp_ms: ts,
-        receipt_reference: Some("receipt".into()),
     }
 }
 

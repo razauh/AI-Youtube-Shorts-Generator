@@ -1,6 +1,5 @@
 use crate::modules::user_reg::auth_licensing_core::{
-    AuthError, AuthService, DeviceResetStatus, LicenseKey, PurchaseEmail, ResetRequestId,
-    SessionState,
+    AuthError, AuthService, DeviceResetStatus, LicenseKey, ResetRequestId, SessionState,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -25,8 +24,6 @@ pub struct SessionView {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeviceResetInput {
-    pub purchaser_email: String,
-    pub receipt_reference: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -146,15 +143,10 @@ pub async fn request_device_reset(
 }
 
 pub async fn request_device_reset_with_service(
-    input: DeviceResetInput,
+    _input: DeviceResetInput,
     service: &AuthService,
 ) -> Result<DeviceResetView, AuthCommandError> {
-    let status = service
-        .request_device_reset(
-            PurchaseEmail::new(input.purchaser_email)?,
-            input.receipt_reference,
-        )
-        .await?;
+    let status = service.request_device_reset().await?;
     reset_view(status, service).await
 }
 

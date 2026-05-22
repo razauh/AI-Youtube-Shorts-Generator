@@ -36,6 +36,9 @@ const authStoreMock = vi.hoisted(() => {
       next_validation_due_ms: 2
     },
     resetRequestId: null,
+    resetStatus: 'idle',
+    resetStatusMessage: null,
+    resetError: null,
     error: null
   };
   let subscribers: Array<(value: any) => void> = [];
@@ -223,6 +226,9 @@ describe('test_ui flow parity', () => {
         next_validation_due_ms: 2
       },
       resetRequestId: null,
+      resetStatus: 'idle',
+      resetStatusMessage: null,
+      resetError: null,
       error: null
     });
     localStorage.clear();
@@ -253,6 +259,9 @@ describe('test_ui flow parity', () => {
       lifecycle: 'unauthenticated',
       authState: { status: 'unauthenticated' },
       resetRequestId: null,
+      resetStatus: 'idle',
+      resetStatusMessage: null,
+      resetError: null,
       error: null
     });
 
@@ -288,6 +297,9 @@ describe('test_ui flow parity', () => {
         next_validation_due_ms: 1_700_086_400_000
       },
       resetRequestId: null,
+      resetStatus: 'idle',
+      resetStatusMessage: null,
+      resetError: null,
       error: null
     });
 
@@ -340,13 +352,8 @@ describe('test_ui flow parity', () => {
     await fireEvent.click(screen.getByRole('tab', { name: 'Device Reset' }));
     expect(screen.getByRole('button', { name: 'Device Reset help' })).toBeTruthy();
     expect(screen.getByText('License support')).toBeTruthy();
-    await fireEvent.input(screen.getByLabelText('Settings purchaser email'), { target: { value: 'buyer@example.com' } });
-    await fireEvent.input(screen.getByLabelText('Settings receipt reference'), { target: { value: 'receipt-2' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Request Device Reset' }));
-    expect(authStoreMock.store.requestReset).toHaveBeenCalledWith({
-      purchaser_email: 'buyer@example.com',
-      receipt_reference: 'receipt-2'
-    }, { preserveLicensedSession: true });
+    expect(authStoreMock.store.requestReset).toHaveBeenCalledWith({}, { preserveLicensedSession: true });
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('tab', { name: 'Configuration' }));
@@ -410,6 +417,9 @@ describe('test_ui flow parity', () => {
       lifecycle: 'device_bound_elsewhere',
       authState: null,
       resetRequestId: null,
+      resetStatus: 'idle',
+      resetStatusMessage: null,
+      resetError: null,
       error: { code: 'device_already_bound', message: 'license is already bound to another device' }
     });
 
@@ -417,14 +427,9 @@ describe('test_ui flow parity', () => {
     expect(screen.getByText('License Required')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Generate' })).toBeNull();
 
-    await fireEvent.input(screen.getByLabelText('Purchaser email'), { target: { value: 'buyer@example.com' } });
-    await fireEvent.input(screen.getByLabelText('Receipt reference'), { target: { value: 'receipt-1' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Request Reset' }));
 
-    expect(authStoreMock.store.requestReset).toHaveBeenCalledWith({
-      purchaser_email: 'buyer@example.com',
-      receipt_reference: 'receipt-1'
-    });
+    expect(authStoreMock.store.requestReset).toHaveBeenCalledWith({});
   });
 
   it('test_submit sends correct payload', async () => {

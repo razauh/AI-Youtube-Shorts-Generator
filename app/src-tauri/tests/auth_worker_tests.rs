@@ -34,12 +34,11 @@ fn reset_request() -> DeviceResetRequest {
     DeviceResetRequest {
         license_key: Some(LicenseKey::new("SECRET-LICENSE").unwrap()),
         masked_license_key: Some(LicenseKey::new("SECRET-LICENSE").unwrap().masked()),
-        purchaser_email: PurchaseEmail::new("buyer@example.com").unwrap(),
+        purchaser_email: Some(PurchaseEmail::new("buyer@example.com").unwrap()),
         device_public_key: DevicePublicKey::new("public").unwrap(),
         fingerprint: fingerprint(),
         app_version: "0.1.0".to_string(),
         timestamp_ms: 456,
-        receipt_reference: Some("receipt-1".to_string()),
     }
 }
 
