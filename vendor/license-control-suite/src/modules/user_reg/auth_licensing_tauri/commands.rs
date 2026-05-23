@@ -24,6 +24,7 @@ pub struct SessionView {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeviceResetInput {
+    pub license_key: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,10 +144,17 @@ pub async fn request_device_reset(
 }
 
 pub async fn request_device_reset_with_service(
-    _input: DeviceResetInput,
+    input: DeviceResetInput,
     service: &AuthService,
 ) -> Result<DeviceResetView, AuthCommandError> {
-    let status = service.request_device_reset().await?;
+    let license_key_override = input
+        .license_key
+        .as_deref()
+        .map(LicenseKey::new)
+        .transpose()?;
+    let status = service
+        .request_device_reset_with_license_key(license_key_override)
+        .await?;
     reset_view(status, service).await
 }
 
@@ -386,6 +394,27 @@ mod tests {
             view.auth_state,
             AuthStateView::ResetApprovedUnbound { .. }
         ));
+    }
+
+    #[tokio::test]
+    async fn reset_request_accepts_ephemeral_license_key_from_input() {
+        let request_id = ResetRequestId::new("reset-1").unwrap();
+        let harness = TestService::new(FakeWorkerClient::new().with_reset_request(Ok(
+            DeviceResetStatus::Pending {
+                request_id: request_id.clone(),
+                created_at_ms: 10,
+            },
+        )));
+        let view = request_device_reset_with_service(
+            DeviceResetInput {
+                license_key: Some("LICENSE-1234".into()),
+            },
+            &harness.service,
+        )
+        .await
+        .unwrap();
+        assert_eq!(view.status, "pending");
+        assert_eq!(view.request_id, request_id.as_str());
     }
 
     #[test]

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+OUT_DIR="$ROOT_DIR/graphify-out"
+MAIN_GRAPH="$OUT_DIR/graph.json"
+MERGED_GRAPH="$OUT_DIR/merged-graph.json"
+TMP_MERGED="$OUT_DIR/.merged-graph.tmp.json"
+
+cd "$ROOT_DIR"
+
+if ! command -v graphify >/dev/null 2>&1; then
+  echo "Error: graphify command not found in PATH." >&2
+  exit 1
+fi
+
+echo "[update_graphify] Running incremental graph update..."
+graphify update .
+
+if [[ ! -f "$MAIN_GRAPH" ]]; then
+  echo "Error: expected main graph at $MAIN_GRAPH after update." >&2
+  exit 1
+fi
+
+mkdir -p "$OUT_DIR"
+
+if [[ -f "$MERGED_GRAPH" ]]; then
+  echo "[update_graphify] Merging main graph into existing merged graph..."
+  graphify merge-graphs "$MERGED_GRAPH" "$MAIN_GRAPH" --out "$TMP_MERGED"
+  mv "$TMP_MERGED" "$MERGED_GRAPH"
+else
+  echo "[update_graphify] No existing merged graph found; creating one from main graph..."
+  cp "$MAIN_GRAPH" "$MERGED_GRAPH"
+fi
+
+echo "[update_graphify] Done."
+echo "  main:   $MAIN_GRAPH"
+echo "  merged: $MERGED_GRAPH"

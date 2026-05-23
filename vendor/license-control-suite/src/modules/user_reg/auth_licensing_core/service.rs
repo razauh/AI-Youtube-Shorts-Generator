@@ -76,10 +76,12 @@ impl AuthService {
     pub async fn validate_session(&self) -> Result<SessionState, AuthError> {
         let Some(token) = self.secrets.get_access_token().await? else {
             let current = self.state.load_session_state().await?;
-            let masked = masked_from_state(&current);
-            let reauth = SessionState::require_reauth(masked);
-            self.state.save_session_state(reauth.clone()).await?;
-            return Ok(reauth);
+            let next = match current {
+                SessionState::Unauthenticated => SessionState::Unauthenticated,
+                _ => SessionState::require_reauth(masked_from_state(&current)),
+            };
+            self.state.save_session_state(next.clone()).await?;
+            return Ok(next);
         };
 
         match self.worker.validate_session(token).await {
@@ -88,6 +90,12 @@ impl AuthService {
                 bound_device,
                 token_expires_at_ms,
             }) => {
+                if self.secrets.get_license_key().await?.is_none() {
+                    self.secrets.clear_session_secrets().await?;
+                    let next = SessionState::require_reauth(Some(masked_license_key));
+                    self.state.save_session_state(next.clone()).await?;
+                    return Ok(next);
+                }
                 let next = SessionState::after_activation(
                     masked_license_key,
                     bound_device,
@@ -127,13 +135,18 @@ impl AuthService {
         }
     }
 
-    pub async fn request_device_reset(
+    pub async fn request_device_reset_with_license_key(
         &self,
+        license_key_override: Option<LicenseKey>,
     ) -> Result<DeviceResetStatus, AuthError> {
         let current = self.state.load_session_state().await?;
         let keypair = self.identity.get_or_create_keypair().await?;
         let fingerprint = self.identity.collect_fingerprint().await?;
-        let license_key = self.secrets.get_license_key().await?;
+        let license_key = if let Some(override_key) = license_key_override {
+            Some(override_key)
+        } else {
+            self.secrets.get_license_key().await?
+        };
         if license_key.is_none() {
             // Hosted reset requests require a real license key so the worker can authenticate
             // the reset request. Older sessions might be licensed via access token without the
@@ -158,6 +171,12 @@ impl AuthService {
             self.state.save_session_state(next).await?;
         }
         Ok(status)
+    }
+
+    pub async fn request_device_reset(
+        &self,
+    ) -> Result<DeviceResetStatus, AuthError> {
+        self.request_device_reset_with_license_key(None).await
     }
 
     pub async fn get_device_reset_status(
@@ -291,15 +310,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn missing_token_moves_to_reauth_required() {
+    async fn missing_token_keeps_unauthenticated_state() {
         let harness = TestService::new(FakeWorkerClient::new());
         let state = harness.service.validate_session().await.unwrap();
-        assert_eq!(
-            state,
-            SessionState::ReauthRequired {
-                masked_license_key: None
-            }
-        );
+        assert_eq!(state, SessionState::Unauthenticated);
+    }
+
+    #[tokio::test]
+    async fn missing_token_moves_prior_authenticated_state_to_reauth_required() {
+        let harness = TestService::new(FakeWorkerClient::new());
+        harness
+            .state
+            .save_session_state(SessionState::after_activation(
+                MaskedLicenseKey::new("••••-1234").unwrap(),
+                outcome().bound_device.clone(),
+                200,
+                10,
+                24 * 60 * 60 * 1000,
+            ))
+            .await
+            .unwrap();
+
+        let state = harness.service.validate_session().await.unwrap();
+        assert!(matches!(state, SessionState::ReauthRequired { .. }));
     }
 
     #[tokio::test]
@@ -315,9 +348,33 @@ mod tests {
             .put_access_token(AccessToken::new("token").unwrap())
             .await
             .unwrap();
+        harness
+            .secrets
+            .put_license_key(LicenseKey::new("LICENSE-1234").unwrap())
+            .await
+            .unwrap();
 
         let state = harness.service.validate_session().await.unwrap();
         assert!(matches!(state, SessionState::Licensed { .. }));
+    }
+
+    #[tokio::test]
+    async fn active_validation_without_stored_license_key_forces_reauth() {
+        let worker = FakeWorkerClient::new().with_validation(Ok(ValidationOutcome::Active {
+            masked_license_key: MaskedLicenseKey::new("••••-1234").unwrap(),
+            bound_device: outcome().bound_device,
+            token_expires_at_ms: 300,
+        }));
+        let harness = TestService::new(worker);
+        harness
+            .secrets
+            .put_access_token(AccessToken::new("token").unwrap())
+            .await
+            .unwrap();
+
+        let state = harness.service.validate_session().await.unwrap();
+        assert!(matches!(state, SessionState::ReauthRequired { .. }));
+        assert!(harness.secrets.get_access_token().await.unwrap().is_none());
     }
 
     #[tokio::test]
@@ -428,6 +485,48 @@ mod tests {
             harness.state.load_session_state().await.unwrap(),
             SessionState::Licensed { .. }
         ));
+    }
+
+    #[tokio::test]
+    async fn reset_request_accepts_ephemeral_license_key_when_secure_store_is_empty() {
+        let request_id = ResetRequestId::new("reset-ephemeral").unwrap();
+        let status = DeviceResetStatus::Pending {
+            request_id: request_id.clone(),
+            created_at_ms: 10,
+        };
+        let worker = FakeWorkerClient::new().with_reset_request(Ok(status));
+        let harness = TestService::new(worker.clone());
+
+        harness
+            .service
+            .request_device_reset_with_license_key(Some(LicenseKey::new("LICENSE-1234").unwrap()))
+            .await
+            .unwrap();
+
+        let calls = worker.reset_requests();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0]
+                .license_key
+                .as_ref()
+                .expect("ephemeral license key should be forwarded")
+                .expose_secret(),
+            "LICENSE-1234"
+        );
+        assert!(
+            harness.secrets.get_license_key().await.unwrap().is_none(),
+            "ephemeral reset key must not be persisted"
+        );
+        assert_eq!(
+            harness
+                .state
+                .load_reset_status()
+                .await
+                .unwrap()
+                .unwrap()
+                .request_id(),
+            &request_id
+        );
     }
 
     #[tokio::test]

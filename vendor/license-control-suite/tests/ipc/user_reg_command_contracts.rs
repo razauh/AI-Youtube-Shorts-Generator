@@ -112,7 +112,7 @@ async fn service_helper_functions_remain_behaviorally_equivalent() {
     assert!(matches!(validated.auth_state, AuthStateView::Licensed { .. }));
 
     let requested = request_device_reset_with_service(
-        DeviceResetInput {},
+        DeviceResetInput { license_key: None },
         &harness.service,
     )
     .await

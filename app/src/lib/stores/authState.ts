@@ -3,7 +3,6 @@ import type { AuthCommandError, AuthStateView, DeviceResetInput } from '../authC
 import {
   activateLicense,
   clearLocalSession,
-  getAuthState,
   getDeviceResetStatus,
   requestDeviceReset,
   validateSession,
@@ -35,6 +34,7 @@ export type DeviceResetLifecycle =
 export interface AuthStateShape {
   lifecycle: AuthLifecycle;
   authState: AuthStateView | null;
+  reauthMessage: string | null;
   resetRequestId: string | null;
   resetStatus: DeviceResetLifecycle;
   resetStatusMessage: string | null;
@@ -49,6 +49,7 @@ interface RequestResetOptions {
 const initialState: AuthStateShape = {
   lifecycle: 'checking',
   authState: null,
+  reauthMessage: null,
   resetRequestId: null,
   resetStatus: 'idle',
   resetStatusMessage: null,
@@ -235,6 +236,7 @@ function resetIdFrom(authState: AuthStateView): string | null {
 export function createAuthState() {
   const { subscribe, set, update } = writable<AuthStateShape>(initialState);
   let resetPollInterval: number | null = null;
+  let startupValidationInProgress = false;
 
   function stopResetPolling() {
     if (resetPollInterval !== null) {
@@ -313,6 +315,12 @@ export function createAuthState() {
     set({
       lifecycle: lifecycleFromAuthState(authState),
       authState,
+      reauthMessage:
+        authState.status === 'reauth_required'
+          ? startupValidationInProgress
+            ? 'For security, re-enter your license key to continue on this device.'
+            : 'Session expired. Re-enter your license key to continue.'
+          : null,
       resetRequestId,
       resetStatus,
       resetStatusMessage,
@@ -327,7 +335,10 @@ export function createAuthState() {
     bootstrap: async () => {
       update((state) => ({ ...state, lifecycle: 'checking', error: null }));
       try {
-        applyAuthState(await getAuthState());
+        startupValidationInProgress = true;
+        const view = await validateSession();
+        applyAuthState(view.auth_state);
+        startupValidationInProgress = false;
         const cached = loadResetCache();
         if (cached && cached.requestId && cached.status !== 'idle') {
           update((state) => ({
@@ -342,9 +353,11 @@ export function createAuthState() {
           }
         }
       } catch (error) {
+        startupValidationInProgress = false;
         set({
           lifecycle: 'error',
           authState: null,
+          reauthMessage: null,
           resetRequestId: null,
           resetStatus: 'idle',
           resetStatusMessage: null,
@@ -362,6 +375,7 @@ export function createAuthState() {
         set({
           lifecycle: 'error',
           authState: null,
+          reauthMessage: null,
           resetRequestId: null,
           resetStatus: 'idle',
           resetStatusMessage: null,
@@ -380,6 +394,7 @@ export function createAuthState() {
         set({
           lifecycle: err.code === 'device_already_bound' ? 'device_bound_elsewhere' : 'error',
           authState: null,
+          reauthMessage: null,
           resetRequestId: null,
           resetStatus: 'idle',
           resetStatusMessage: null,
@@ -457,6 +472,7 @@ export function createAuthState() {
       set({
         lifecycle: 'unauthenticated',
         authState: { status: 'unauthenticated' },
+        reauthMessage: null,
         resetRequestId: null,
         resetStatus: 'idle',
         resetStatusMessage: null,

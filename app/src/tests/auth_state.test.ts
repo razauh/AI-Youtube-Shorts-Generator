@@ -30,13 +30,28 @@ describe('authState store', () => {
   });
 
   it('bootstraps unauthenticated state', async () => {
-    getAuthState.mockResolvedValue({ status: 'unauthenticated' });
+    validateSession.mockResolvedValue({ auth_state: { status: 'unauthenticated' } });
     const { createAuthState } = await import('../lib/stores/authState');
     const state = createAuthState();
 
     await state.bootstrap();
 
     expect(get(state).lifecycle).toBe('unauthenticated');
+  });
+
+  it('shows startup-specific prompt when bootstrap lands in reauth_required', async () => {
+    validateSession.mockResolvedValue({
+      auth_state: { status: 'reauth_required', masked_license_key: '****-1234' },
+    });
+    const { createAuthState } = await import('../lib/stores/authState');
+    const state = createAuthState();
+
+    await state.bootstrap();
+
+    expect(get(state).lifecycle).toBe('reauth_required');
+    expect(get(state).reauthMessage).toBe(
+      'For security, re-enter your license key to continue on this device.',
+    );
   });
 
   it('maps activation success to licensed without retaining plaintext license key', async () => {
@@ -140,13 +155,15 @@ describe('authState store', () => {
     const { createAuthState } = await import('../lib/stores/authState');
     const state = createAuthState();
     state.reset();
-    getAuthState.mockResolvedValue({
-      status: 'licensed',
-      masked_license_key: '****-1234',
-      device_id: 'dev',
-      token_expires_at_ms: 1,
-      last_validated_at_ms: 1,
-      next_validation_due_ms: 2,
+    validateSession.mockResolvedValue({
+      auth_state: {
+        status: 'licensed',
+        masked_license_key: '****-1234',
+        device_id: 'dev',
+        token_expires_at_ms: 1,
+        last_validated_at_ms: 1,
+        next_validation_due_ms: 2,
+      },
     });
 
     await state.bootstrap();

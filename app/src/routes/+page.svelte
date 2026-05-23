@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import FormStatus from '../lib/components/FormStatus.svelte';
   import { runState } from '../lib/stores/runState';
   import { authState } from '../lib/stores/authState';
   import { openInFileManager, pickLocalVideoFile, pickOutputJsonPath, runGenerateAndStream } from '../lib/api/tauriClient';
@@ -55,6 +56,7 @@
   let format = '720';
   let outputJson = '';
   let licenseKey = '';
+  let resetLicenseKey = '';
 
   let projectName = '';
   let shortsSearch = '';
@@ -89,6 +91,13 @@
   let settingsActionTarget = '';
   let settingsActionKind = 'success';
   let settingsActionBusy = false;
+  let settingsResetLicenseKey = '';
+  let authResetActionStatus = '';
+  let authResetActionKind = 'success';
+  let licenseFormStatus = '';
+  let licenseFormStatusKind = 'info';
+  let generateFormStatus = '';
+  let generateFormStatusKind = 'info';
   let theme = 'dark';
   let mobileNavOpen = false;
   let openLocalDropdown = '';
@@ -276,12 +285,20 @@
     if (settingsActionBusy) {
       return;
     }
+    const key = settingsResetLicenseKey.trim();
+    if (!key) {
+      settingsActionStatus = 'Enter your license key to request a device reset.';
+      settingsActionTarget = 'reset';
+      settingsActionKind = 'error';
+      return;
+    }
     settingsActionStatus = '';
     settingsActionTarget = '';
     settingsActionKind = 'success';
     settingsActionBusy = true;
     try {
-      await authState.requestReset({}, { preserveLicensedSession: true });
+      await authState.requestReset({ license_key: key }, { preserveLicensedSession: true });
+      settingsResetLicenseKey = '';
       settingsActionStatus = 'Device reset request sent.';
       settingsActionTarget = 'reset';
       settingsActionKind = 'success';
@@ -654,14 +671,27 @@
   async function submitLicense() {
     const key = licenseKey.trim();
     if (!key) {
+      licenseFormStatus = 'Enter your license key to continue.';
+      licenseFormStatusKind = 'error';
       return;
     }
+    licenseFormStatus = '';
+    licenseFormStatusKind = 'info';
     await authState.activate(key);
     licenseKey = '';
   }
 
   async function submitResetRequest() {
-    await authState.requestReset({});
+    const key = resetLicenseKey.trim();
+    if (!key) {
+      authResetActionStatus = 'Enter your license key to request a device reset.';
+      authResetActionKind = 'error';
+      return;
+    }
+    authResetActionStatus = '';
+    authResetActionKind = 'success';
+    await authState.requestReset({ license_key: key });
+    resetLicenseKey = '';
   }
 
   async function refreshResetStatus() {
@@ -699,6 +729,24 @@
   }
 
   async function submitRun() {
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
+      generateFormStatus = sourceType === 'local'
+        ? 'Select a local video file path before running.'
+        : 'Enter a YouTube video URL before running.';
+      generateFormStatusKind = 'error';
+      return;
+    }
+
+    const normalizedNumClips = Number(numClips);
+    if (!Number.isFinite(normalizedNumClips) || normalizedNumClips < 1) {
+      generateFormStatus = 'Num clips must be at least 1.';
+      generateFormStatusKind = 'error';
+      return;
+    }
+
+    generateFormStatus = '';
+    generateFormStatusKind = 'info';
     if (sourceType === 'local') {
       mode = 'local';
     }
@@ -716,9 +764,9 @@
     try {
       const envelope = await runGenerateAndStream(
         {
-          youtube_url: url,
+          youtube_url: trimmedUrl,
           mode,
-          num_clips: numClips,
+          num_clips: normalizedNumClips,
           aspect_ratio: aspectRatio,
           download_format: format,
           output_json: outputJson.trim() || undefined
@@ -733,8 +781,8 @@
         name: projectName.trim() || 'Untitled Project',
         status,
         updatedAt: new Date().toISOString(),
-        sourceUrl: url,
-        clipCount: numClips,
+        sourceUrl: trimmedUrl,
+        clipCount: normalizedNumClips,
         shorts: envelope.ok ? envelope.result.shorts : existing?.shorts || []
       };
 
@@ -750,7 +798,7 @@
       runState.onError({
         error: e instanceof Error ? e.message : 'unknown error',
         mode,
-        source_video_url: url
+        source_video_url: trimmedUrl
       });
     }
   }
@@ -758,6 +806,22 @@
 
 <svelte:body on:click|capture={closeLocalDropdown} />
 <svelte:window on:keydown={closeLocalDropdownOnEscape} />
+
+<div class="global-theme-toggle">
+  <button
+    type="button"
+    class="theme-switch"
+    role="switch"
+    aria-label="Toggle theme"
+    aria-checked={theme === 'dark'}
+    on:click={toggleTheme}
+  >
+    <span class="theme-switch-icon" aria-hidden="true">{theme === 'dark' ? '🌙' : '☀️'}</span>
+    <span class="theme-switch-track" aria-hidden="true">
+      <span class="theme-switch-thumb"></span>
+    </span>
+  </button>
+</div>
 
 {#if $authState.lifecycle !== 'licensed' && $authState.lifecycle !== 'licensed_offline_grace'}
   <main class="license-shell">
@@ -767,9 +831,6 @@
     <section class="panel license-card" aria-labelledby="license-title">
       <div class="license-brand">
         <p class="brand-mark">Signal Forge</p>
-        <button class="theme-toggle compact" type="button" on:click={toggleTheme}>
-          {theme === 'dark' ? 'Light' : 'Dark'}
-        </button>
       </div>
 
       <div class="license-copy">
@@ -805,16 +866,17 @@
       {/if}
 
       {#if canShowActivationForm}
-        <form class="form license-form" on:submit|preventDefault={submitLicense}>
-          <label>License key <input aria-label="License key" type="password" bind:value={licenseKey} autocomplete="off" spellcheck="false" required /></label>
+        <form class="form license-form" novalidate on:submit|preventDefault={submitLicense}>
+          <label>License key <input aria-label="License key" type="password" bind:value={licenseKey} autocomplete="off" spellcheck="false" /></label>
           <button type="submit" disabled={$authState.lifecycle === 'activating'}>
             {$authState.lifecycle === 'activating' ? 'Activating...' : 'Activate'}
           </button>
+          <FormStatus message={licenseFormStatus} kind={licenseFormStatusKind} />
         </form>
       {/if}
 
       {#if $authState.lifecycle === 'reauth_required'}
-        <p class="meta">Session expired. Re-enter your license key to continue.</p>
+        <p class="meta">{$authState.reauthMessage || 'Session expired. Re-enter your license key to continue.'}</p>
       {/if}
 
       {#if $authState.error}
@@ -824,9 +886,20 @@
       {#if $authState.lifecycle === 'device_bound_elsewhere'}
         <div class="reset-box">
           <h2>Request Device Reset</h2>
-          <form class="form reset-form" on:submit|preventDefault={submitResetRequest}>
+          <form class="form reset-form" novalidate on:submit|preventDefault={submitResetRequest}>
+            <label>
+              License key
+              <input
+                aria-label="Reset license key"
+                type="password"
+                bind:value={resetLicenseKey}
+                autocomplete="off"
+                spellcheck="false"
+              />
+            </label>
             <button type="submit">Request Reset</button>
           </form>
+          <FormStatus message={authResetActionStatus} kind={authResetActionKind} />
         </div>
       {/if}
     </section>
@@ -854,9 +927,6 @@
         <button class:active={active === 'library'} on:click={() => selectScreen('library')}>Shorts Library</button>
         <button class:active={active === 'settings'} on:click={() => selectScreen('settings')}>Settings</button>
       </nav>
-      <button class="theme-toggle" class:nav-open={mobileNavOpen} type="button" on:click={toggleTheme}>
-        {theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}
-      </button>
     </aside>
 
     <section class="content">
@@ -883,7 +953,7 @@
       </section>
 
       <section class="panel">
-        <form class="form" on:submit|preventDefault={submitRun}>
+        <form class="form" novalidate on:submit|preventDefault={submitRun}>
           <label>Project title <input aria-label="Project title" bind:value={projectName} placeholder="My Product Launch Highlights" /></label>
           <label>Source type
             <div class="select-wrap">
@@ -893,7 +963,7 @@
               </select>
             </div>
           </label>
-          <label>{sourceLabel} <input aria-label="YouTube video URL" bind:value={url} placeholder={sourcePlaceholder} required /></label>
+          <label>{sourceLabel} <input aria-label="YouTube video URL" bind:value={url} placeholder={sourcePlaceholder} /></label>
           {#if sourceType === 'local'}
             <div class="row picker-row">
               <button type="button" on:click={chooseLocalFile}>Choose File</button>
@@ -907,7 +977,7 @@
               </select>
             </div>
           </label>
-          <label>Num clips <input aria-label="Num clips" type="number" min="1" bind:value={numClips} /></label>
+          <label>Num clips <input aria-label="Num clips" type="number" bind:value={numClips} /></label>
           <label>Aspect ratio
             <div class="select-wrap">
               <select
@@ -950,6 +1020,7 @@
             <p class="meta warn-text">{localRunBlockedMessage}</p>
           {/if}
           <button type="submit" disabled={localRunBlocked}>Run</button>
+          <FormStatus message={generateFormStatus} kind={generateFormStatusKind} />
         </form>
       </section>
 
@@ -1128,7 +1199,7 @@
             {#if apiProfiles.muapi?.envOverride}
               <p class="meta warn-text">Environment variable override is active. Saved profiles are available, but runtime will use the environment key.</p>
             {/if}
-            <form class="form config-form api-profile-form" on:submit|preventDefault={saveMuapiKey}>
+            <form class="form config-form api-profile-form" novalidate on:submit|preventDefault={saveMuapiKey}>
               <label>Profile name <input aria-label="MuAPI profile name" autocomplete="off" bind:value={muapiProfileLabel} placeholder="Personal MuAPI" /></label>
               <label>MuAPI key <input aria-label="MuAPI key" type="password" autocomplete="off" bind:value={muapiKeyInput} /></label>
               <div class="settings-actions">
@@ -1157,8 +1228,8 @@
                 <p class="meta">No MuAPI profiles yet. Add a named profile so saving does not silently replace another key.</p>
               {/if}
             </div>
-            {#if settingsActionTarget === 'muapi' && settingsActionStatus}
-              <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
+            {#if settingsActionTarget === 'muapi'}
+              <FormStatus message={settingsActionStatus} kind={settingsActionKind} />
             {/if}
           </article>
 
@@ -1181,7 +1252,7 @@
             {#if apiProfiles.openai?.envOverride}
               <p class="meta warn-text">Environment variable override is active. Saved profiles are available, but runtime will use the environment key.</p>
             {/if}
-            <form class="form config-form api-profile-form" on:submit|preventDefault={saveOpenaiKey}>
+            <form class="form config-form api-profile-form" novalidate on:submit|preventDefault={saveOpenaiKey}>
               <label>Profile name <input aria-label="OpenAI profile name" autocomplete="off" bind:value={openaiProfileLabel} placeholder="Personal OpenAI" /></label>
               <label>OpenAI key <input aria-label="OpenAI key" type="password" autocomplete="off" bind:value={openaiKeyInput} /></label>
               <div class="settings-actions">
@@ -1210,8 +1281,8 @@
                 <p class="meta">No OpenAI profiles yet. Add a named profile so saving does not silently replace another key.</p>
               {/if}
             </div>
-            {#if settingsActionTarget === 'openai' && settingsActionStatus}
-              <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
+            {#if settingsActionTarget === 'openai'}
+              <FormStatus message={settingsActionStatus} kind={settingsActionKind} />
             {/if}
           </article>
           {/if}
@@ -1233,7 +1304,7 @@
             {#if localProfiles?.envOverride}
               <p class="meta warn-text">Environment variable override is active. Saved model profiles are available, but runtime will use the environment model/device.</p>
             {/if}
-            <form class="form config-form local-processing-form" on:submit|preventDefault={saveLocalProcessing}>
+            <form class="form config-form local-processing-form" novalidate on:submit|preventDefault={saveLocalProcessing}>
               <label>Profile name <input aria-label="Local model profile name" autocomplete="off" bind:value={localProfileLabel} placeholder="Balanced local model" /></label>
               <label class="select-field">
                 <span class="field-label-row">
@@ -1340,8 +1411,8 @@
                 <p class="meta">No local model profiles yet. Save a named profile to download and reuse a model.</p>
               {/if}
             </div>
-            {#if settingsActionTarget === 'local' && settingsActionStatus}
-              <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
+            {#if settingsActionTarget === 'local'}
+              <FormStatus message={settingsActionStatus} kind={settingsActionKind} />
             {/if}
           </article>
           {/if}
@@ -1360,7 +1431,17 @@
                 </div>
               </div>
             </div>
-            <form class="form reset-form" on:submit|preventDefault={submitSettingsResetRequest}>
+            <form class="form reset-form" novalidate on:submit|preventDefault={submitSettingsResetRequest}>
+              <label>
+                License key
+                <input
+                  aria-label="Settings reset license key"
+                  type="password"
+                  bind:value={settingsResetLicenseKey}
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+              </label>
               <button class="button-danger" type="submit" disabled={settingsActionBusy}>Request Device Reset</button>
             </form>
             {#if $authState.resetRequestId}
@@ -1375,8 +1456,8 @@
             {#if $authState.resetError}
               <p class="error-text">{$authState.resetError.message}</p>
             {/if}
-            {#if settingsActionTarget === 'reset' && settingsActionStatus}
-              <p class:meta={settingsActionKind !== 'error'} class:error-text={settingsActionKind === 'error'}>{settingsActionStatus}</p>
+            {#if settingsActionTarget === 'reset'}
+              <FormStatus message={settingsActionStatus} kind={settingsActionKind} />
             {/if}
           </article>
           {/if}
@@ -1656,12 +1737,55 @@
     display: grid;
     gap: var(--space-sm);
   }
-  .theme-toggle {
-    margin-top: auto;
+  .global-theme-toggle {
+    position: fixed;
+    top: max(var(--space-md), env(safe-area-inset-top));
+    right: max(var(--space-md), env(safe-area-inset-right));
+    z-index: 20;
   }
-  .theme-toggle.compact {
-    margin-top: 0;
-    padding: .45rem .65rem;
+
+  .theme-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    padding: .36rem .5rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid color-mix(in srgb, var(--color-border-strong) 26%, transparent);
+    background: color-mix(in srgb, var(--color-panel-card) 82%, transparent);
+    color: var(--color-text-primary);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+    font-weight: 600;
+  }
+
+  .theme-switch-icon {
+    font-size: .95rem;
+    line-height: 1;
+  }
+
+  .theme-switch-track {
+    width: 2.2rem;
+    height: 1.2rem;
+    border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--color-surface-input) 72%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border-soft) 30%, transparent);
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 .12rem;
+    box-sizing: border-box;
+  }
+
+  .theme-switch-thumb {
+    width: .86rem;
+    height: .86rem;
+    border-radius: var(--radius-pill);
+    background: var(--color-primary);
+    transform: translateX(0);
+    transition: transform 160ms ease;
+  }
+
+  .theme-switch[aria-checked="true"] .theme-switch-thumb {
+    transform: translateX(.94rem);
   }
 
   button, input, select, textarea {
@@ -2220,19 +2344,15 @@
       display: inline-flex;
       width: auto;
     }
-    nav,
-    .theme-toggle {
+    nav {
       display: none;
     }
-    .theme-toggle.compact {
-      display: inline-flex;
-    }
-    nav.nav-open,
-    .theme-toggle.nav-open {
+    nav.nav-open {
       display: grid;
     }
-    .theme-toggle.nav-open {
-      margin-top: 0;
+    .global-theme-toggle {
+      top: max(var(--space-sm), env(safe-area-inset-top));
+      right: max(var(--space-sm), env(safe-area-inset-right));
     }
     .content {
       min-height: auto;

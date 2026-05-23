@@ -252,6 +252,8 @@ describe('test_ui flow parity', () => {
     expect((screen.getByLabelText('Aspect ratio') as HTMLSelectElement).value).toBe('9:16');
     expect((screen.getByLabelText('Resolution') as HTMLSelectElement).value).toBe('720');
     expect((screen.getByLabelText('Output JSON path') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('YouTube video URL') as HTMLInputElement).getAttribute('required')).toBeNull();
+    expect((screen.getByLabelText('Num clips') as HTMLInputElement).getAttribute('min')).toBeNull();
   });
 
   it('test_unauthenticated_state_hides_generator_and_submits_license', async () => {
@@ -275,6 +277,7 @@ describe('test_ui flow parity', () => {
     expect(screen.queryByRole('button', { name: 'Help & Trust' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Terms' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Privacy' })).toBeNull();
+    expect(screen.getByRole('switch', { name: 'Toggle theme' })).toBeTruthy();
 
     expect((screen.getByLabelText('License key') as HTMLInputElement).type).toBe('password');
 
@@ -283,6 +286,35 @@ describe('test_ui flow parity', () => {
 
     expect(authStoreMock.store.activate).toHaveBeenCalledWith('LICENSE-1234');
     expect(JSON.stringify(localStorage)).not.toContain('LICENSE-1234');
+  });
+
+  it('test_global_theme_switch_toggles_checked_state', async () => {
+    render(Page);
+    const themeSwitch = screen.getByRole('switch', { name: 'Toggle theme' });
+
+    expect(themeSwitch.getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(themeSwitch);
+    expect(themeSwitch.getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('test_license_form_uses_persistent_app_error_for_empty_key', async () => {
+    authStoreMock.set({
+      lifecycle: 'unauthenticated',
+      authState: { status: 'unauthenticated' },
+      resetRequestId: null,
+      resetStatus: 'idle',
+      resetStatusMessage: null,
+      resetError: null,
+      error: null
+    });
+
+    render(Page);
+    await fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
+
+    expect(authStoreMock.store.activate).not.toHaveBeenCalled();
+    const message = screen.getByText('Enter your license key to continue.');
+    expect(message.className).toContain('form-status');
+    expect(message.className).toContain('form-status--error');
   });
 
   it('test_settings_screen_shows_redacted_runtime_and_device_status', async () => {
@@ -304,6 +336,7 @@ describe('test_ui flow parity', () => {
     });
 
     render(Page);
+    expect(screen.getAllByRole('switch', { name: 'Toggle theme' })).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'Help & Trust' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Terms' })).toBeNull();
 
@@ -352,8 +385,9 @@ describe('test_ui flow parity', () => {
     await fireEvent.click(screen.getByRole('tab', { name: 'Device Reset' }));
     expect(screen.getByRole('button', { name: 'Device Reset help' })).toBeTruthy();
     expect(screen.getByText('License support')).toBeTruthy();
+    await fireEvent.input(screen.getByLabelText('Settings reset license key'), { target: { value: 'LICENSE-1234' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Request Device Reset' }));
-    expect(authStoreMock.store.requestReset).toHaveBeenCalledWith({}, { preserveLicensedSession: true });
+    expect(authStoreMock.store.requestReset).toHaveBeenCalledWith({ license_key: 'LICENSE-1234' }, { preserveLicensedSession: true });
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('tab', { name: 'Configuration' }));
@@ -427,9 +461,10 @@ describe('test_ui flow parity', () => {
     expect(screen.getByText('License Required')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Generate' })).toBeNull();
 
+    await fireEvent.input(screen.getByLabelText('Reset license key'), { target: { value: 'LICENSE-1234' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Request Reset' }));
 
-    expect(authStoreMock.store.requestReset).toHaveBeenCalledWith({});
+    expect(authStoreMock.store.requestReset).toHaveBeenCalledWith({ license_key: 'LICENSE-1234' });
   });
 
   it('test_submit sends correct payload', async () => {
@@ -458,6 +493,28 @@ describe('test_ui flow parity', () => {
       download_format: '1080',
       output_json: 'result.json'
     });
+  });
+
+  it('test_generate_form_shows_persistent_error_for_empty_source', async () => {
+    render(Page);
+    await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+
+    expect(runGenerateAndStream).not.toHaveBeenCalled();
+    const message = screen.getByText('Enter a YouTube video URL before running.');
+    expect(message.className).toContain('form-status');
+    expect(message.className).toContain('form-status--error');
+  });
+
+  it('test_generate_form_blocks_invalid_num_clips_with_app_error', async () => {
+    render(Page);
+    await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
+    await fireEvent.input(screen.getByLabelText('Num clips'), { target: { value: '0' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+
+    expect(runGenerateAndStream).not.toHaveBeenCalled();
+    const message = screen.getByText('Num clips must be at least 1.');
+    expect(message.className).toContain('form-status');
+    expect(message.className).toContain('form-status--error');
   });
 
   it('test_event updates state lifecycle and progress', async () => {

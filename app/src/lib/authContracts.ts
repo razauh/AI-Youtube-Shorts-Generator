@@ -51,6 +51,7 @@ export interface SessionView {
 }
 
 export interface DeviceResetInput {
+  license_key?: string;
 }
 
 export interface DeviceResetView {
