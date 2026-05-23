@@ -1,4 +1,4 @@
-export type PolicyTab = 'terms' | 'privacy' | 'refund';
+export type PolicyTab = 'terms' | 'privacy' | 'notices' | 'refund';
 
 type PolicySection = {
   heading: string;
@@ -6,53 +6,463 @@ type PolicySection = {
 };
 
 export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
-  terms: [
+  "terms": [
     {
-      heading: 'Terms of Use',
-      paragraphs: [
-        'By using this software, you confirm you have rights to process input media and comply with platform policies and local laws.',
-        'You are responsible for generated outputs, publication decisions, copyright compliance, and any third-party claims.'
+      "heading": "Terms and Conditions",
+      "paragraphs": [
+        "Last updated: May 23, 2026",
+        "These Terms and Conditions (\"Terms\") apply to your use of [APP NAME]. Repository evidence refers to the project as \"AI YouTube Shorts Generator\" and some application UI references \"Signal Forge.\" [VERIFY: production app name and legal product name]",
+        "[APP NAME] is provided by [DEVELOPER NAME]. Contact: [CONTACT EMAIL]. Governing law: [JURISDICTION].",
+        "This document is a practical policy draft for the application and should be reviewed by a qualified lawyer before public release."
       ]
     },
     {
-      heading: 'Acceptable Use',
-      paragraphs: [
-        'Do not use the app to generate unlawful, deceptive, harmful, or infringing content. Abuse may result in access suspension for paid services.'
+      "heading": "1. Acceptance of Terms",
+      "paragraphs": [
+        "By installing, activating, accessing, or using the application, you agree to these Terms. If you do not agree, do not use the application.",
+        "If you use the application on behalf of a company or organization, you represent that you have authority to accept these Terms on its behalf."
+      ]
+    },
+    {
+      "heading": "2. Description of the Application",
+      "paragraphs": [
+        "The application is a desktop tool for generating short-form video clips from user-provided sources such as YouTube URLs and local video files. Depending on mode and configuration, the application may download or process media, transcribe audio, identify highlight candidates, generate titles/hooks/scores/reasons, create vertical clips, export JSON, store local project history, run dependency checks, and use license activation or validation services.",
+        "The application is a tool. It does not guarantee perfect results, lawful outputs, platform acceptance, monetization, engagement, ranking, visibility, or business results.",
+        "You are responsible for reviewing and verifying all generated outputs before publishing, sharing, uploading, selling, relying on, or distributing them."
+      ]
+    },
+    {
+      "heading": "3. User Responsibilities",
+      "paragraphs": [
+        "You are responsible for your use of the application and for all content you upload, import, process, generate, export, publish, or distribute.",
+        "You are responsible for:",
+        "- Ensuring you have rights and permissions for source media and generated outputs.",
+        "- Complying with copyright, licensing, privacy, publicity rights, platform rules, API provider terms, and applicable law.",
+        "- Reviewing generated video, transcripts, titles, hooks, metadata, scores, and JSON output before use.",
+        "- Maintaining valid API keys, credentials, license keys, accounts, dependencies, local files, and configurations.",
+        "- Backing up your source files, generated files, projects, configuration, and outputs.",
+        "The application does not provide legal, copyright, platform-policy, business, or professional advice."
+      ]
+    },
+    {
+      "heading": "4. Third-Party APIs and Services",
+      "paragraphs": [
+        "The application may use or connect to third-party APIs and services, including MuAPI, OpenAI, Gumroad, Cloudflare Worker services, update services, crash-report endpoints if configured, and any other provider you connect to the application.",
+        "Third-party APIs and services are controlled by their respective providers. We do not control their availability, pricing, rate limits, account policies, content policies, output quality, security practices, privacy practices, or terms.",
+        "We are not responsible for:",
+        "- API downtime, interruptions, latency, or outages.",
+        "- Pricing changes, billing disputes, unexpected API costs, or usage charges.",
+        "- Rate limits, quota exhaustion, account suspensions, account bans, or provider restrictions.",
+        "- Provider policy changes or rejected requests.",
+        "- Incorrect, incomplete, unsafe, or delayed API responses.",
+        "- Expired, revoked, leaked, restricted, invalid, or misconfigured API keys.",
+        "- Losses caused by third-party services or credentials.",
+        "You are responsible for complying with all provider terms, policies, usage limits, billing requirements, and content rules."
+      ]
+    },
+    {
+      "heading": "5. API Mode and MuAPI Processing",
+      "paragraphs": [
+        "In API mode, the application may send processing inputs to MuAPI. These inputs may include source URLs, media references, transcript-related data, highlight data, prompt-like processing data, timing data, aspect-ratio settings, and other information needed to generate clips.",
+        "MuAPI may perform download, transcription, highlight processing, LLM-based ranking, autocrop, and media-rendering tasks. MuAPI is a third-party service, and its own terms and policies apply.",
+        "We are not responsible for MuAPI downtime, processing failures, incorrect results, hosted output availability, rate limits, account restrictions, billing, policy changes, or media-processing errors."
+      ]
+    },
+    {
+      "heading": "6. OpenAI and AI Processing",
+      "paragraphs": [
+        "The application may use OpenAI or other AI services for highlight ranking, text generation, title generation, hook generation, scoring, classification, or similar tasks. In the inspected implementation, local mode still may use OpenAI for the LLM highlight-ranking step.",
+        "Information sent to AI providers may include transcript text, prompt text, source-related metadata, highlight-selection instructions, and other processing context.",
+        "AI-generated outputs may be inaccurate, incomplete, biased, offensive, misleading, unexpected, duplicative, low quality, legally risky, or unsuitable for your intended use.",
+        "You must verify all AI-generated outputs before relying on them or publishing them. We are not responsible for decisions, publications, losses, claims, takedowns, account penalties, monetization loss, or other consequences caused by AI-generated outputs."
+      ]
+    },
+    {
+      "heading": "7. Local AI Models and Local Processing",
+      "paragraphs": [
+        "The application may support local model processing, including faster-whisper or Whisper-style transcription models. Local processing performance depends on your hardware, operating system, model files, GPU drivers, CPU/GPU capability, memory, storage, installed dependencies, permissions, and configuration.",
+        "We are not responsible for crashes, slow performance, failed processing, incorrect results, poor transcription quality, missing model files, corrupted model files, unsupported hardware, incompatible drivers, dependency conflicts, or unsupported local environments.",
+        "[VERIFY: exact source, hosting provider, and license terms for each selectable local model]"
+      ]
+    },
+    {
+      "heading": "8. FFmpeg and Media Processing",
+      "paragraphs": [
+        "The application may use FFmpeg and similar media-processing tools for cutting, encoding, muxing, converting, reframing, and generating media files. FFmpeg is a third-party tool governed by its own license and behavior.",
+        "[VERIFY: whether production releases bundle FFmpeg or require users to install it externally]",
+        "[VERIFY: FFmpeg build configuration and license obligations for any distributed binaries]",
+        "We are not responsible for:",
+        "- FFmpeg errors or missing FFmpeg installations.",
+        "- Missing codecs or unsupported input/output formats.",
+        "- Failed downloads, cuts, conversions, encodes, muxes, or exports.",
+        "- Corrupted outputs, partial outputs, quality loss, encoding artifacts, large file sizes, or audio/video desync.",
+        "- Incorrect crops, poor face tracking, failed reframing, or unsuitable visual results.",
+        "- Hardware acceleration problems, driver problems, or platform-specific media failures.",
+        "You are responsible for checking all generated media files before publishing or distributing them."
+      ]
+    },
+    {
+      "heading": "9. User Content and Intellectual Property",
+      "paragraphs": [
+        "You retain whatever rights you already have in your own content. The application does not grant you rights to third-party videos, music, images, likenesses, voices, transcripts, datasets, models, fonts, APIs, software, or other protected material.",
+        "You must only process content that you own or have permission to use. You are responsible for obtaining all required rights, permissions, licenses, consents, and clearances.",
+        "You are responsible for copyright, licensing, privacy, publicity rights, creator rights, music rights, platform policies, and applicable law.",
+        "We are not responsible for copyright claims, DMCA notices, takedowns, rejected uploads, demonetization, lost revenue, account strikes, account bans, platform enforcement, legal claims, or disputes caused by your source content, generated outputs, uploads, or publications."
+      ]
+    },
+    {
+      "heading": "10. Diagnostics, Paths, and Advanced Settings",
+      "paragraphs": [
+        "The application may provide diagnostics, dependency checks, API key profile settings, local model settings, output path controls, local file selection, crash draft handling, and advanced runtime information.",
+        "Some settings and paths affect whether the application works correctly. If you manually change dependency paths, executable paths, FFmpeg paths, Python paths, model paths, output paths, working directories, environment variables, permissions, configuration files, diagnostics values, local files, or related settings, you are responsible for the consequences.",
+        "We are not responsible if the application stops working, loses access to files, fails dependency checks, fails to process media, produces errors, or generates incorrect outputs because you changed advanced settings, paths, dependencies, permissions, environment variables, or local files.",
+        "You should only change advanced settings if you understand the consequences. Reset, retry, recheck, or default options, if available, do not guarantee full recovery."
+      ]
+    },
+    {
+      "heading": "11. Dependencies and Local Environment",
+      "paragraphs": [
+        "The application may require external or bundled dependencies such as FFmpeg, Python, yt-dlp, OpenCV, faster-whisper, AI model files, GPU drivers, system libraries, runtime packages, platform-specific tools, network access, and provider accounts.",
+        "Unless a dependency is explicitly bundled with your specific application build, you are responsible for installing, configuring, updating, and maintaining it.",
+        "We are not responsible for unsupported operating systems, outdated drivers, antivirus or security software blocking files or processes, missing permissions, corrupted installs, conflicting software, missing runtime packages, dependency version conflicts, incompatible hardware, insufficient CPU/GPU/RAM/disk/network resources, or broken PATH/environment configuration."
+      ]
+    },
+    {
+      "heading": "12. Logs and Diagnostic Information",
+      "paragraphs": [
+        "Logs, crash drafts, diagnostics, output JSON, error messages, and support materials may include sensitive or identifying information, including file paths, dependency paths, local usernames embedded in paths, filenames, source URLs, prompts, transcripts, generated outputs, API errors, environment details, configuration values, stack traces, or processing status.",
+        "You should review logs, diagnostics, screenshots, output JSON, and support bundles before sharing them publicly or with support.",
+        "We are not responsible if you disclose sensitive information by sharing logs, diagnostics, screenshots, output files, generated JSON, crash drafts, or support materials."
+      ]
+    },
+    {
+      "heading": "13. Privacy and Data Handling",
+      "paragraphs": [
+        "Based on inspected repository behavior, the application supports both local processing and API-based processing. Local files and generated outputs may remain on your device unless you select a workflow that uses external APIs, license services, update services, or configured crash-report submission.",
+        "External transmission may occur when:",
+        "- You use MuAPI/API mode.",
+        "- Local mode sends transcript or prompt context to OpenAI or another configured AI provider.",
+        "- You activate, validate, or reset a license.",
+        "- The licensing worker verifies a Gumroad purchase.",
+        "- You check for or install updates.",
+        "- You submit a crash report and a crash-report endpoint is configured.",
+        "The application may store local project history, output metadata, settings, local model profile metadata, API key profile metadata, crash drafts, reset status, generated outputs, logs, configuration files, model caches, and license/session/device-related information.",
+        "API key values are intended to be stored using operating-system credential storage when available, with a local fallback if credential storage fails. [VERIFY: production secret-storage behavior and fallback disclosure]",
+        "No general telemetry or analytics SDK was identified during repository inspection. [VERIFY: telemetry, analytics, crash-report, and support-data behavior in production builds]",
+        "You are responsible for deleting local outputs, downloaded media, generated clips, exported JSON, logs, caches, model files, and project history where the application or operating system allows deletion."
+      ]
+    },
+    {
+      "heading": "14. Licensing, Activation, and Device Binding",
+      "paragraphs": [
+        "The application may require license activation and validation. Licensing may include license keys, device binding, session validation, reset requests, Gumroad purchase verification, purchaser email records, server-side license records, and local license/session/device state.",
+        "A license may not work if it is invalid, revoked, expired, already bound to another device, blocked, reset-pending, affected by payment issues, or rejected by the licensing backend.",
+        "We are not responsible for access interruptions caused by invalid purchases, chargebacks, Gumroad issues, license server downtime, network failures, device reset delays, device changes, local storage corruption, or unsupported environments.",
+        "[VERIFY: whether refund terms, including any 7-day manual refund policy, should be included in this document]"
+      ]
+    },
+    {
+      "heading": "15. Third-Party Licenses",
+      "paragraphs": [
+        "Third-party libraries, APIs, services, tools, AI models, datasets, and other components remain governed by their own licenses and terms.",
+        "These may include FFmpeg, Python packages, Rust crates, Node/npm packages, Tauri components, Svelte/Vite tooling, OpenCV, yt-dlp, faster-whisper, Whisper-style model files, OpenAI, MuAPI, Gumroad, Cloudflare, and other dependencies or services.",
+        "You are responsible for complying with applicable third-party terms where relevant, especially if you redistribute the application, bundle dependencies, distribute model files, use outputs commercially, or process third-party content.",
+        "[VERIFY: complete third-party notices, open-source notices, FFmpeg notices, and model license notices before release]"
+      ]
+    },
+    {
+      "heading": "16. Prohibited Uses",
+      "paragraphs": [
+        "You must not use the application to:",
+        "- Violate any law or regulation.",
+        "- Infringe copyright, trademark, privacy, publicity, or other rights.",
+        "- Process private, confidential, or sensitive content without permission.",
+        "- Harass, abuse, threaten, defame, exploit, or harm others.",
+        "- Create or distribute malware or harmful automation.",
+        "- Generate spam, deceptive content, or fraudulent content.",
+        "- Manipulate platforms, rankings, engagement, recommendations, or monetization systems.",
+        "- Scrape, download, or process content without authorization.",
+        "- Violate API provider terms or platform terms.",
+        "- Misuse API keys, credentials, license keys, or accounts.",
+        "- Bypass, tamper with, disable, or interfere with licensing, activation, device binding, security controls, or access controls except where applicable law expressly permits."
+      ]
+    },
+    {
+      "heading": "17. No Warranty",
+      "paragraphs": [
+        "The application is provided \"as is\" and \"as available.\" To the maximum extent permitted by law, we disclaim all warranties, whether express, implied, statutory, or otherwise, including warranties of merchantability, fitness for a particular purpose, title, non-infringement, accuracy, compatibility, availability, and uninterrupted operation.",
+        "We do not guarantee that the application will be error-free, uninterrupted, secure, compatible with your environment, accepted by any platform, monetized, ranked, visible, profitable, or suitable for your intended purpose.",
+        "We do not guarantee output correctness, transcript accuracy, highlight quality, title quality, hook quality, media quality, API availability, dependency compatibility, local model performance, FFmpeg success, diagnostics accuracy, or update availability."
+      ]
+    },
+    {
+      "heading": "18. Limitation of Liability",
+      "paragraphs": [
+        "To the maximum extent permitted by law, we are not liable for indirect, incidental, special, consequential, exemplary, punitive, or similar damages.",
+        "We are not liable for losses or claims involving data loss, lost revenue, lost profits, account bans, account strikes, API costs, unexpected charges, publishing mistakes, copyright claims, takedowns, rejected uploads, failed uploads, demonetization, corrupted outputs, damaged media files, failed conversions, AI mistakes, local processing errors, dependency failures, third-party service failures, license activation issues, device reset delays, unsupported environments, user-modified settings, user-modified paths, or disclosed diagnostic information.",
+        "[VERIFY: whether to include a monetary liability cap, such as fees paid in the previous 12 months]"
+      ]
+    },
+    {
+      "heading": "19. Updates and Changes",
+      "paragraphs": [
+        "The application may be updated over time. Updates may add, remove, or change features, APIs, supported providers, dependencies, model options, output formats, diagnostics behavior, settings, licensing behavior, supported operating systems, security behavior, or system requirements.",
+        "We do not guarantee that any specific feature, provider, dependency, model, workflow, or output format will remain available.",
+        "These Terms may also be updated over time. Continued use of the application after updated Terms become effective means you accept the updated Terms."
+      ]
+    },
+    {
+      "heading": "20. Termination",
+      "paragraphs": [
+        "We may suspend or terminate access to the application or licensing services if we reasonably believe that you violated these Terms, misused a license key, bypassed access controls, reversed payment, used the application unlawfully, harmed third parties, or created legal, security, or operational risk.",
+        "You may stop using the application at any time. Termination does not remove your responsibility for content you created, processed, uploaded, published, or distributed while using the application."
+      ]
+    },
+    {
+      "heading": "21. Contact Information",
+      "paragraphs": [
+        "[DEVELOPER NAME]",
+        "[CONTACT EMAIL]",
+        "[WEBSITE OR SUPPORT URL]"
+      ]
+    },
+    {
+      "heading": "22. Governing Law",
+      "paragraphs": [
+        "These Terms are governed by the laws of [JURISDICTION], without regard to conflict-of-law rules.",
+        "[VERIFY: governing law, venue, arbitration, class-action waiver, consumer-law requirements, and regional compliance obligations with qualified legal counsel]"
       ]
     }
   ],
-  privacy: [
+  "privacy": [
     {
-      heading: 'Privacy Notice',
-      paragraphs: [
-        'Local workspace data for generation history and library is stored on-device in this release build. Cloud operations only occur when API mode is selected for generation.'
+      "heading": "Privacy Policy",
+      "paragraphs": [
+        "Last updated: May 23, 2026",
+        "This Privacy Policy explains how [APP NAME] handles data based on the currently inspected application behavior. Repository evidence refers to the project as \"AI YouTube Shorts Generator\" and some application UI references \"Signal Forge.\" [VERIFY: production app name and legal product name]",
+        "[APP NAME] is provided by [DEVELOPER NAME]. Contact: [CONTACT EMAIL].",
+        "This document should be reviewed by a qualified lawyer before public release."
+      ]
+    },
+    {
+      "heading": "1. Processing Overview",
+      "paragraphs": [
+        "The application supports both local processing and API-based processing.",
+        "Local processing may occur on your device when the application processes local files, stores project history, stores settings, checks dependencies, runs local media tools, uses local model files, creates output files, or stores crash drafts and diagnostics.",
+        "External processing may occur when you use API mode, configure third-party API keys, activate or validate a license, request a device reset, check for updates, install updates, or submit crash information where a crash-report endpoint is configured."
+      ]
+    },
+    {
+      "heading": "2. Data You Provide or Generate",
+      "paragraphs": [
+        "Depending on your use, the application may handle:",
+        "- YouTube URLs or other source references.",
+        "- Local video files and downloaded source media.",
+        "- Audio, video, transcript text, and generated clips.",
+        "- AI prompts or prompt-like processing context.",
+        "- Generated titles, hooks, scores, reasons, metadata, and JSON output.",
+        "- Output file paths and local project history.",
+        "- API keys, API key profile labels, and masked key metadata.",
+        "- License keys, masked license information, activation status, reset request state, and device-related license information.",
+        "- Logs, crash drafts, diagnostics, error messages, dependency paths, environment details, and configuration values."
+      ]
+    },
+    {
+      "heading": "3. Local Storage",
+      "paragraphs": [
+        "The application may store data locally on your device, including project history, generated output metadata, settings, API key profile metadata, local model profile metadata, model caches, logs, crash drafts, reset status, configuration files, generated media files, exported JSON, and license/session/device-related information.",
+        "API key values are intended to be stored using operating-system credential storage when available, with a local fallback if credential storage fails. [VERIFY: production secret-storage behavior and fallback disclosure]",
+        "You are responsible for managing and deleting local files, generated outputs, downloaded media, exported JSON, logs, caches, model files, and project history where the application or operating system allows deletion."
+      ]
+    },
+    {
+      "heading": "4. Data Sent to Third Parties",
+      "paragraphs": [
+        "The application may send data to third parties when you choose or configure features that require them.",
+        "MuAPI/API mode may receive source URLs, media references, transcript-related data, prompt-like processing data, highlight data, timing data, aspect-ratio settings, and other processing information needed to generate clips.",
+        "OpenAI or another configured AI provider may receive transcript text, prompt text, highlight-selection instructions, generated context, and related metadata for AI processing.",
+        "License services may receive license activation, validation, reset, device binding, and session information. The licensing backend may store hashed license keys, purchaser email, provider sale identifiers, device binding information, reset request information, audit events, and related metadata.",
+        "Gumroad-related verification may be used by the licensing backend to confirm purchase records.",
+        "Updater services may receive information needed to check for and install application updates. [VERIFY: production update endpoint and signing configuration]",
+        "Crash-report services may receive crash drafts or diagnostic information only if a crash-report endpoint is configured and the user submits a report. [VERIFY: production crash-report endpoint, submission behavior, and retention policy]"
+      ]
+    },
+    {
+      "heading": "5. Logs and Diagnostics",
+      "paragraphs": [
+        "Logs, diagnostics, crash drafts, output JSON, and support materials may include sensitive information such as local file paths, dependency paths, usernames embedded in paths, filenames, source URLs, transcript text, prompt text, generated outputs, API errors, environment details, configuration values, processing status, and stack traces.",
+        "Review logs and diagnostics before sharing them publicly or with support. We are not responsible if you disclose sensitive information by sharing logs, screenshots, crash drafts, output JSON, or diagnostic details."
+      ]
+    },
+    {
+      "heading": "6. Telemetry, Analytics, and Crash Reports",
+      "paragraphs": [
+        "No general telemetry or analytics SDK was identified during repository inspection.",
+        "The application includes crash draft behavior and may support user-submitted crash reports if an endpoint is configured.",
+        "[VERIFY: whether production builds collect telemetry, analytics, automatic crash reports, or support diagnostics beyond the inspected behavior]"
+      ]
+    },
+    {
+      "heading": "7. API Keys and Credentials",
+      "paragraphs": [
+        "You are responsible for protecting your API keys, credentials, license keys, and accounts.",
+        "Do not share API keys, license keys, logs, screenshots, support bundles, or configuration files that expose secrets or sensitive account information.",
+        "We are not responsible for unauthorized charges, revoked access, leaked credentials, misconfigured API keys, provider account restrictions, or losses caused by compromised credentials."
+      ]
+    },
+    {
+      "heading": "8. User Content and Rights",
+      "paragraphs": [
+        "You are responsible for ensuring you have permission to process any video, audio, transcript, image, text, likeness, voice, or other content you provide to the application.",
+        "The application does not grant you rights to third-party content, music, videos, images, datasets, models, APIs, or platform content."
+      ]
+    },
+    {
+      "heading": "9. Third-Party Services",
+      "paragraphs": [
+        "Third-party services have their own privacy policies, terms, data practices, retention rules, and security practices. Review the policies for MuAPI, OpenAI, Gumroad, Cloudflare, and any other provider you use with the application.",
+        "We do not control third-party providers and are not responsible for their data practices."
+      ]
+    },
+    {
+      "heading": "10. Data Retention and Deletion",
+      "paragraphs": [
+        "Local data may remain on your device until you delete it, the application deletes it, or your operating system removes it.",
+        "Server-side license, purchase, device binding, reset, audit, support, update, or crash-report data may be retained according to the relevant backend or provider configuration.",
+        "[VERIFY: production retention and deletion policy for license records, purchaser email, device binding information, support requests, crash reports, and logs]"
+      ]
+    },
+    {
+      "heading": "11. Security",
+      "paragraphs": [
+        "The application uses local and provider-specific mechanisms for storage and processing, including operating-system credential storage where available for secrets. However, no system can be guaranteed secure.",
+        "You are responsible for securing your device, operating system account, API keys, license keys, local files, generated outputs, logs, and configuration.",
+        "Do not use the application on a device or account you do not trust."
+      ]
+    },
+    {
+      "heading": "12. Children and Sensitive Content",
+      "paragraphs": [
+        "The application is not intended for use by children. [VERIFY: minimum user age and child-directed service policy]",
+        "Do not process private, confidential, sensitive, biometric, health, financial, child-related, or legally protected content unless you have all required rights, permissions, consents, and legal basis."
+      ]
+    },
+    {
+      "heading": "13. Changes to This Privacy Policy",
+      "paragraphs": [
+        "This Privacy Policy may be updated over time to reflect changes in the application, services, dependencies, data handling, or legal requirements.",
+        "Continued use of the application after changes become effective means you accept the updated policy."
+      ]
+    },
+    {
+      "heading": "14. Contact",
+      "paragraphs": [
+        "[DEVELOPER NAME]",
+        "[CONTACT EMAIL]",
+        "[WEBSITE OR SUPPORT URL]"
       ]
     }
   ],
-  refund: [
+  "notices": [
     {
-      heading: 'Refund Policy',
-      paragraphs: [
-        'Refund requests are handled manually within 7 days from purchase, subject to purchase records and platform dispute rules.',
-        'No automated refund engine is built into this app.'
+      "heading": "Third-Party Notices",
+      "paragraphs": [
+        "Last updated: May 23, 2026",
+        "This document summarizes third-party components, tools, APIs, models, and services identified during repository review. It is not a complete license audit and should be reviewed by a qualified lawyer before public release."
+      ]
+    },
+    {
+      "heading": "1. General Notice",
+      "paragraphs": [
+        "The application may include, depend on, or connect to third-party software, tools, libraries, APIs, models, datasets, and services. Each third-party component remains governed by its own license, terms, policies, and notices.",
+        "Nothing in this repository grants users rights to third-party content, services, APIs, models, datasets, media, music, images, fonts, or software beyond the rights granted by the applicable third-party owner or license."
+      ]
+    },
+    {
+      "heading": "2. APIs and Online Services",
+      "paragraphs": [
+        "The application may use or connect to:",
+        "- MuAPI for API-mode download, transcription, highlight processing, LLM-style ranking, autocrop, and media processing.",
+        "- OpenAI for local-mode highlight ranking or other AI processing.",
+        "- Gumroad for purchase/license verification flows.",
+        "- Cloudflare Worker/D1 infrastructure for licensing backend behavior.",
+        "- Update endpoints configured for Tauri updater behavior.",
+        "- Crash-report endpoints if configured and used.",
+        "Users are responsible for complying with each provider's terms, privacy policy, usage limits, billing rules, and content rules."
+      ]
+    },
+    {
+      "heading": "3. FFmpeg",
+      "paragraphs": [
+        "The application may use FFmpeg for media cutting, encoding, muxing, conversion, and output generation.",
+        "FFmpeg is a third-party project governed by its own licenses. FFmpeg licensing obligations can vary depending on how FFmpeg is built, configured, linked, bundled, and distributed.",
+        "[VERIFY: whether release builds bundle FFmpeg or require external installation]",
+        "[VERIFY: FFmpeg build configuration, enabled codecs, and LGPL/GPL/commercial implications for distributed binaries]"
+      ]
+    },
+    {
+      "heading": "4. Local Media and AI Dependencies",
+      "paragraphs": [
+        "The application may use local tools and libraries such as Python, yt-dlp, OpenCV, faster-whisper, Whisper-style model files, GPU/CUDA-related packages, and system libraries.",
+        "These components have their own licenses and technical requirements. Users and distributors are responsible for complying with applicable licenses and terms.",
+        "[VERIFY: exact licenses for bundled or recommended local model files]",
+        "[VERIFY: exact licenses for distributed Python/runtime/tool binaries, if any]"
+      ]
+    },
+    {
+      "heading": "5. Frontend, Backend, and Runtime Dependencies",
+      "paragraphs": [
+        "The repository includes frontend, Rust/Tauri, Python, Worker, and test dependencies. These dependencies are governed by their own open-source or commercial licenses.",
+        "Before public release or redistribution, generate and review a complete dependency license report for:",
+        "- Node/npm dependencies.",
+        "- Rust crates.",
+        "- Python packages.",
+        "- Tauri plugins.",
+        "- Cloudflare Worker dependencies.",
+        "- Bundled runtime tools.",
+        "- AI model files."
+      ]
+    },
+    {
+      "heading": "6. User Responsibility",
+      "paragraphs": [
+        "Users are responsible for ensuring their use of third-party services, APIs, tools, models, and content complies with applicable third-party terms and licenses.",
+        "The application developers are not responsible for a user's violation of third-party terms, API rules, open-source licenses, model licenses, platform rules, or content rights."
+      ]
+    },
+    {
+      "heading": "7. Missing Final Notices",
+      "paragraphs": [
+        "Before release, add or verify:",
+        "- [VERIFY: complete open-source license inventory]",
+        "- [VERIFY: included license texts or links for redistributed components]",
+        "- [VERIFY: FFmpeg notice and source-offer requirements, if applicable]",
+        "- [VERIFY: model license notices]",
+        "- [VERIFY: third-party API terms links]",
+        "- [VERIFY: app's own license file and copyright notice]"
+      ]
+    }
+  ],
+  "refund": [
+    {
+      "heading": "Refund Policy",
+      "paragraphs": [
+        "Refund requests are handled manually within 7 days from purchase, subject to purchase records and platform dispute rules.",
+        "No automated refund engine is built into this app.",
+        "Refund eligibility may depend on the payment platform, purchase record, licensing status, dispute status, abuse prevention, and applicable law. [VERIFY: final refund terms before public release]"
+      ]
+    },
+    {
+      "heading": "Licensing and Access",
+      "paragraphs": [
+        "The app may require license activation, validation, device binding, session validation, and reset requests before protected features are available.",
+        "A license may not work if it is invalid, revoked, expired, already bound to another device, blocked, reset-pending, affected by payment issues, or rejected by the licensing backend.",
+        "The developers are not responsible for access interruptions caused by invalid purchases, chargebacks, Gumroad issues, license server downtime, network failures, device reset delays, device changes, local storage corruption, or unsupported environments."
       ]
     }
   ]
 };
 
-export const POLICY_COMMON_SECTIONS: PolicySection[] = [
-  {
-    heading: 'Warranty and Liability',
-    paragraphs: [
-      'The software is provided as-is without guarantees of uninterrupted service. Liability is limited to the maximum extent permitted by law.'
-    ]
-  },
-  {
-    heading: 'Support and Contact',
-    paragraphs: [
-      'For enterprise support and data requests, use the Support section and attach generated debug logs.'
-    ]
-  }
-];
+export const POLICY_COMMON_SECTIONS: PolicySection[] = [];
 
-export const POLICY_LAST_UPDATED_LABEL = 'May 8, 2026';
+export const POLICY_LAST_UPDATED_LABEL = 'May 23, 2026';

@@ -197,7 +197,13 @@ describe('test_ui flow parity', () => {
       bridge_entry: '../../python_legacy/bridge_entry.py',
       bridge_entry_exists: true,
       ok: true,
-      tools: [{ tool: 'python', ok: true, path: '/usr/bin/python3', source: 'path', message: 'ok' }]
+      local_runtime_ready: true,
+      tools: [
+        { tool: 'python', ok: true, path: '/usr/bin/python3', source: 'path', message: 'ok' },
+        { tool: 'ffmpeg', ok: true, path: '/usr/bin/ffmpeg', source: 'path', message: 'ok' },
+        { tool: 'yt-dlp', ok: true, path: '/usr/bin/yt-dlp', source: 'path', message: 'ok' }
+      ],
+      python_packages: [{ tool: 'faster_whisper', ok: true, message: 'ok' }]
     });
     runtimeContext.mockResolvedValue({
       appVersion: '0.1.0',
@@ -254,6 +260,7 @@ describe('test_ui flow parity', () => {
     expect((screen.getByLabelText('Output JSON path') as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText('YouTube video URL') as HTMLInputElement).getAttribute('required')).toBeNull();
     expect((screen.getByLabelText('Num clips') as HTMLInputElement).getAttribute('min')).toBeNull();
+    expect(screen.queryByText('Setup needed before first generation')).toBeNull();
   });
 
   it('test_unauthenticated_state_hides_generator_and_submits_license', async () => {
@@ -322,9 +329,9 @@ describe('test_ui flow parity', () => {
     render(Page);
     await fireEvent.click(screen.getByRole('button', { name: 'Terms and Conditions' }));
     expect(screen.getByRole('dialog', { name: 'Terms and Conditions' })).toBeTruthy();
-    expect(screen.getByText('Terms of Use')).toBeTruthy();
-    expect(screen.getByText('Acceptable Use')).toBeTruthy();
-    expect(screen.getByText('Warranty and Liability')).toBeTruthy();
+    expect(screen.getAllByText('Terms and Conditions').length).toBeGreaterThan(0);
+    expect(screen.getByText('16. Prohibited Uses')).toBeTruthy();
+    expect(screen.getByText('18. Limitation of Liability')).toBeTruthy();
   });
 
   it('test_global_theme_switch_toggles_checked_state', async () => {
@@ -418,8 +425,8 @@ describe('test_ui flow parity', () => {
     expect(screen.queryByText('Bridge entry')).toBeNull();
     expect(screen.queryByText('raw-device-id')).toBeNull();
     expect(document.body.textContent).not.toContain('/home/test');
-    expect(appConfigSummary).toHaveBeenCalledTimes(1);
-    expect(validateRuntime).toHaveBeenCalledTimes(1);
+    expect(appConfigSummary.mock.calls.length).toBeGreaterThanOrEqual(1);
+    expect(validateRuntime.mock.calls.length).toBeGreaterThanOrEqual(1);
     expect(runtimeContext).toHaveBeenCalledTimes(1);
     await fireEvent.click(screen.getByRole('tab', { name: 'Device Reset' }));
     expect(screen.getByRole('button', { name: 'Device Reset help' })).toBeTruthy();
@@ -472,16 +479,17 @@ describe('test_ui flow parity', () => {
     expect(screen.getByText('See system health and take action when setup issues are detected.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Recheck Dependencies' })).toBeTruthy();
     expect(screen.getByText('Required Dependencies')).toBeTruthy();
-    expect(screen.getByText('Available')).toBeTruthy();
+    expect(screen.getAllByText('Available').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Maintenance')).toBeTruthy();
     expect(screen.queryByText('Logs and Support')).toBeNull();
 
     expect(screen.queryByRole('button', { name: 'Terms' })).toBeNull();
     await fireEvent.click(screen.getByRole('tab', { name: 'Policies' }));
     expect(screen.getByRole('tab', { name: 'Policies', selected: true })).toBeTruthy();
-    expect(screen.getByText('Reference documents for use, privacy, refunds, and liability.')).toBeTruthy();
+    expect(screen.getByText('Reference documents for use, privacy, third-party notices, refunds, and liability.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Terms' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Privacy' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Third-Party Notices' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Refund Policy' })).toBeTruthy();
   });
 
@@ -532,6 +540,100 @@ describe('test_ui flow parity', () => {
       download_format: '1080',
       output_json: 'result.json'
     });
+  });
+
+  it('test_generate_is_blocked_and_guided_when_setup_is_incomplete', async () => {
+    appConfigSummary.mockResolvedValue({
+      licenseBackendMode: 'hosted',
+      licenseWorkerEndpoint: 'licenses.example.test',
+      licenseWorkerEndpointKind: 'remote',
+      muapiConfigured: false,
+      openaiConfigured: true,
+      localWhisperModel: 'base',
+      localWhisperDevice: 'auto',
+      licenseWorkerTimeoutMs: 10000,
+      licenseWorkerRetryAttempts: 2
+    });
+
+    render(Page);
+    await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+
+    expect(runGenerateAndStream).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Setup Required Before Generating' })).toBeTruthy();
+    expect(screen.getByText('To generate shorts, you need to configure either an API-based setup or a local model first.')).toBeTruthy();
+    expect(screen.getByText('API key is not configured')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Configure Now' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Recheck Setup' })).toBeTruthy();
+  });
+
+  it('test_setup_modal_configure_now_routes_to_configuration_api_providers', async () => {
+    appConfigSummary.mockResolvedValue({
+      licenseBackendMode: 'hosted',
+      licenseWorkerEndpoint: 'licenses.example.test',
+      licenseWorkerEndpointKind: 'remote',
+      muapiConfigured: false,
+      openaiConfigured: true,
+      localWhisperModel: 'base',
+      localWhisperDevice: 'auto',
+      licenseWorkerTimeoutMs: 10000,
+      licenseWorkerRetryAttempts: 2
+    });
+
+    render(Page);
+    await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Configure Now' }));
+
+    expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Configuration', selected: true })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'API Providers', selected: true })).toBeTruthy();
+  });
+
+  it('test_setup_modal_cancel_closes_and_keeps_form_values', async () => {
+    appConfigSummary.mockResolvedValue({
+      licenseBackendMode: 'hosted',
+      licenseWorkerEndpoint: 'licenses.example.test',
+      licenseWorkerEndpointKind: 'remote',
+      muapiConfigured: false,
+      openaiConfigured: true,
+      localWhisperModel: 'base',
+      localWhisperDevice: 'auto',
+      licenseWorkerTimeoutMs: 10000,
+      licenseWorkerRetryAttempts: 2
+    });
+
+    render(Page);
+    await fireEvent.input(screen.getByLabelText('Project title'), { target: { value: 'My Project' } });
+    await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
+    await fireEvent.input(screen.getByLabelText('Num clips'), { target: { value: '4' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+
+    expect(screen.getByRole('dialog', { name: 'Setup Required Before Generating' })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog', { name: 'Setup Required Before Generating' })).toBeNull();
+    expect((screen.getByLabelText('Project title') as HTMLInputElement).value).toBe('My Project');
+    expect((screen.getByLabelText('YouTube video URL') as HTMLInputElement).value).toBe('https://youtube.com/watch?v=abc');
+    expect((screen.getByLabelText('Num clips') as HTMLInputElement).value).toBe('4');
+  });
+
+  it('test_setup_modal_configure_now_routes_to_configuration_local_processing_for_local_blockers', async () => {
+    localModelProfiles.mockResolvedValue({
+      envOverride: false,
+      activeProfileId: null,
+      profiles: []
+    });
+
+    render(Page);
+    await fireEvent.change(screen.getByLabelText('Mode'), { target: { value: 'local' } });
+    await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Configure Now' }));
+
+    expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Configuration', selected: true })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Local Processing', selected: true })).toBeTruthy();
   });
 
   it('test_generate_form_shows_persistent_error_for_empty_source', async () => {
@@ -627,13 +729,17 @@ describe('test_ui flow parity', () => {
     expect(screen.queryByRole('button', { name: 'Terms' })).toBeNull();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
-    expect(screen.queryByText('Terms of Use')).toBeNull();
+    expect(screen.queryByText('1. Acceptance of Terms')).toBeNull();
 
     await fireEvent.click(screen.getByRole('tab', { name: 'Policies' }));
-    expect(screen.getByText('Terms of Use')).toBeTruthy();
+    expect(screen.getByText('1. Acceptance of Terms')).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Privacy' }));
-    expect(screen.getByText('Privacy Notice')).toBeTruthy();
+    expect(screen.getByText('Privacy Policy')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Third-Party Notices' }));
+    expect(screen.getAllByText('Third-Party Notices').length).toBeGreaterThan(0);
+    expect(screen.getByText('3. FFmpeg')).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Refund Policy' }));
 

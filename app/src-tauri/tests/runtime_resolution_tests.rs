@@ -51,6 +51,7 @@ fn runtime_validator_reports_missing_tool_with_actionable_message() {
         allow_system_path: false,
         python_bin: "python3".to_string(),
         required_tools: vec![ToolKind::Ffmpeg],
+        required_python_modules: vec![],
     });
 
     assert_eq!(result.tools.len(), 1);
@@ -78,12 +79,28 @@ fn resolver_prefers_bundled_then_system_path() {
             allow_system_path: true,
             python_bin: "python3".to_string(),
             required_tools: vec![],
+            required_python_modules: vec![],
         },
     )
     .expect("resolver should find bundled");
 
     assert_eq!(resolved.path, bundled_ffmpeg);
     assert_eq!(resolved.source, "bundled");
+}
+
+#[test]
+fn runtime_validator_reports_missing_python_package_when_python_unavailable() {
+    let result = validate_runtime_tools(ResolveConfig {
+        bundled_dir: None,
+        allow_system_path: false,
+        python_bin: "missing-python-bin".to_string(),
+        required_tools: vec![ToolKind::Python],
+        required_python_modules: vec!["faster_whisper".to_string()],
+    });
+
+    assert!(!result.ok);
+    assert_eq!(result.python_packages.len(), 1);
+    assert!(!result.python_packages[0].ok);
 }
 
 #[test]

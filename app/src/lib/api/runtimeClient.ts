@@ -32,6 +32,8 @@ export interface RuntimeValidation {
   bridge_entry_exists: boolean;
   ok: boolean;
   tools: RuntimeToolStatus[];
+  python_packages: RuntimeToolStatus[];
+  local_runtime_ready: boolean;
 }
 
 export interface AppConfigSummary {
@@ -71,6 +73,8 @@ export interface LocalModelProfile {
   active: boolean;
   downloadStatus: string;
   error?: string | null;
+  errorCode?: string | null;
+  debugRef?: string | null;
   createdAtMs: number;
   updatedAtMs: number;
 }
@@ -90,6 +94,8 @@ export interface LocalModelDownloadStatus {
   progress: number;
   message: string;
   error?: string | null;
+  errorCode?: string | null;
+  debugRef?: string | null;
 }
 
 let corePromise: Promise<TauriCore> | null = null;

@@ -268,6 +268,18 @@ Contributions are welcome! Please fork the repository and submit a pull request.
 
 This project is licensed under the MIT License.
 
+## Legal and Policy Documents
+
+Before using or distributing this application, review the repository policy documents:
+
+- [Terms and Conditions](TERMS_AND_CONDITIONS.md)
+- [Privacy Policy](PRIVACY_POLICY.md)
+- [Third-Party Notices](THIRD_PARTY_NOTICES.md)
+
+These documents explain user responsibilities, third-party API risks, AI-output limitations, FFmpeg/media-processing limitations, local dependency requirements, diagnostics/logging cautions, and third-party license considerations. They contain placeholders that require developer and legal review before public release.
+
+[VERIFY: add the final project license file and confirm whether the MIT statement above is the intended license for all distributable parts of the application.]
+
 ## Related Projects
 
 - [AI Influencer Generator](https://github.com/SamurAIGPT/AI-Influencer-Generator)

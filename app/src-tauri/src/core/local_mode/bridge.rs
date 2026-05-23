@@ -1,6 +1,6 @@
 use crate::core::config::Config;
 use crate::core::contracts::{ErrorEnvelope, PipelineSuccess};
-use crate::runtime::python_runtime::{invoke_python, PythonInvokeRequest};
+use crate::runtime::python_runtime::{invoke_python, resolve_python_bridge_paths, PythonInvokeRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fmt;
@@ -168,10 +168,10 @@ pub fn run_local_pipeline_bridge(
         }),
     };
 
+    let bridge = resolve_python_bridge_paths();
     let cfg = BridgeConfig {
-        python_bin: std::env::var("PYTHON_BRIDGE_BIN").unwrap_or_else(|_| "python3".to_string()),
-        entry_script: std::env::var("PYTHON_BRIDGE_ENTRY")
-            .unwrap_or_else(|_| "../../python_legacy/bridge_entry.py".to_string()),
+        python_bin: bridge.python_bin,
+        entry_script: bridge.entry_script,
         env: local_bridge_env().map_err(|e| ErrorEnvelope {
             mode: Some("local".to_string()),
             source_video_url: None,

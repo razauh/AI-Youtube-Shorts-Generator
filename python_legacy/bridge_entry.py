@@ -3,9 +3,6 @@ import json
 import sys
 import time
 
-from shorts_generator import generate_shorts
-from shorts_generator.local.transcriber import prefetch_local_model
-
 CONTRACT_VERSION = "1"
 
 
@@ -67,6 +64,7 @@ def main() -> int:
     if action != "run_local":
         if action == "prefetch_local_model":
             try:
+                from shorts_generator.local.transcriber import prefetch_local_model
                 _ok(
                     prefetch_local_model(
                         model_name=payload.get("model", ""),
@@ -119,6 +117,7 @@ def main() -> int:
         return 0
 
     try:
+        from shorts_generator import generate_shorts
         result = generate_shorts(
             youtube_url=payload.get("youtube_url"),
             num_clips=int(payload.get("num_clips", 3)),

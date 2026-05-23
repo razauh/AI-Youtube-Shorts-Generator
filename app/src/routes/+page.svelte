@@ -95,6 +95,7 @@
   let settingsActionTarget = '';
   let settingsActionKind = 'success';
   let settingsActionBusy = false;
+  let localDownloadActionStatus = '';
   let settingsResetLicenseKey = '';
   let authResetActionStatus = '';
   let authResetActionKind = 'success';
@@ -105,6 +106,17 @@
   let theme = 'dark';
   let mobileNavOpen = false;
   let openLocalDropdown = '';
+  let setupStatus = {
+    checkedAt: '',
+    busy: false,
+    readyApi: false,
+    readyLocal: false,
+    blockersApi: [],
+    blockersLocal: [],
+    dependencyBlockersLocal: [],
+    mode: 'api'
+  };
+  let setupRequiredModalOpen = false;
 
   let projects = [];
   const localDraftStore = {
@@ -160,6 +172,8 @@
   $: localRunBlockedMessage = activeLocalModelDownloading
     ? 'Local model is still downloading. You can use API mode now or wait for the local model to finish.'
     : 'Active local model is not ready. Retry the download from Settings or use API mode.';
+  $: activeSetupBlockers = mode === 'local' ? setupStatus.blockersLocal : setupStatus.blockersApi;
+  $: setupModalBlockerMessages = friendlySetupBlockers(activeSetupBlockers);
 
   onMount(() => {
     let unlistenLocalModel = null;
@@ -168,9 +182,11 @@
       loadCrashDraftFromLocalStorage();
       authState.bootstrap();
       loadLocalModelStatus();
+      loadSetupStatus();
       listenLocalModelDownloadProgress((status) => {
         localModelDownload = status;
         loadLocalModelProfilesOnly();
+        loadSetupStatus();
       }).then((unlisten) => {
         unlistenLocalModel = unlisten;
       }).catch(() => {
@@ -277,9 +293,189 @@
   async function loadLocalModelProfilesOnly() {
     try {
       localProfiles = await localModelProfiles();
+      await loadSetupStatus();
     } catch (_err) {
       // Keep the last known status; this is only a UI refresh helper.
     }
+  }
+
+  function setupBlocker(id, message, action) {
+    return { id, message, action };
+  }
+
+  function toolStatusMap(runtime) {
+    const map = new Map();
+    for (const tool of runtime?.tools || []) {
+      map.set(tool.tool, tool);
+    }
+    return map;
+  }
+
+  function computeSetupStatus(config, runtime, models) {
+    const blockersApi = [];
+    const blockersLocal = [];
+    const dependencyBlockersLocal = [];
+
+    if (!config?.muapiConfigured) {
+      blockersApi.push(setupBlocker('muapi_key', 'MuAPI key is not configured.', 'Open API setup'));
+    }
+
+    const localTools = toolStatusMap(runtime);
+    const python = localTools.get('python');
+    const ffmpeg = localTools.get('ffmpeg');
+    const ytdlp = localTools.get('yt-dlp');
+
+    if (!config?.openaiConfigured) {
+      blockersLocal.push(setupBlocker('openai_key', 'OpenAI key is not configured for local mode.', 'Open API setup'));
+    }
+    if (!runtime?.bridge_entry_exists) {
+      blockersLocal.push(setupBlocker('bridge_entry', 'Local runtime bridge is unavailable.', 'Open diagnostics'));
+    }
+    if (!python?.ok) {
+      const blocker = setupBlocker('python', 'Python 3 is not available for local mode.', 'Open diagnostics');
+      blockersLocal.push(blocker);
+      dependencyBlockersLocal.push(blocker);
+    }
+    if (!ffmpeg?.ok) {
+      const blocker = setupBlocker('ffmpeg', 'FFmpeg is not available for local mode.', 'Open diagnostics');
+      blockersLocal.push(blocker);
+      dependencyBlockersLocal.push(blocker);
+    }
+    if (!ytdlp?.ok) {
+      const blocker = setupBlocker('ytdlp', 'yt-dlp is not available for local YouTube downloads.', 'Open diagnostics');
+      blockersLocal.push(blocker);
+      dependencyBlockersLocal.push(blocker);
+    }
+    for (const pkg of runtime?.python_packages || []) {
+      if (!pkg?.ok) {
+        const blocker = setupBlocker(
+          `py_pkg_${pkg.tool}`,
+          `Python package '${pkg.tool}' is unavailable for local mode.`,
+          'Open diagnostics'
+        );
+        blockersLocal.push(blocker);
+        dependencyBlockersLocal.push(blocker);
+      }
+    }
+    if (runtime?.bridge_entry_exists && runtime?.tools?.length && runtime?.local_runtime_ready === false) {
+      blockersLocal.push(setupBlocker('bundled_runtime_incomplete', 'Bundled local runtime is incomplete.', 'Open diagnostics'));
+    }
+
+    const activeModelProfile = models?.profiles?.find((profile) => profile.active) ?? null;
+    if (!activeModelProfile) {
+      blockersLocal.push(setupBlocker('local_profile', 'No active local model profile is configured.', 'Open local setup'));
+    } else if (activeModelProfile.downloadStatus !== 'ready') {
+      blockersLocal.push(setupBlocker('local_model_not_ready', 'Active local model is not ready yet.', 'Open local setup'));
+    }
+
+    return {
+      checkedAt: new Date().toISOString(),
+      busy: false,
+      readyApi: blockersApi.length === 0,
+      readyLocal: blockersLocal.length === 0,
+      blockersApi,
+      blockersLocal,
+      dependencyBlockersLocal,
+      mode
+    };
+  }
+
+  async function loadSetupStatus() {
+    setupStatus = { ...setupStatus, busy: true };
+    try {
+      const [config, runtime, models] = await Promise.all([
+        appConfigSummary(),
+        validateRuntime(),
+        localModelProfiles()
+      ]);
+      setupStatus = computeSetupStatus(config, runtime, models);
+    } catch (_err) {
+      setupStatus = {
+        ...setupStatus,
+        busy: false,
+        checkedAt: new Date().toISOString(),
+        readyApi: false,
+        readyLocal: false,
+        blockersApi: [setupBlocker('setup_unavailable', 'Unable to load setup status.', 'Recheck')],
+        blockersLocal: [setupBlocker('setup_unavailable', 'Unable to load setup status.', 'Recheck')]
+      };
+    }
+  }
+
+  function openSetupConfiguration(target) {
+    active = 'settings';
+    settingsTab = 'configuration';
+    if (target === 'api') {
+      settingsConfigTab = 'api';
+    } else {
+      settingsConfigTab = 'local';
+    }
+    loadSettingsStatus();
+  }
+
+  function setupTargetFromBlockers(blockers) {
+    if (blockers.some((blocker) => blocker.id === 'muapi_key' || blocker.id === 'openai_key')) {
+      return 'api';
+    }
+    return 'local';
+  }
+
+  function friendlySetupBlockers(blockers) {
+    const friendly = [];
+    const add = (id, message) => {
+      if (!friendly.some((item) => item.id === id)) {
+        friendly.push({ id, message });
+      }
+    };
+    for (const blocker of blockers || []) {
+      if (blocker.id === 'muapi_key' || blocker.id === 'openai_key') {
+        add('api_key', 'API key is not configured');
+      } else if (blocker.id === 'local_profile' || blocker.id === 'local_model_not_ready') {
+        add('local_model', 'Local model is not selected or downloaded');
+      } else if (blocker.id === 'ffmpeg') {
+        add('ffmpeg', 'FFmpeg is not available');
+      } else if (blocker.id === 'python') {
+        add('python', 'Python 3 is not available for local processing');
+      } else if (blocker.id === 'ytdlp') {
+        add('ytdlp', 'yt-dlp is not available for local YouTube downloads');
+      } else if (blocker.id === 'bridge_entry') {
+        add('bridge_entry', 'Local runtime bridge is unavailable');
+      } else if (blocker.id === 'bundled_runtime_incomplete') {
+        add('bundled_runtime_incomplete', 'Bundled local runtime is missing or incomplete');
+      } else if (blocker.id?.startsWith('py_pkg_')) {
+        add(blocker.id, blocker.message.replace(/\.$/, ''));
+      } else if (blocker.message) {
+        add(blocker.id || `blocker-${friendly.length}`, blocker.message.replace(/\.$/, ''));
+      }
+    }
+    return friendly;
+  }
+
+  function closeSetupRequiredModal() {
+    setupRequiredModalOpen = false;
+  }
+
+  function handleSetupConfigureNow() {
+    const target = setupTargetFromBlockers(activeSetupBlockers);
+    setupRequiredModalOpen = false;
+    openSetupConfiguration(target);
+  }
+
+  async function recheckSetupFromModal() {
+    await loadSetupStatus();
+    if ((mode === 'local' ? setupStatus.blockersLocal : setupStatus.blockersApi).length === 0) {
+      setupRequiredModalOpen = false;
+    }
+  }
+
+  async function ensureSetupForRun() {
+    await loadSetupStatus();
+    const blockers = mode === 'local' ? setupStatus.blockersLocal : setupStatus.blockersApi;
+    if (blockers.length === 0) {
+      return true;
+    }
+    setupRequiredModalOpen = true;
+    return false;
   }
 
   function configuredLabel(value) {
@@ -485,6 +681,49 @@
       settingsActionBusy = false;
     }
     await loadSettingsStatus();
+  }
+
+  async function recheckLocalSetup() {
+    await loadSettingsStatus();
+    await loadSetupStatus();
+    localDownloadActionStatus = 'Setup rechecked.';
+  }
+
+  async function openLocalDownloadLog() {
+    const path = settingsContext?.logPath;
+    if (!path) {
+      localDownloadActionStatus = 'Log path is unavailable.';
+      return;
+    }
+    try {
+      await openInFileManager(path);
+      localDownloadActionStatus = 'Opened log folder.';
+    } catch (_err) {
+      localDownloadActionStatus = 'Unable to open log folder.';
+    }
+  }
+
+  async function copyLocalDownloadDetails() {
+    const errorCode = localModelDownload?.errorCode || activeLocalModelProfile?.errorCode || 'unknown';
+    const debugRef = localModelDownload?.debugRef || activeLocalModelProfile?.debugRef || 'n/a';
+    const details = [
+      `model=${localModelDownload?.model || activeLocalModelProfile?.model || 'n/a'}`,
+      `device=${localModelDownload?.device || activeLocalModelProfile?.device || 'n/a'}`,
+      `error_code=${errorCode}`,
+      `debug_ref=${debugRef}`,
+      `message=${localModelDownload?.error || activeLocalModelProfile?.error || 'n/a'}`,
+      `log_path=${settingsContext?.logPath || 'n/a'}`
+    ].join('\n');
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(details);
+      } else {
+        throw new Error('clipboard unavailable');
+      }
+      localDownloadActionStatus = 'Error details copied.';
+    } catch (_err) {
+      localDownloadActionStatus = 'Unable to copy details automatically.';
+    }
   }
 
   async function deleteLocalModelProfile(profileId) {
@@ -798,6 +1037,10 @@
       });
       return;
     }
+    const setupReady = await ensureSetupForRun();
+    if (!setupReady) {
+      return;
+    }
     runState.start();
 
     try {
@@ -1016,6 +1259,17 @@
                 <span class="error-text">{localModelDownload.error}</span>
               {/if}
             </p>
+            {#if localModelDownload.phase === 'failed'}
+              <div class="row">
+                <button type="button" on:click={() => retryLocalModelDownload(localModelDownload.profileId)} disabled={settingsActionBusy || !localModelDownload.profileId}>Try Again</button>
+                <button type="button" class="button-secondary" on:click={recheckLocalSetup}>Recheck Setup</button>
+                <button type="button" class="button-secondary" on:click={openLocalDownloadLog}>Open Logs</button>
+                <button type="button" class="button-secondary" on:click={copyLocalDownloadDetails}>Copy Error Details</button>
+              </div>
+              {#if localDownloadActionStatus}
+                <p class="meta">{localDownloadActionStatus}</p>
+              {/if}
+            {/if}
             <div class="meter">
               <span style={`width:${Math.max(0, Math.min(100, Math.round((localModelDownload.progress || 0) * 100)))}%`}></span>
             </div>
@@ -1093,13 +1347,49 @@
               <button type="button" on:click={chooseOutputJsonPath}>Choose Save Location</button>
             </div>
           </details>
+          <div class="form-action-row">
+            <button type="submit" disabled={localRunBlocked}>Run</button>
+          </div>
           {#if localRunBlocked}
-            <p class="meta warn-text">{localRunBlockedMessage}</p>
+            <p class="meta warn-text form-full">{localRunBlockedMessage}</p>
           {/if}
-          <button type="submit" disabled={localRunBlocked}>Run</button>
-          <FormStatus message={generateFormStatus} kind={generateFormStatusKind} />
+          <div class="form-full">
+            <FormStatus message={generateFormStatus} kind={generateFormStatusKind} />
+          </div>
         </form>
       </section>
+
+      {#if setupRequiredModalOpen}
+        <div class="policy-modal-backdrop" role="presentation" on:click|self={closeSetupRequiredModal}>
+          <section
+            class="panel policy-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="setup-required-modal-title"
+          >
+            <div class="policy-modal-head">
+              <h2 id="setup-required-modal-title">Setup Required Before Generating</h2>
+            </div>
+            <div class="policy-modal-content">
+              <p>To generate shorts, you need to configure either an API-based setup or a local model first.</p>
+              {#if setupModalBlockerMessages.length > 0}
+                <ul class="meta">
+                  {#each setupModalBlockerMessages as blocker}
+                    <li>{blocker.message}</li>
+                  {/each}
+                </ul>
+              {/if}
+              <div class="row">
+                <button type="button" on:click={handleSetupConfigureNow}>Configure Now</button>
+                <button type="button" class="button-secondary" on:click={closeSetupRequiredModal}>Cancel</button>
+                <button type="button" class="button-secondary" on:click={recheckSetupFromModal} disabled={setupStatus.busy}>
+                  {setupStatus.busy ? 'Checking...' : 'Recheck Setup'}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      {/if}
 
       {#if $runState.lifecycle === 'running'}
         <section class="panel status">
@@ -1478,7 +1768,7 @@
                       {/if}
                       <span class:profile-ready-badge={profile.downloadStatus === 'ready'} class:profile-failed-badge={profile.downloadStatus === 'failed'} class="profile-status-badge">{localModelStatusLabel(profile.downloadStatus)}</span>
                       {#if profile.downloadStatus === 'failed' || profile.downloadStatus === 'not_downloaded'}
-                        <button class="button-secondary" type="button" on:click={() => retryLocalModelDownload(profile.id)} disabled={settingsActionBusy}>Retry download</button>
+                        <button class="button-secondary" type="button" on:click={() => retryLocalModelDownload(profile.id)} disabled={settingsActionBusy || Boolean(localModelDownload?.active && localModelDownload?.profileId === profile.id)}>Retry download</button>
                       {/if}
                       <button class="button-secondary" type="button" on:click={() => deleteLocalModelProfile(profile.id)} disabled={settingsActionBusy}>Delete</button>
                     </div>
@@ -1588,6 +1878,21 @@
             </div>
           </section>
         {/if}
+        {#if settingsRuntime?.python_packages?.length}
+          <section class="panel">
+            <h3>Local Python Packages</h3>
+            <div class="tool-list">
+              {#each settingsRuntime.python_packages as pkg}
+                <div class="tool-row">
+                  <div>
+                    <p><strong>{pkg.tool}</strong></p>
+                    <p class:ok={pkg.ok} class:warn={!pkg.ok}>{pkg.ok ? 'Available' : pkg.message}</p>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </section>
+        {/if}
 
         <section class="panel">
           <h3>Maintenance</h3>
@@ -1666,10 +1971,11 @@
       {#if settingsTab === 'policies'}
         <div id="settings-panel-policies" class="panel" role="tabpanel" aria-labelledby="settings-tab-policies">
           <h3>Policies</h3>
-          <p class="meta">Reference documents for use, privacy, refunds, and liability.</p>
+          <p class="meta">Reference documents for use, privacy, third-party notices, refunds, and liability.</p>
           <div class="row">
             <button type="button" class:active-tab={policiesTab === 'terms'} on:click={() => (policiesTab = 'terms')}>Terms</button>
             <button type="button" class:active-tab={policiesTab === 'privacy'} on:click={() => (policiesTab = 'privacy')}>Privacy</button>
+            <button type="button" class:active-tab={policiesTab === 'notices'} on:click={() => (policiesTab = 'notices')}>Third-Party Notices</button>
             <button type="button" class:active-tab={policiesTab === 'refund'} on:click={() => (policiesTab = 'refund')}>Refund Policy</button>
           </div>
         </div>
@@ -2017,6 +2323,13 @@
   nav button.active { border-color: var(--color-focus-ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-focus-ring) 25%, transparent); }
   .form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); align-items: end; }
   label { display: grid; gap: var(--space-xs); }
+  .form-full { grid-column: 1 / -1; }
+  .form-action-row {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+  }
   .advanced { grid-column: 1 / -1; }
   .advanced summary {
     cursor: pointer;

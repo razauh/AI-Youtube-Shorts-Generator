@@ -1,6 +1,10 @@
 import os
 
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - optional in some runtime layouts
+    def load_dotenv():
+        return False
 
 load_dotenv()
 

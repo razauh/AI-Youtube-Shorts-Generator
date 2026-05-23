@@ -1,4 +1,5 @@
 use crate::core::config::Config;
+use crate::runtime::python_runtime::resolve_python_bridge_paths;
 use crate::runtime::tool_resolver::{validate_runtime_tools, ResolveConfig, ToolKind, ToolStatus};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -15,6 +16,8 @@ pub struct RuntimeValidation {
     pub bridge_entry_exists: bool,
     pub ok: bool,
     pub tools: Vec<ToolStatus>,
+    pub python_packages: Vec<ToolStatus>,
+    pub local_runtime_ready: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,17 +43,19 @@ pub fn health_check() -> HealthCheck {
 
 #[tauri::command]
 pub fn validate_runtime() -> RuntimeValidation {
-    let python = std::env::var("PYTHON_BRIDGE_BIN").unwrap_or_else(|_| "python3".to_string());
-    let entry = std::env::var("PYTHON_BRIDGE_ENTRY")
-        .unwrap_or_else(|_| "../../python_legacy/bridge_entry.py".to_string());
-    let bundled_dir = std::env::var("BUNDLED_RUNTIME_DIR").ok().map(Into::into);
+    let bridge = resolve_python_bridge_paths();
+    let python = bridge.python_bin;
+    let entry = bridge.entry_script;
+    let bundled_dir = bridge.bundled_runtime_dir;
 
     let _ = Config::from_env();
+    let allow_system_path = bundled_dir.is_none();
     let validation = validate_runtime_tools(ResolveConfig {
         bundled_dir,
-        allow_system_path: true,
+        allow_system_path,
         python_bin: python.clone(),
         required_tools: vec![ToolKind::Python, ToolKind::Ffmpeg, ToolKind::YtDlp],
+        required_python_modules: vec!["faster_whisper".to_string()],
     });
 
     RuntimeValidation {
@@ -59,6 +64,8 @@ pub fn validate_runtime() -> RuntimeValidation {
         bridge_entry: entry,
         ok: validation.ok,
         tools: validation.tools,
+        python_packages: validation.python_packages,
+        local_runtime_ready: validation.local_runtime_ready,
     }
 }
 

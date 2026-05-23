@@ -24,7 +24,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "resources": [
+      "bundled-runtime"
+    ]
   },
   "plugins": {
     "updater": {

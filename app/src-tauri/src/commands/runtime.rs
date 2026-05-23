@@ -1,4 +1,6 @@
-use crate::runtime::python_runtime::{invoke_python, PythonInvokeRequest};
+use crate::runtime::python_runtime::{
+    invoke_python, resolve_python_bridge_paths, PythonInvokeRequest,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -55,6 +57,8 @@ pub struct LocalModelProfileView {
     pub active: bool,
     pub download_status: String,
     pub error: Option<String>,
+    pub error_code: Option<String>,
+    pub debug_ref: Option<String>,
     pub created_at_ms: u64,
     pub updated_at_ms: u64,
 }
@@ -78,6 +82,8 @@ pub struct LocalModelDownloadStatus {
     pub progress: f64,
     pub message: String,
     pub error: Option<String>,
+    pub error_code: Option<String>,
+    pub debug_ref: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,6 +113,8 @@ struct LocalModelProfileRecord {
     device: String,
     download_status: String,
     error: Option<String>,
+    error_code: Option<String>,
+    debug_ref: Option<String>,
     created_at_ms: u64,
     updated_at_ms: u64,
 }
@@ -481,6 +489,8 @@ fn view_local_model_profiles(store: &LocalModelProfileStore) -> LocalModelProfil
             active: active_id == Some(&profile.id),
             download_status: profile.download_status.clone(),
             error: profile.error.clone(),
+            error_code: profile.error_code.clone(),
+            debug_ref: profile.debug_ref.clone(),
             created_at_ms: profile.created_at_ms,
             updated_at_ms: profile.updated_at_ms,
         })
@@ -498,6 +508,8 @@ fn set_local_model_profile_download_state(
     profile_id: &str,
     status: &str,
     error: Option<String>,
+    error_code: Option<String>,
+    debug_ref: Option<String>,
 ) -> Result<(), String> {
     let mut store = load_local_model_profile_store()?;
     if let Some(profile) = store
@@ -507,6 +519,8 @@ fn set_local_model_profile_download_state(
     {
         profile.download_status = status.to_string();
         profile.error = error;
+        profile.error_code = error_code;
+        profile.debug_ref = debug_ref;
         profile.updated_at_ms = now_epoch_ms();
         save_local_model_profile_store(&store)?;
     }
@@ -523,24 +537,115 @@ fn default_download_status() -> LocalModelDownloadStatus {
         progress: 0.0,
         message: "No local model download is running.".to_string(),
         error: None,
+        error_code: None,
+        debug_ref: None,
     }
 }
 
-fn safe_download_error(value: &str) -> String {
-    let first_line = value
-        .lines()
-        .next()
-        .unwrap_or("model download failed")
-        .trim();
-    if first_line.is_empty() {
-        "model download failed".to_string()
-    } else {
-        let redacted = match std::env::var("HOME") {
-            Ok(home) if !home.trim().is_empty() => first_line.replace(&home, "[home]"),
-            _ => first_line.to_string(),
+#[derive(Debug, Clone)]
+struct LocalModelErrorSummary {
+    code: String,
+    user_message: String,
+}
+
+fn classify_local_model_download_error(raw: &str) -> LocalModelErrorSummary {
+    let lower = raw.to_ascii_lowercase();
+    if lower.contains("timed out") {
+        return LocalModelErrorSummary {
+            code: "timeout".to_string(),
+            user_message: "The model download timed out. Please try again.".to_string(),
         };
-        redacted.chars().take(220).collect()
     }
+    if lower.contains("faster-whisper is required")
+        || lower.contains("no module named")
+        || lower.contains("module not found")
+    {
+        return LocalModelErrorSummary {
+            code: "missing_dependency".to_string(),
+            user_message: "A required local dependency is missing. Recheck setup, then retry."
+                .to_string(),
+        };
+    }
+    if lower.contains("unsupported model name") || lower.contains("model is required") {
+        return LocalModelErrorSummary {
+            code: "invalid_model".to_string(),
+            user_message: "The selected model name is not supported. Choose another model."
+                .to_string(),
+        };
+    }
+    if lower.contains("permission denied") || lower.contains("read-only file system") {
+        return LocalModelErrorSummary {
+            code: "permission_path".to_string(),
+            user_message: "The app cannot save model files to the target folder.".to_string(),
+        };
+    }
+    if lower.contains("no space left on device") {
+        return LocalModelErrorSummary {
+            code: "disk_space".to_string(),
+            user_message: "There is not enough disk space to download this model.".to_string(),
+        };
+    }
+    if lower.contains("certificate") || lower.contains("ssl") || lower.contains("connection") {
+        return LocalModelErrorSummary {
+            code: "network".to_string(),
+            user_message: "The model server could not be reached. Check your internet connection."
+                .to_string(),
+        };
+    }
+    LocalModelErrorSummary {
+        code: "unknown".to_string(),
+        user_message: "Model download failed. Please try again or open logs for details."
+            .to_string(),
+    }
+}
+
+fn redact_local_model_error(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return "model download failed".to_string();
+    }
+    let mut output = trimmed.to_string();
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.trim().is_empty() {
+            output = output.replace(&home, "[home]");
+        }
+    }
+    output.chars().take(6000).collect()
+}
+
+fn local_model_debug_ref() -> String {
+    format!("lm-{}", now_epoch_ms())
+}
+
+fn append_local_model_download_log(
+    debug_ref: &str,
+    model: &str,
+    device: &str,
+    error_code: &str,
+    raw_error: &str,
+) {
+    let bridge = resolve_python_bridge_paths();
+    let root = match runtime_root() {
+        Ok(root) => root,
+        Err(_) => return,
+    };
+    if ensure_runtime_dirs(&root).is_err() {
+        return;
+    }
+    let cache_dir = root.join("models").join("huggingface");
+    let line = format!(
+        "[{}] [{}] local_model_download_failed code={} model={} device={} cache_dir={} python_bin={} bridge_entry={} error=\"{}\"",
+        now_epoch_ms(),
+        debug_ref,
+        error_code,
+        model,
+        device,
+        cache_dir.display(),
+        bridge.python_bin,
+        bridge.entry_script,
+        redact_local_model_error(raw_error).replace('\n', "\\n")
+    );
+    let _ = runtime_fs_append_line("logs/app.log".to_string(), line);
 }
 
 fn migrate_legacy_api_key(provider: &str, store: &mut ApiKeyProfileStore) -> Result<bool, String> {
@@ -1176,6 +1281,8 @@ pub fn local_model_profile_add(
         device: device.clone(),
         download_status: "queued".to_string(),
         error: None,
+        error_code: None,
+        debug_ref: None,
         created_at_ms: now,
         updated_at_ms: now,
     });
@@ -1279,6 +1386,8 @@ fn start_local_model_download(
         progress: 0.05,
         message: format!("Checking local model {model}..."),
         error: None,
+        error_code: None,
+        debug_ref: None,
     };
 
     {
@@ -1295,7 +1404,7 @@ fn start_local_model_download(
         *current = initial.clone();
     }
 
-    let _ = set_local_model_profile_download_state(&profile_id, "downloading", None);
+    let _ = set_local_model_profile_download_state(&profile_id, "downloading", None, None, None);
     let _ = app.emit("local-model-download-progress", initial);
 
     let state_for_thread = LocalModelDownloadState {
@@ -1314,13 +1423,21 @@ fn start_local_model_download(
                 progress: 0.35,
                 message: format!("Downloading local model {model}..."),
                 error: None,
+                error_code: None,
+                debug_ref: None,
             },
         );
 
         let result = prefetch_local_model(&model, &device);
         match result {
             Ok(()) => {
-                let _ = set_local_model_profile_download_state(&profile_id, "ready", None);
+                let _ = set_local_model_profile_download_state(
+                    &profile_id,
+                    "ready",
+                    None,
+                    None,
+                    None,
+                );
                 publish_download_status(
                     &app,
                     &state_for_thread,
@@ -1333,6 +1450,8 @@ fn start_local_model_download(
                         progress: 0.92,
                         message: format!("Verifying local model {model}..."),
                         error: None,
+                        error_code: None,
+                        debug_ref: None,
                     },
                 );
                 publish_download_status(
@@ -1347,15 +1466,27 @@ fn start_local_model_download(
                         progress: 1.0,
                         message: format!("Local model {model} is ready."),
                         error: None,
+                        error_code: None,
+                        debug_ref: None,
                     },
                 );
             }
             Err(err) => {
-                let safe = safe_download_error(&err);
+                let summary = classify_local_model_download_error(&err);
+                let debug_ref = local_model_debug_ref();
+                append_local_model_download_log(
+                    &debug_ref,
+                    &model,
+                    &device,
+                    &summary.code,
+                    &err,
+                );
                 let _ = set_local_model_profile_download_state(
                     &profile_id,
                     "failed",
-                    Some(safe.clone()),
+                    Some(summary.user_message.clone()),
+                    Some(summary.code.clone()),
+                    Some(debug_ref.clone()),
                 );
                 publish_download_status(
                     &app,
@@ -1368,7 +1499,9 @@ fn start_local_model_download(
                         phase: "failed".to_string(),
                         progress: 1.0,
                         message: "Local model download failed.".to_string(),
-                        error: Some(safe),
+                        error: Some(summary.user_message),
+                        error_code: Some(summary.code),
+                        debug_ref: Some(debug_ref),
                     },
                 );
             }
@@ -1399,10 +1532,10 @@ fn prefetch_local_model(model: &str, device: &str) -> Result<(), String> {
         ("LOCAL_WHISPER_MODEL".to_string(), model.to_string()),
         ("LOCAL_WHISPER_DEVICE".to_string(), device.to_string()),
     ];
+    let bridge = resolve_python_bridge_paths();
     let proc = invoke_python(PythonInvokeRequest {
-        python_bin: std::env::var("PYTHON_BRIDGE_BIN").unwrap_or_else(|_| "python3".to_string()),
-        entry_script: std::env::var("PYTHON_BRIDGE_ENTRY")
-            .unwrap_or_else(|_| "../../python_legacy/bridge_entry.py".to_string()),
+        python_bin: bridge.python_bin,
+        entry_script: bridge.entry_script,
         env,
         stdin_json,
         timeout_ms: std::env::var("PYTHON_BRIDGE_TIMEOUT_MS")
