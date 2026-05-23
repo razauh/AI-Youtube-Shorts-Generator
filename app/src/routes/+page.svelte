@@ -22,6 +22,7 @@
   } from '../lib/api/runtimeClient';
   import { checkForAppUpdate, installAppUpdate } from '../lib/api/updaterClient';
   import { CRASH_DRAFT_KEY, createCrashDraft, dismissCrashDraft, saveCrashDraft } from '../support/crashDraft';
+  import { POLICY_COMMON_SECTIONS, POLICY_LAST_UPDATED_LABEL, POLICY_SECTIONS } from '../lib/legal/policiesContent';
   const LS = {
     projects: 'shorts.projects.v1',
     theme: 'shorts.theme.v1'
@@ -57,18 +58,21 @@
   let outputJson = '';
   let licenseKey = '';
   let resetLicenseKey = '';
+  let termsAccepted = false;
+  let showTermsModal = false;
 
   let projectName = '';
   let shortsSearch = '';
 
-  let supportMessage = '';
-  let supportLog = '';
   let updaterStatus = 'Updater idle.';
   let updateAvailable = false;
   let updateVersion = '';
   let updaterBusy = false;
   let crashDraft = null;
   let crashStatus = '';
+  let diagnosticsLastCheckedAt = '';
+  let diagnosticsShowAdvanced = false;
+  let diagnosticsInstallHelpFor = '';
   let settingsBusy = false;
   let settingsError = '';
   let settingsConfig = null;
@@ -248,6 +252,7 @@
       localModelDownload = downloadStatus;
       whisperModelInput = config.localWhisperModel || 'base';
       whisperDeviceInput = config.localWhisperDevice || 'auto';
+      diagnosticsLastCheckedAt = new Date().toISOString();
     } catch (err) {
       settingsError = err instanceof Error ? err.message : 'Unable to load settings status.';
     } finally {
@@ -543,16 +548,45 @@
     }
   }
 
-  function exportDebugLog() {
-    const debug = {
-      time: new Date().toISOString(),
-      activeScreen: active,
-      runLifecycle: $runState.lifecycle,
-      progress: $runState.progress,
-      lastError: $runState.error,
-      recentProjects: projects.slice(0, 3).map((p) => p.name)
-    };
-    supportLog = JSON.stringify(debug, null, 2);
+  function formatLastChecked(timestamp) {
+    if (!timestamp) {
+      return 'Not checked yet';
+    }
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) {
+      return 'Not checked yet';
+    }
+    return date.toLocaleString();
+  }
+
+  function toolDisplayName(tool) {
+    if (tool === 'python') {
+      return 'Python 3';
+    }
+    if (tool === 'ffmpeg') {
+      return 'FFmpeg';
+    }
+    return 'yt-dlp';
+  }
+
+  function toolPurpose(tool) {
+    if (tool === 'python') {
+      return 'Runs local processing bridge';
+    }
+    if (tool === 'ffmpeg') {
+      return 'Cuts and exports clips';
+    }
+    return 'Downloads source videos';
+  }
+
+  function installInstructions(tool) {
+    if (tool === 'python') {
+      return 'Install Python 3 and ensure `python3` is available in your PATH.';
+    }
+    if (tool === 'ffmpeg') {
+      return 'Install FFmpeg and ensure `ffmpeg` is available in your PATH.';
+    }
+    return 'Install yt-dlp and ensure `yt-dlp` is available in your PATH.';
   }
 
   function platformLabel() {
@@ -672,6 +706,11 @@
     const key = licenseKey.trim();
     if (!key) {
       licenseFormStatus = 'Enter your license key to continue.';
+      licenseFormStatusKind = 'error';
+      return;
+    }
+    if (!termsAccepted) {
+      licenseFormStatus = 'You must accept the Terms and Conditions to continue.';
       licenseFormStatusKind = 'error';
       return;
     }
@@ -871,6 +910,13 @@
           <button type="submit" disabled={$authState.lifecycle === 'activating'}>
             {$authState.lifecycle === 'activating' ? 'Activating...' : 'Activate'}
           </button>
+          <label class="terms-accept-row">
+            <input aria-label="Accept terms and conditions" type="checkbox" bind:checked={termsAccepted} />
+            <span class="terms-copy">
+              By logging in, I accept the
+              <button class="inline-link" type="button" on:click={() => (showTermsModal = true)}>Terms and Conditions</button>.
+            </span>
+          </label>
           <FormStatus message={licenseFormStatus} kind={licenseFormStatusKind} />
         </form>
       {/if}
@@ -903,6 +949,37 @@
         </div>
       {/if}
     </section>
+
+    {#if showTermsModal}
+      <div class="policy-modal-backdrop" role="presentation" on:click|self={() => (showTermsModal = false)}>
+        <section
+          class="panel policy-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="terms-modal-title"
+        >
+          <div class="policy-modal-head">
+            <h2 id="terms-modal-title">Terms and Conditions</h2>
+            <button type="button" class="button-secondary" on:click={() => (showTermsModal = false)}>Close</button>
+          </div>
+          <div class="policy-modal-content">
+            {#each POLICY_SECTIONS.terms as section}
+              <h3>{section.heading}</h3>
+              {#each section.paragraphs as paragraph}
+                <p>{paragraph}</p>
+              {/each}
+            {/each}
+            {#each POLICY_COMMON_SECTIONS as section}
+              <h3>{section.heading}</h3>
+              {#each section.paragraphs as paragraph}
+                <p>{paragraph}</p>
+              {/each}
+            {/each}
+            <p class="meta">Last updated: {POLICY_LAST_UPDATED_LABEL}</p>
+          </div>
+        </section>
+      </div>
+    {/if}
   </main>
 {:else}
   <main class="app-shell">
@@ -1468,27 +1545,52 @@
       {#if settingsTab === 'diagnostics'}
         <div id="settings-panel-diagnostics" class="panel" role="tabpanel" aria-labelledby="settings-tab-diagnostics">
           <h3>Diagnostics</h3>
-          <p class="meta">Check runtime tools, updates, and support data.</p>
+          <p class="meta">See system health and take action when setup issues are detected.</p>
+          <p>
+            Runtime status:
+            <span class:ok={settingsRuntime?.ok} class:warn={!settingsRuntime?.ok}>
+              {settingsRuntime?.ok ? 'All required dependencies are available.' : 'Action needed for one or more dependencies.'}
+            </span>
+          </p>
+          <p class="meta">Last checked: {formatLastChecked(diagnosticsLastCheckedAt)}</p>
           <button type="button" on:click={loadSettingsStatus} disabled={settingsBusy}>
-            {settingsBusy ? 'Refreshing...' : 'Refresh Status'}
+            {settingsBusy ? 'Rechecking...' : 'Recheck Dependencies'}
           </button>
         </div>
         {#if settingsRuntime?.tools?.length}
           <section class="panel">
-            <h3>Runtime Tools</h3>
+            <h3>Required Dependencies</h3>
             <div class="tool-list">
               {#each settingsRuntime.tools as tool}
                 <div class="tool-row">
-                  <span>{tool.tool}</span>
-                  <span class:ok={tool.ok} class:warn={!tool.ok}>{tool.ok ? 'Available' : tool.message}</span>
+                  <div>
+                    <p><strong>{toolDisplayName(tool.tool)}</strong></p>
+                    <p class="meta">{toolPurpose(tool.tool)}</p>
+                    <p class:ok={tool.ok} class:warn={!tool.ok}>{tool.ok ? 'Available' : tool.message}</p>
+                  </div>
+                  <div class="row">
+                    <button type="button" class="button-secondary" on:click={loadSettingsStatus} disabled={settingsBusy}>
+                      Recheck
+                    </button>
+                    <button
+                      type="button"
+                      class="button-secondary"
+                      on:click={() => (diagnosticsInstallHelpFor = diagnosticsInstallHelpFor === tool.tool ? '' : tool.tool)}
+                    >
+                      {diagnosticsInstallHelpFor === tool.tool ? 'Hide instructions' : 'Install instructions'}
+                    </button>
+                  </div>
                 </div>
+                {#if diagnosticsInstallHelpFor === tool.tool}
+                  <p class="meta">{installInstructions(tool.tool)}</p>
+                {/if}
               {/each}
             </div>
           </section>
         {/if}
 
         <section class="panel">
-          <h3>Updates</h3>
+          <h3>Maintenance</h3>
           <p class="meta">Update checks use the official Tauri updater plugin and signed release artifacts.</p>
           <p>{updaterStatus}</p>
           <div class="row">
@@ -1504,17 +1606,45 @@
         </section>
 
         <section class="panel">
-          <h3>Support</h3>
-          <label>Message to support
-            <textarea rows="4" bind:value={supportMessage} placeholder="Describe your issue"></textarea>
-          </label>
-          <div class="row">
-            <button type="button" on:click={exportDebugLog}>Generate Debug Log</button>
-          </div>
-          {#if supportLog}
-            <label>Debug log
-              <textarea rows="8" readonly value={supportLog}></textarea>
-            </label>
+          <h3>Advanced Diagnostics</h3>
+          <button type="button" class="button-secondary" on:click={() => (diagnosticsShowAdvanced = !diagnosticsShowAdvanced)}>
+            {diagnosticsShowAdvanced ? 'Hide advanced details' : 'Show advanced details'}
+          </button>
+          {#if diagnosticsShowAdvanced}
+            <div class="tool-list">
+              <div class="tool-row">
+                <span>App version</span>
+                <span>{settingsContext?.appVersion || APP_VERSION}</span>
+              </div>
+              <div class="tool-row">
+                <span>Platform</span>
+                <span>{settingsContext?.platform || platformLabel()}</span>
+              </div>
+              <div class="tool-row">
+                <span>Bridge entry</span>
+                <span>{settingsRuntime?.bridge_entry || 'Unavailable'}</span>
+              </div>
+              <div class="tool-row">
+                <span>Bridge entry exists</span>
+                <span class:ok={settingsRuntime?.bridge_entry_exists} class:warn={!settingsRuntime?.bridge_entry_exists}>
+                  {settingsRuntime?.bridge_entry_exists ? 'Yes' : 'No'}
+                </span>
+              </div>
+              <div class="tool-row">
+                <span>Config path</span>
+                <span>{settingsContext?.configPath || 'Unavailable'}</span>
+              </div>
+              <div class="tool-row">
+                <span>Log path</span>
+                <span>{settingsContext?.logPath || 'Unavailable'}</span>
+              </div>
+              {#each settingsRuntime?.tools ?? [] as tool}
+                <div class="tool-row">
+                  <span>{toolDisplayName(tool.tool)} source/path</span>
+                  <span>{tool.source || 'n/a'} {tool.path || ''}</span>
+                </div>
+              {/each}
+            </div>
           {/if}
         </section>
       {/if}
@@ -1544,27 +1674,19 @@
           </div>
         </div>
         <div class="panel legal-copy" role="tabpanel">
-          {#if policiesTab === 'terms'}
-            <h3>Terms of Use</h3>
-            <p>By using this software, you confirm you have rights to process input media and comply with platform policies and local laws.</p>
-            <p>You are responsible for generated outputs, publication decisions, copyright compliance, and any third-party claims.</p>
-            <h3>Acceptable Use</h3>
-            <p>Do not use the app to generate unlawful, deceptive, harmful, or infringing content. Abuse may result in access suspension for paid services.</p>
-          {/if}
-          {#if policiesTab === 'privacy'}
-            <h3>Privacy Notice</h3>
-            <p>Local workspace data for generation history and library is stored on-device in this release build. Cloud operations only occur when API mode is selected for generation.</p>
-          {/if}
-          {#if policiesTab === 'refund'}
-            <h3>Refund Policy</h3>
-            <p>Refund requests are handled manually within 7 days from purchase, subject to purchase records and platform dispute rules.</p>
-            <p>No automated refund engine is built into this app.</p>
-          {/if}
-          <h3>Warranty and Liability</h3>
-          <p>The software is provided as-is without guarantees of uninterrupted service. Liability is limited to the maximum extent permitted by law.</p>
-          <h3>Support and Contact</h3>
-          <p>For enterprise support and data requests, use the Support section and attach generated debug logs.</p>
-          <p class="meta">Last updated: May 8, 2026</p>
+          {#each POLICY_SECTIONS[policiesTab] as section}
+            <h3>{section.heading}</h3>
+            {#each section.paragraphs as paragraph}
+              <p>{paragraph}</p>
+            {/each}
+          {/each}
+          {#each POLICY_COMMON_SECTIONS as section}
+            <h3>{section.heading}</h3>
+            {#each section.paragraphs as paragraph}
+              <p>{paragraph}</p>
+            {/each}
+          {/each}
+          <p class="meta">Last updated: {POLICY_LAST_UPDATED_LABEL}</p>
         </div>
       {/if}
     {/if}
@@ -1641,6 +1763,64 @@
   .license-form,
   .reset-form {
     grid-template-columns: 1fr;
+  }
+
+  .terms-accept-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-xs);
+    margin-top: calc(var(--space-xs) * -1);
+  }
+
+  .terms-accept-row input[type="checkbox"] {
+    margin-top: .15rem;
+  }
+
+  .terms-copy {
+    color: var(--color-text-tertiary);
+    line-height: 1.4;
+  }
+
+  .inline-link {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0 .1rem;
+    font: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+    color: var(--color-focus-ring);
+    cursor: pointer;
+  }
+
+  .policy-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.46);
+    z-index: 30;
+    display: grid;
+    place-items: center;
+    padding: var(--space-md);
+  }
+
+  .policy-modal {
+    width: min(760px, 96vw);
+    max-height: min(86vh, 900px);
+    display: grid;
+    gap: var(--space-sm);
+    overflow: hidden;
+  }
+
+  .policy-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+  }
+
+  .policy-modal-content {
+    overflow-y: auto;
+    padding-right: .3rem;
   }
 
   .auth-status,
@@ -1788,7 +1968,7 @@
     transform: translateX(.94rem);
   }
 
-  button, input, select, textarea {
+  button, input, select {
     border-radius: var(--radius-sm);
     border: 1px solid var(--color-border-medium);
     border: 1px solid color-mix(in srgb, var(--color-border-medium) 30%, transparent);
@@ -1850,8 +2030,6 @@
   .advanced-actions {
     margin-top: var(--space-sm);
   }
-  textarea { resize: vertical; }
-
   .toolbar { display: grid; gap: var(--space-sm); margin-bottom: var(--space-md); }
 
   .settings-nav-panel {

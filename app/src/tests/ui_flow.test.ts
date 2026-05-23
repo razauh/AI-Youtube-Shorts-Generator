@@ -282,10 +282,49 @@ describe('test_ui flow parity', () => {
     expect((screen.getByLabelText('License key') as HTMLInputElement).type).toBe('password');
 
     await fireEvent.input(screen.getByLabelText('License key'), { target: { value: 'LICENSE-1234' } });
+    await fireEvent.click(screen.getByLabelText('Accept terms and conditions'));
     await fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
 
     expect(authStoreMock.store.activate).toHaveBeenCalledWith('LICENSE-1234');
     expect(JSON.stringify(localStorage)).not.toContain('LICENSE-1234');
+  });
+
+  it('test_login_requires_accepting_terms_before_activation', async () => {
+    authStoreMock.set({
+      lifecycle: 'unauthenticated',
+      authState: { status: 'unauthenticated' },
+      resetRequestId: null,
+      resetStatus: 'idle',
+      resetStatusMessage: null,
+      resetError: null,
+      error: null
+    });
+
+    render(Page);
+    await fireEvent.input(screen.getByLabelText('License key'), { target: { value: 'LICENSE-1234' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
+
+    expect(authStoreMock.store.activate).not.toHaveBeenCalled();
+    expect(screen.getByText('You must accept the Terms and Conditions to continue.')).toBeTruthy();
+  });
+
+  it('test_login_terms_link_opens_policy_modal_from_shared_source', async () => {
+    authStoreMock.set({
+      lifecycle: 'unauthenticated',
+      authState: { status: 'unauthenticated' },
+      resetRequestId: null,
+      resetStatus: 'idle',
+      resetStatusMessage: null,
+      resetError: null,
+      error: null
+    });
+
+    render(Page);
+    await fireEvent.click(screen.getByRole('button', { name: 'Terms and Conditions' }));
+    expect(screen.getByRole('dialog', { name: 'Terms and Conditions' })).toBeTruthy();
+    expect(screen.getByText('Terms of Use')).toBeTruthy();
+    expect(screen.getByText('Acceptable Use')).toBeTruthy();
+    expect(screen.getByText('Warranty and Liability')).toBeTruthy();
   });
 
   it('test_global_theme_switch_toggles_checked_state', async () => {
@@ -430,12 +469,12 @@ describe('test_ui flow parity', () => {
 
     await fireEvent.click(screen.getByRole('tab', { name: 'Diagnostics' }));
     expect(screen.getByRole('tab', { name: 'Diagnostics', selected: true })).toBeTruthy();
-    expect(screen.getByText('Check runtime tools, updates, and support data.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Refresh Status' })).toBeTruthy();
-    expect(screen.getByText('Runtime Tools')).toBeTruthy();
+    expect(screen.getByText('See system health and take action when setup issues are detected.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Recheck Dependencies' })).toBeTruthy();
+    expect(screen.getByText('Required Dependencies')).toBeTruthy();
     expect(screen.getByText('Available')).toBeTruthy();
-    expect(screen.getByText('Updates')).toBeTruthy();
-    expect(screen.getByText('Support')).toBeTruthy();
+    expect(screen.getByText('Maintenance')).toBeTruthy();
+    expect(screen.queryByText('Logs and Support')).toBeNull();
 
     expect(screen.queryByRole('button', { name: 'Terms' })).toBeNull();
     await fireEvent.click(screen.getByRole('tab', { name: 'Policies' }));
