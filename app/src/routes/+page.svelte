@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import FormStatus from '../lib/components/FormStatus.svelte';
+  import ThemedSelect from '../lib/components/ThemedSelect.svelte';
   import { runState } from '../lib/stores/runState';
   import { authState } from '../lib/stores/authState';
   import { openInFileManager, pickLocalVideoFile, pickOutputJsonPath, runGenerateAndStream } from '../lib/api/tauriClient';
@@ -50,6 +51,29 @@
     { value: 'auto', label: 'Auto - choose CUDA when available' },
     { value: 'cpu', label: 'CPU - most compatible' },
     { value: 'cuda', label: 'CUDA - NVIDIA GPU' }
+  ];
+  const SOURCE_TYPE_OPTIONS = [
+    { value: 'youtube', label: 'YouTube URL' },
+    { value: 'local', label: 'Local video file' }
+  ];
+  const MODE_OPTIONS = [
+    { value: 'api', label: 'api' },
+    { value: 'local', label: 'local' }
+  ];
+  const ASPECT_RATIO_OPTIONS = [
+    { value: '9:16', label: '9:16 (Shorts/Reels/TikTok)' },
+    { value: '1:1', label: '1:1 (Square feed)' },
+    { value: '4:5', label: '4:5 (Instagram portrait)' },
+    { value: '16:9', label: '16:9 (YouTube landscape)' },
+    { value: '3:4', label: '3:4 (Portrait classic)' }
+  ];
+  const RESOLUTION_OPTIONS = [
+    { value: '360', label: '360p' },
+    { value: '480', label: '480p' },
+    { value: '720', label: '720p' },
+    { value: '1080', label: '1080p' },
+    { value: '1440', label: '1440p' },
+    { value: '2160', label: '4K (2160p)' }
   ];
 
   let active = 'generate';
@@ -1357,12 +1381,7 @@
         <form class="form" novalidate on:submit|preventDefault={submitRun}>
           <label>Project title <input aria-label="Project title" bind:value={projectName} placeholder="My Product Launch Highlights" /></label>
           <label>Source type
-            <div class="select-wrap">
-              <select aria-label="Source type" bind:value={sourceType}>
-                <option value="youtube">YouTube URL</option>
-                <option value="local">Local video file</option>
-              </select>
-            </div>
+            <ThemedSelect ariaLabel="Source type" bind:value={sourceType} options={SOURCE_TYPE_OPTIONS} />
           </label>
           <label>{sourceLabel} <input aria-label="YouTube video URL" bind:value={url} placeholder={sourcePlaceholder} /></label>
           {#if sourceType === 'local'}
@@ -1371,44 +1390,14 @@
             </div>
           {/if}
           <label>Mode
-            <div class="select-wrap">
-              <select aria-label="Mode" bind:value={mode}>
-                <option value="api">api</option>
-                <option value="local">local</option>
-              </select>
-            </div>
+            <ThemedSelect ariaLabel="Mode" bind:value={mode} options={MODE_OPTIONS} />
           </label>
           <label>Num clips <input aria-label="Num clips" type="number" bind:value={numClips} /></label>
           <label>Aspect ratio
-            <div class="select-wrap">
-              <select
-                aria-label="Aspect ratio"
-                bind:value={aspectRatio}
-                on:input={(event) => (aspectRatio = event.currentTarget.value)}
-              >
-                <option value="9:16">9:16 (Shorts/Reels/TikTok)</option>
-                <option value="1:1">1:1 (Square feed)</option>
-                <option value="4:5">4:5 (Instagram portrait)</option>
-                <option value="16:9">16:9 (YouTube landscape)</option>
-                <option value="3:4">3:4 (Portrait classic)</option>
-              </select>
-            </div>
+            <ThemedSelect ariaLabel="Aspect ratio" bind:value={aspectRatio} options={ASPECT_RATIO_OPTIONS} />
           </label>
           <label>Resolution
-            <div class="select-wrap">
-              <select
-                aria-label="Resolution"
-                bind:value={format}
-                on:input={(event) => (format = event.currentTarget.value)}
-              >
-                <option value="360">360p</option>
-                <option value="480">480p</option>
-                <option value="720">720p</option>
-                <option value="1080">1080p</option>
-                <option value="1440">1440p</option>
-                <option value="2160">4K (2160p)</option>
-              </select>
-            </div>
+            <ThemedSelect ariaLabel="Resolution" bind:value={format} options={RESOLUTION_OPTIONS} />
           </label>
           <details class="advanced">
             <summary>Advanced</summary>
@@ -1768,13 +1757,7 @@
                     <span id="help-whisper-model" class="help-tooltip" role="tooltip">Small is the safest quality/speed upgrade from Base.</span>
                   </span>
                 </span>
-                <div class="select-wrap">
-                  <select aria-label="Whisper model" bind:value={whisperModelInput}>
-                    {#each whisperModelOptions as option}
-                      <option value={option.value}>{option.label}</option>
-                    {/each}
-                  </select>
-                </div>
+                <ThemedSelect ariaLabel="Whisper model" bind:value={whisperModelInput} options={whisperModelOptions} />
               </label>
               <label class="select-field">
                 <span class="field-label-row">
@@ -1784,13 +1767,7 @@
                     <span id="help-processing-device" class="help-tooltip" role="tooltip">This device choice is saved with the model profile and becomes active when that profile is selected.</span>
                   </span>
                 </span>
-                <div class="select-wrap">
-                  <select aria-label="Processing device" bind:value={whisperDeviceInput}>
-                    {#each whisperDeviceOptions as option}
-                      <option value={option.value}>{option.label}</option>
-                    {/each}
-                  </select>
-                </div>
+                <ThemedSelect ariaLabel="Processing device" bind:value={whisperDeviceInput} options={whisperDeviceOptions} />
               </label>
               <div class="settings-actions">
                 <button type="submit" disabled={settingsActionBusy || !canSaveLocalProcessing}>Save and Download</button>
@@ -2382,36 +2359,48 @@
     padding: .6rem .7rem;
     font-family: inherit;
   }
-  select option {
-    background: var(--color-surface-input);
-    color: var(--color-text-primary);
-  }
   select {
     appearance: none;
     -webkit-appearance: none;
+    color-scheme: var(--ui-color-scheme, dark);
+    background-color: var(--color-surface-input);
+    background-color: color-mix(in srgb, var(--color-surface-input) 88%, var(--color-panel-card));
+    color: var(--color-text-primary);
+    border-color: var(--color-border-medium);
+    border-color: color-mix(in srgb, var(--color-border-strong) 34%, transparent);
+    border-width: 1px;
+    border-style: solid;
+    min-height: 2.45rem;
+    line-height: 1.25;
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-text-primary) 8%, transparent);
+    transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease, color 150ms ease;
+  }
+  select:hover:not(:disabled) {
+    border-color: var(--color-focus-ring);
+    border-color: color-mix(in srgb, var(--color-focus-ring) 44%, var(--color-border-strong));
+    background-color: var(--color-surface-input);
+    background-color: color-mix(in srgb, var(--color-surface-input) 94%, var(--color-panel-card));
+  }
+  select:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--color-focus-ring) 62%, transparent);
+    outline-offset: 1px;
+    border-color: color-mix(in srgb, var(--color-focus-ring) 62%, var(--color-border-strong));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-focus-ring) 24%, transparent);
+  }
+  select:disabled {
+    cursor: not-allowed;
+    opacity: .66;
+    color: color-mix(in srgb, var(--color-text-primary) 58%, transparent);
+    background-color: var(--color-surface-input);
+    background-color: color-mix(in srgb, var(--color-surface-input) 68%, var(--color-panel-card));
+    border-color: var(--color-border-medium);
+    border-color: color-mix(in srgb, var(--color-border-strong) 16%, transparent);
+  }
+  select option,
+  select optgroup {
     background-color: var(--color-surface-input);
     color: var(--color-text-primary);
   }
-  .select-wrap {
-    position: relative;
-  }
-  .select-wrap::after {
-    content: "";
-    position: absolute;
-    right: .75rem;
-    top: 50%;
-    width: .45rem;
-    height: .45rem;
-    border-right: 2px solid var(--color-text-tertiary);
-    border-bottom: 2px solid var(--color-text-tertiary);
-    transform: translateY(-62%) rotate(45deg);
-    pointer-events: none;
-  }
-  .select-wrap select {
-    width: 100%;
-    padding-right: 2rem;
-  }
-
   button { cursor: pointer; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); color: var(--color-on-accent); border: none; font-weight: 700; }
   button:disabled {
     cursor: not-allowed;

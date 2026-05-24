@@ -112,6 +112,11 @@ vi.mock('../lib/stores/authState', () => ({
 }));
 
 describe('test_ui flow parity', () => {
+  const chooseThemedSelectOption = async (label: string, optionText: string) => {
+    await fireEvent.click(screen.getByLabelText(label));
+    await fireEvent.click(screen.getByRole('option', { name: optionText }));
+  };
+
   beforeEach(() => {
     runGenerateAndStream.mockReset();
     pickLocalVideoFile.mockReset();
@@ -283,14 +288,25 @@ describe('test_ui flow parity', () => {
     render(Page);
 
     expect((screen.getByLabelText('YouTube video URL') as HTMLInputElement).value).toBe('');
-    expect((screen.getByLabelText('Mode') as HTMLSelectElement).value).toBe('api');
+    expect(screen.getByLabelText('Mode').textContent).toContain('api');
     expect((screen.getByLabelText('Num clips') as HTMLInputElement).value).toBe('3');
-    expect((screen.getByLabelText('Aspect ratio') as HTMLSelectElement).value).toBe('9:16');
-    expect((screen.getByLabelText('Resolution') as HTMLSelectElement).value).toBe('720');
+    expect(screen.getByLabelText('Aspect ratio').textContent).toContain('9:16 (Shorts/Reels/TikTok)');
+    expect(screen.getByLabelText('Resolution').textContent).toContain('720p');
     expect((screen.getByLabelText('Output JSON path') as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText('YouTube video URL') as HTMLInputElement).getAttribute('required')).toBeNull();
     expect((screen.getByLabelText('Num clips') as HTMLInputElement).getAttribute('min')).toBeNull();
     expect(screen.queryByText('Setup needed before first generation')).toBeNull();
+  });
+
+  it('test_select_controls_use_themed_select_wrapper', () => {
+    render(Page);
+
+    const selectLabels = ['Source type', 'Mode', 'Aspect ratio', 'Resolution', 'Whisper model', 'Processing device'];
+    for (const label of selectLabels) {
+      const selectEl = screen.getByLabelText(label) as HTMLButtonElement;
+      expect(selectEl.tagName).toBe('BUTTON');
+      expect(selectEl.getAttribute('aria-haspopup')).toBe('listbox');
+    }
   });
 
   it('test_unauthenticated_state_hides_generator_and_submits_license', async () => {
@@ -486,9 +502,9 @@ describe('test_ui flow parity', () => {
     expect(document.body.textContent).not.toContain('openai-secret');
 
     await fireEvent.click(screen.getByRole('tab', { name: 'Local Processing' }));
-    await fireEvent.change(screen.getByLabelText('Whisper model'), { target: { value: 'small' } });
+    await chooseThemedSelectOption('Whisper model', 'Small - better accuracy, still practical on CPU');
     await fireEvent.input(screen.getByLabelText('Local model profile name'), { target: { value: 'Small CPU' } });
-    await fireEvent.change(screen.getByLabelText('Processing device'), { target: { value: 'cpu' } });
+    await chooseThemedSelectOption('Processing device', 'CPU - most compatible');
     await fireEvent.click(screen.getByRole('button', { name: 'Save and Download' }));
     expect(localModelProfileAdd).toHaveBeenCalledWith('Small CPU', 'small', 'cpu', true);
 
@@ -544,10 +560,10 @@ describe('test_ui flow parity', () => {
 
     render(Page);
     await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
-    await fireEvent.change(screen.getByLabelText('Mode'), { target: { value: 'api' } });
+    await chooseThemedSelectOption('Mode', 'api');
     await fireEvent.input(screen.getByLabelText('Num clips'), { target: { value: '5' } });
-    await fireEvent.input(screen.getByLabelText('Resolution'), { target: { value: '1080' } });
-    await fireEvent.change(screen.getByLabelText('Aspect ratio'), { target: { value: '1:1' } });
+    await chooseThemedSelectOption('Resolution', '1080p');
+    await chooseThemedSelectOption('Aspect ratio', '1:1 (Square feed)');
     await fireEvent.input(screen.getByLabelText('Output JSON path'), { target: { value: 'result.json' } });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
@@ -648,7 +664,7 @@ describe('test_ui flow parity', () => {
     });
 
     render(Page);
-    await fireEvent.change(screen.getByLabelText('Mode'), { target: { value: 'local' } });
+    await chooseThemedSelectOption('Mode', 'local');
     await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
     expect(screen.getByText('Local processing runtime is not ready. Download it from Settings before running local mode.')).toBeTruthy();
     await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
