@@ -1176,19 +1176,26 @@
     <div class="orb orb-a"></div>
     <div class="orb orb-b"></div>
 
-    <section class="panel license-card" aria-labelledby="license-title">
+    <section class="panel license-card" class:checking-state={$authState.lifecycle === 'checking'} aria-labelledby="license-title">
       <div class="license-brand">
         <p class="brand-mark">Signal Forge</p>
       </div>
 
       <div class="license-copy">
-        <h1 id="license-title">License Required</h1>
-        <p class="meta">Enter your Gumroad license key to unlock this device.</p>
+        {#if $authState.lifecycle === 'checking'}
+          <h1 id="license-title">Authenticating…</h1>
+          <p class="meta">Verifying your saved license session. This usually takes a moment.</p>
+        {:else}
+          <h1 id="license-title">License Required</h1>
+          <p class="meta">Enter your Gumroad license key to unlock this device.</p>
+        {/if}
       </div>
 
       {#if $authState.lifecycle === 'checking'}
-        <div class="status auth-status">
-          <p class="status-line">Checking license...</p>
+        <div class="status auth-status auth-status-checking" aria-live="polite" aria-busy="true">
+          <div class="auth-spinner" aria-hidden="true"></div>
+          <p class="status-line">Authenticating with license service…</p>
+          <p class="meta">Please wait. No action is required.</p>
         </div>
       {/if}
 
@@ -2109,6 +2116,11 @@
     padding: var(--space-xl);
   }
 
+  .license-card.checking-state {
+    width: min(100%, 480px);
+    text-align: center;
+  }
+
   .license-brand {
     display: flex;
     align-items: center;
@@ -2204,6 +2216,25 @@
     border-radius: var(--radius-lg);
     background: color-mix(in srgb, var(--color-panel-card) 72%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-border-strong) 20%, transparent);
+  }
+
+  .auth-status-checking {
+    justify-items: center;
+    padding-top: var(--space-lg);
+    padding-bottom: var(--space-lg);
+  }
+
+  .auth-spinner {
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 999px;
+    border: 2px solid color-mix(in srgb, var(--color-border-strong) 35%, transparent);
+    border-top-color: var(--color-focus-ring);
+    animation: auth-spin 900ms linear infinite;
+  }
+
+  @keyframes auth-spin {
+    to { transform: rotate(360deg); }
   }
 
   .auth-status h2,
