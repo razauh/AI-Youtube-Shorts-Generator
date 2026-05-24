@@ -5,7 +5,6 @@ use crate::modules::user_reg::auth_licensing_core::{
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "desktop-tauri")]
 use tauri::Manager;
 
@@ -294,6 +293,7 @@ mod tests {
     use crate::modules::user_reg::auth_licensing_core::{
         DevicePublicKey, MaskedLicenseKey, ResetRequestId,
     };
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn real_keyring_smoke_is_enabled_value(value: Option<&str>) -> bool {
         matches!(

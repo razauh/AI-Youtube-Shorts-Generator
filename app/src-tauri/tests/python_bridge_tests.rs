@@ -2,14 +2,25 @@ use serde_json::{json, Value};
 use shorts_tauri_app::core::local_mode::bridge::{
     run_local_bridge, BridgeConfig, BridgeErrorCode, BridgeRequest,
 };
+use shorts_tauri_app::runtime::python_runtime::resolve_python_bridge_paths;
 use shorts_tauri_app::runtime::process_supervisor::{run_supervised, ProcessSpec};
 
 fn bridge_script() -> String {
-    "../../python_legacy/bridge_entry.py".to_string()
+    if let Ok(value) = std::env::var("PYTHON_BRIDGE_ENTRY") {
+        if !value.trim().is_empty() {
+            return value;
+        }
+    }
+    resolve_python_bridge_paths().entry_script
 }
 
 fn python_bin() -> String {
-    std::env::var("PYTHON_BRIDGE_BIN").unwrap_or_else(|_| "../../.venv/bin/python".to_string())
+    if let Ok(value) = std::env::var("PYTHON_BRIDGE_BIN") {
+        if !value.trim().is_empty() {
+            return value;
+        }
+    }
+    resolve_python_bridge_paths().python_bin
 }
 
 fn base_request() -> BridgeRequest {

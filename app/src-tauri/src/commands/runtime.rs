@@ -1,5 +1,5 @@
 use crate::runtime::python_runtime::{
-    invoke_python, resolve_python_bridge_paths, PythonInvokeRequest,
+    invoke_python, resolve_python_bridge_paths, with_python_runtime_env, PythonInvokeRequest,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -129,6 +129,75 @@ struct LocalModelProfileStore {
 #[derive(Debug)]
 pub struct LocalModelDownloadState {
     current: Arc<Mutex<LocalModelDownloadStatus>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimePackStatusKind {
+    NotInstalled,
+    Downloading,
+    Installing,
+    Installed,
+    Ready,
+    Failed,
+    Corrupted,
+    IncompatiblePlatform,
+    MissingFiles,
+    ValidationFailed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalRuntimePackStatus {
+    pub status: RuntimePackStatusKind,
+    pub version: Option<String>,
+    pub platform: String,
+    pub arch: String,
+    pub install_dir: String,
+    pub manifest_url: String,
+    pub required_size_bytes: Option<u64>,
+    pub message: String,
+    pub error_code: Option<String>,
+    pub debug_ref: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimePackProgressEvent {
+    pub phase: String,
+    pub progress: f64,
+    pub message: String,
+    pub status: RuntimePackStatusKind,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalRuntimePackStateStore {
+    status: Option<RuntimePackStatusKind>,
+    version: Option<String>,
+    installed_at_ms: Option<u64>,
+    last_error_code: Option<String>,
+    last_debug_ref: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimePackManifest {
+    version: String,
+    app_compatibility: Option<String>,
+    assets: Vec<RuntimePackAsset>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimePackAsset {
+    platform: String,
+    arch: String,
+    filename: String,
+    url: String,
+    size: Option<u64>,
+    sha256: String,
+    required_modules: Option<Vec<String>>,
 }
 
 impl Default for LocalModelDownloadState {
@@ -262,6 +331,210 @@ fn local_model_cache_dir() -> Result<PathBuf, String> {
     let root = runtime_root()?;
     ensure_runtime_dirs(&root)?;
     Ok(root.join("models").join("huggingface"))
+}
+
+fn local_runtime_pack_root() -> Result<PathBuf, String> {
+    let root = runtime_root()?;
+    ensure_runtime_dirs(&root)?;
+    Ok(root.join("runtime-pack"))
+}
+
+fn local_runtime_pack_current_dir() -> Result<PathBuf, String> {
+    Ok(local_runtime_pack_root()?.join("current"))
+}
+
+fn local_runtime_pack_state_path() -> Result<PathBuf, String> {
+    Ok(runtime_root()?.join("config").join("local-runtime-pack-state.json"))
+}
+
+fn local_runtime_pack_manifest_url() -> String {
+    std::env::var("LOCAL_RUNTIME_PACK_MANIFEST_URL")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "https://example.com/runtime-pack/manifest.json".to_string())
+}
+
+fn load_runtime_pack_state_store() -> Result<LocalRuntimePackStateStore, String> {
+    let path = local_runtime_pack_state_path()?;
+    if !path.exists() {
+        return Ok(LocalRuntimePackStateStore::default());
+    }
+    let raw = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&raw).map_err(|e| e.to_string())
+}
+
+fn save_runtime_pack_state_store(store: &LocalRuntimePackStateStore) -> Result<(), String> {
+    let path = local_runtime_pack_state_path()?;
+    ensure_parent(&path)?;
+    let encoded = serde_json::to_string_pretty(store).map_err(|e| e.to_string())?;
+    fs::write(path, encoded).map_err(|e| e.to_string())
+}
+
+fn runtime_pack_platform() -> String {
+    std::env::consts::OS.to_string()
+}
+
+fn runtime_pack_arch() -> String {
+    std::env::consts::ARCH.to_string()
+}
+
+fn resolve_runtime_pack_asset<'a>(
+    manifest: &'a RuntimePackManifest,
+) -> Result<&'a RuntimePackAsset, String> {
+    let platform = runtime_pack_platform();
+    let arch = runtime_pack_arch();
+    manifest
+        .assets
+        .iter()
+        .find(|asset| asset.platform == platform && asset.arch == arch)
+        .ok_or_else(|| "incompatible_platform".to_string())
+}
+
+fn runtime_pack_bridge_paths(root: &Path) -> (PathBuf, PathBuf, PathBuf) {
+    let python = if cfg!(windows) {
+        root.join("python.exe")
+    } else {
+        root.join("python3")
+    };
+    let entry = root.join("python_legacy").join("bridge_entry.py");
+    let site_packages = root.join("site-packages");
+    (python, entry, site_packages)
+}
+
+fn validate_runtime_pack_install(root: &Path, required_modules: &[String]) -> Result<(), String> {
+    let (python, entry, _site_packages) = runtime_pack_bridge_paths(root);
+    if !python.exists() || !entry.exists() {
+        return Err("missing_files".to_string());
+    }
+    let mut imports = String::new();
+    for module in required_modules {
+        imports.push_str(&format!("import {module}\n"));
+    }
+    let snippet = format!("{imports}print('ok')");
+    let output = Command::new(&python)
+        .args(["-c", snippet.as_str()])
+        .output()
+        .map_err(|_| "validation_failed".to_string())?;
+    if !output.status.success() {
+        return Err("validation_failed".to_string());
+    }
+    Ok(())
+}
+
+fn emit_runtime_pack_progress(
+    app: &tauri::AppHandle,
+    phase: &str,
+    progress: f64,
+    message: &str,
+    status: RuntimePackStatusKind,
+) {
+    let _ = app.emit(
+        "local-runtime-pack-progress",
+        RuntimePackProgressEvent {
+            phase: phase.to_string(),
+            progress,
+            message: message.to_string(),
+            status,
+        },
+    );
+}
+
+fn sha256_file(path: &Path) -> Result<String, String> {
+    let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let read = file.read(&mut buffer).map_err(|e| e.to_string())?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(bytes_to_hex(&hasher.finalize()))
+}
+
+fn extract_runtime_pack_zip(zip_path: &Path, target_dir: &Path) -> Result<(), String> {
+    if target_dir.exists() {
+        fs::remove_dir_all(target_dir).map_err(|e| e.to_string())?;
+    }
+    fs::create_dir_all(target_dir).map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    {
+        let status = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                "Expand-Archive",
+                "-Force",
+                "-Path",
+                &zip_path.display().to_string(),
+                "-DestinationPath",
+                &target_dir.display().to_string(),
+            ])
+            .status()
+            .map_err(|e| e.to_string())?;
+        if !status.success() {
+            return Err("failed to extract runtime pack".to_string());
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let status = Command::new("unzip")
+            .args([
+                "-q",
+                &zip_path.display().to_string(),
+                "-d",
+                &target_dir.display().to_string(),
+            ])
+            .status()
+            .map_err(|e| e.to_string())?;
+        if !status.success() {
+            return Err("failed to extract runtime pack".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn read_runtime_pack_status() -> Result<LocalRuntimePackStatus, String> {
+    let store = load_runtime_pack_state_store()?;
+    let install_dir = local_runtime_pack_current_dir()?;
+    let manifest_url = local_runtime_pack_manifest_url();
+    let status = store.status.unwrap_or(RuntimePackStatusKind::NotInstalled);
+    let message = match status {
+        RuntimePackStatusKind::NotInstalled => "Local processing runtime is not installed.",
+        RuntimePackStatusKind::Downloading => "Local processing runtime is downloading.",
+        RuntimePackStatusKind::Installing => "Local processing runtime is installing.",
+        RuntimePackStatusKind::Installed => "Local processing runtime is installed.",
+        RuntimePackStatusKind::Ready => "Local processing runtime is ready.",
+        RuntimePackStatusKind::Failed => "Local processing runtime failed.",
+        RuntimePackStatusKind::Corrupted => "Local processing runtime archive is corrupted.",
+        RuntimePackStatusKind::IncompatiblePlatform => {
+            "No compatible local processing runtime is available for this platform."
+        }
+        RuntimePackStatusKind::MissingFiles => "Local processing runtime is missing required files.",
+        RuntimePackStatusKind::ValidationFailed => {
+            "Local processing runtime validation failed."
+        }
+    };
+    Ok(LocalRuntimePackStatus {
+        status,
+        version: store.version,
+        platform: runtime_pack_platform(),
+        arch: runtime_pack_arch(),
+        install_dir: install_dir.display().to_string(),
+        manifest_url,
+        required_size_bytes: None,
+        message: message.to_string(),
+        error_code: store.last_error_code,
+        debug_ref: store.last_debug_ref,
+    })
+}
+
+pub fn is_local_runtime_pack_ready() -> bool {
+    read_runtime_pack_status()
+        .map(|status| matches!(status.status, RuntimePackStatusKind::Ready))
+        .unwrap_or(false)
 }
 
 fn get_or_create_machine_secret() -> Result<String, String> {
@@ -556,14 +829,35 @@ fn classify_local_model_download_error(raw: &str) -> LocalModelErrorSummary {
             user_message: "The model download timed out. Please try again.".to_string(),
         };
     }
+    if lower.contains("runtime_pack_setup_required") {
+        return LocalModelErrorSummary {
+            code: "runtime_pack_setup_required".to_string(),
+            user_message:
+                "Local Processing Runtime is required before model download. Open Settings > Local Processing and download it."
+                    .to_string(),
+        };
+    }
     if lower.contains("faster-whisper is required")
-        || lower.contains("no module named")
-        || lower.contains("module not found")
+        || lower.contains("no module named 'faster_whisper'")
+        || lower.contains("no module named faster_whisper")
+        || lower.contains("module not found: faster_whisper")
     {
         return LocalModelErrorSummary {
             code: "missing_dependency".to_string(),
-            user_message: "A required local dependency is missing. Recheck setup, then retry."
+            user_message:
+                "Local model setup is incomplete. The app could not find a required Python package."
                 .to_string(),
+        };
+    }
+    if lower.contains("failed to import")
+        || lower.contains("could not be loaded")
+        || lower.contains("cannot open shared object file")
+        || lower.contains("undefined symbol")
+        || lower.contains("importerror")
+    {
+        return LocalModelErrorSummary {
+            code: "dependency_load_failed".to_string(),
+            user_message: "Local model setup failed because one required Python dependency could not load. Open logs for technical details.".to_string(),
         };
     }
     if lower.contains("unsupported model name") || lower.contains("model is required") {
@@ -1512,6 +1806,10 @@ fn start_local_model_download(
 }
 
 fn prefetch_local_model(model: &str, device: &str) -> Result<(), String> {
+    let runtime_pack = read_runtime_pack_status()?;
+    if !matches!(runtime_pack.status, RuntimePackStatusKind::Ready) {
+        return Err("runtime_pack_setup_required".to_string());
+    }
     let cache_dir = local_model_cache_dir()?;
     fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
     let req = serde_json::json!({
@@ -1533,6 +1831,7 @@ fn prefetch_local_model(model: &str, device: &str) -> Result<(), String> {
         ("LOCAL_WHISPER_DEVICE".to_string(), device.to_string()),
     ];
     let bridge = resolve_python_bridge_paths();
+    let env = with_python_runtime_env(env, &bridge);
     let proc = invoke_python(PythonInvokeRequest {
         python_bin: bridge.python_bin,
         entry_script: bridge.entry_script,
@@ -1560,11 +1859,228 @@ fn prefetch_local_model(model: &str, device: &str) -> Result<(), String> {
     if parsed.get("ok").and_then(|value| value.as_bool()) == Some(true) {
         Ok(())
     } else {
-        Err(parsed
-            .get("error")
+        let error = parsed.get("error");
+        let message = error
             .and_then(|value| value.get("message"))
             .and_then(|value| value.as_str())
-            .unwrap_or("python bridge returned error while downloading local model")
-            .to_string())
+            .unwrap_or("python bridge returned error while downloading local model");
+        let code = error
+            .and_then(|value| value.get("code"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("PYTHON_ERROR");
+        let details = error
+            .and_then(|value| value.get("details"))
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "{}".to_string());
+        Err(format!(
+            "{message} [bridge_code={code}] [bridge_details={details}]"
+        ))
+    }
+}
+
+#[tauri::command]
+pub fn local_runtime_pack_status() -> Result<LocalRuntimePackStatus, String> {
+    read_runtime_pack_status()
+}
+
+#[tauri::command]
+pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRuntimePackStatus, String> {
+    let manifest_url = local_runtime_pack_manifest_url();
+    emit_runtime_pack_progress(
+        &app,
+        "manifest",
+        0.05,
+        "Checking runtime-pack manifest...",
+        RuntimePackStatusKind::Downloading,
+    );
+    let manifest_response = reqwest::get(&manifest_url).await.map_err(|_| "runtime pack manifest fetch failed".to_string())?;
+    let manifest: RuntimePackManifest = manifest_response.json().await.map_err(|_| "runtime pack manifest parse failed".to_string())?;
+    if let Some(required_app_version) = manifest
+        .app_compatibility
+        .as_ref()
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+    {
+        if required_app_version != env!("CARGO_PKG_VERSION") {
+            let store = LocalRuntimePackStateStore {
+                status: Some(RuntimePackStatusKind::ValidationFailed),
+                version: Some(manifest.version),
+                installed_at_ms: None,
+                last_error_code: Some("incompatible_app_version".to_string()),
+                last_debug_ref: Some(format!("rp-{}", now_epoch_ms())),
+            };
+            let _ = save_runtime_pack_state_store(&store);
+            return read_runtime_pack_status();
+        }
+    }
+    let asset = match resolve_runtime_pack_asset(&manifest) {
+        Ok(asset) => asset,
+        Err(_) => {
+            let store = LocalRuntimePackStateStore {
+                status: Some(RuntimePackStatusKind::IncompatiblePlatform),
+                version: Some(manifest.version),
+                installed_at_ms: None,
+                last_error_code: Some("incompatible_platform".to_string()),
+                last_debug_ref: Some(format!("rp-{}", now_epoch_ms())),
+            };
+            let _ = save_runtime_pack_state_store(&store);
+            return read_runtime_pack_status();
+        }
+    };
+
+    let runtime_root = local_runtime_pack_root()?;
+    fs::create_dir_all(&runtime_root).map_err(|e| e.to_string())?;
+    let tmp_zip = runtime_root.join(format!("{}.zip", asset.filename));
+    emit_runtime_pack_progress(
+        &app,
+        "download",
+        0.25,
+        "Downloading runtime-pack...",
+        RuntimePackStatusKind::Downloading,
+    );
+    let bytes = reqwest::get(&asset.url)
+        .await
+        .map_err(|_| "runtime pack download failed".to_string())?
+        .bytes()
+        .await
+        .map_err(|_| "runtime pack download failed".to_string())?;
+    if let Some(expected_size) = asset.size {
+        if bytes.len() as u64 != expected_size {
+            let store = LocalRuntimePackStateStore {
+                status: Some(RuntimePackStatusKind::Corrupted),
+                version: Some(manifest.version),
+                installed_at_ms: None,
+                last_error_code: Some("size_mismatch".to_string()),
+                last_debug_ref: Some(format!("rp-{}", now_epoch_ms())),
+            };
+            let _ = save_runtime_pack_state_store(&store);
+            return read_runtime_pack_status();
+        }
+    }
+    fs::write(&tmp_zip, &bytes).map_err(|e| e.to_string())?;
+    let actual = sha256_file(&tmp_zip)?;
+    if actual != asset.sha256.to_ascii_lowercase() {
+        let store = LocalRuntimePackStateStore {
+            status: Some(RuntimePackStatusKind::Corrupted),
+            version: Some(manifest.version),
+            installed_at_ms: None,
+            last_error_code: Some("checksum_mismatch".to_string()),
+            last_debug_ref: Some(format!("rp-{}", now_epoch_ms())),
+        };
+        let _ = save_runtime_pack_state_store(&store);
+        return read_runtime_pack_status();
+    }
+
+    emit_runtime_pack_progress(
+        &app,
+        "install",
+        0.65,
+        "Installing runtime-pack...",
+        RuntimePackStatusKind::Installing,
+    );
+    let staging_dir = runtime_root.join(format!("staging-{}", now_epoch_ms()));
+    extract_runtime_pack_zip(&tmp_zip, &staging_dir)?;
+    let required_modules = asset.required_modules.clone().unwrap_or_default();
+    if let Err(code) = validate_runtime_pack_install(&staging_dir, &required_modules) {
+        let status = if code == "missing_files" {
+            RuntimePackStatusKind::MissingFiles
+        } else {
+            RuntimePackStatusKind::ValidationFailed
+        };
+        let store = LocalRuntimePackStateStore {
+            status: Some(status),
+            version: Some(manifest.version),
+            installed_at_ms: None,
+            last_error_code: Some(code),
+            last_debug_ref: Some(format!("rp-{}", now_epoch_ms())),
+        };
+        let _ = save_runtime_pack_state_store(&store);
+        let _ = fs::remove_dir_all(&staging_dir);
+        return read_runtime_pack_status();
+    }
+
+    let current_dir = local_runtime_pack_current_dir()?;
+    let backup_dir = runtime_root.join("previous");
+    if backup_dir.exists() {
+        let _ = fs::remove_dir_all(&backup_dir);
+    }
+    if current_dir.exists() {
+        let _ = fs::rename(&current_dir, &backup_dir);
+    }
+    fs::rename(&staging_dir, &current_dir).map_err(|e| e.to_string())?;
+    let _ = fs::remove_file(&tmp_zip);
+    let _ = fs::remove_dir_all(&backup_dir);
+
+    let store = LocalRuntimePackStateStore {
+        status: Some(RuntimePackStatusKind::Ready),
+        version: Some(manifest.version),
+        installed_at_ms: Some(now_epoch_ms()),
+        last_error_code: None,
+        last_debug_ref: None,
+    };
+    save_runtime_pack_state_store(&store)?;
+    emit_runtime_pack_progress(
+        &app,
+        "ready",
+        1.0,
+        "Runtime-pack ready.",
+        RuntimePackStatusKind::Ready,
+    );
+    read_runtime_pack_status()
+}
+
+#[tauri::command]
+pub async fn local_runtime_pack_retry(app: tauri::AppHandle) -> Result<LocalRuntimePackStatus, String> {
+    local_runtime_pack_prepare(app).await
+}
+
+#[tauri::command]
+pub async fn local_runtime_pack_repair(app: tauri::AppHandle) -> Result<LocalRuntimePackStatus, String> {
+    let root = local_runtime_pack_root()?;
+    let _ = fs::remove_dir_all(root.join("current"));
+    local_runtime_pack_prepare(app).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{classify_local_model_download_error, resolve_runtime_pack_asset, RuntimePackManifest};
+
+    #[test]
+    fn local_model_error_missing_dependency_for_top_level_module_only() {
+        let result =
+            classify_local_model_download_error("No module named 'faster_whisper'");
+        assert_eq!(result.code, "missing_dependency");
+    }
+
+    #[test]
+    fn local_model_error_transitive_dependency_load_failure() {
+        let result = classify_local_model_download_error(
+            "faster-whisper could not be loaded because a required local dependency failed to import. ImportError: cannot open shared object file",
+        );
+        assert_eq!(result.code, "dependency_load_failed");
+    }
+
+    #[test]
+    fn local_model_error_runtime_pack_required() {
+        let result = classify_local_model_download_error("runtime_pack_setup_required");
+        assert_eq!(result.code, "runtime_pack_setup_required");
+    }
+
+    #[test]
+    fn runtime_pack_manifest_selector_matches_platform() {
+        let manifest: RuntimePackManifest = serde_json::from_str(
+            r#"{
+                "version":"1.2.3",
+                "assets":[
+                    {"platform":"linux","arch":"x86_64","filename":"linux.zip","url":"https://example.test/linux.zip","sha256":"abc","requiredModules":["faster_whisper"]},
+                    {"platform":"macos","arch":"aarch64","filename":"mac.zip","url":"https://example.test/mac.zip","sha256":"def","requiredModules":["faster_whisper"]}
+                ]
+            }"#,
+        )
+        .expect("manifest parse");
+        if cfg!(target_os = "linux") && cfg!(target_arch = "x86_64") {
+            let asset = resolve_runtime_pack_asset(&manifest).expect("asset");
+            assert_eq!(asset.filename, "linux.zip");
+        }
     }
 }

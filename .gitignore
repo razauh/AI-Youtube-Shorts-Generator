@@ -72,3 +72,6 @@ docs/WEBHOOK_VERIFICATION_NOTES.md
 scripts/graphify_split_merge.py
 .script/
 .scripts/
+.opencode/
+app/.opencode/
+app/src-tauri/bundled-runtime/site-packages

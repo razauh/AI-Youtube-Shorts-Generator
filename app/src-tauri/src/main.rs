@@ -54,6 +54,10 @@ fn main() {
             shorts_tauri_app::commands::runtime::local_model_profile_activate,
             shorts_tauri_app::commands::runtime::local_model_profile_delete,
             shorts_tauri_app::commands::runtime::local_model_profile_retry_download,
+            shorts_tauri_app::commands::runtime::local_runtime_pack_status,
+            shorts_tauri_app::commands::runtime::local_runtime_pack_prepare,
+            shorts_tauri_app::commands::runtime::local_runtime_pack_retry,
+            shorts_tauri_app::commands::runtime::local_runtime_pack_repair,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

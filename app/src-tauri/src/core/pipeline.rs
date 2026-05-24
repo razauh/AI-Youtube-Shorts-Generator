@@ -1,4 +1,5 @@
 use crate::core::api_mode::{clipper, downloader, muapi::MuApiClient, transcriber};
+use crate::commands::runtime::is_local_runtime_pack_ready;
 use crate::core::config::Config;
 use crate::core::contracts::{ErrorEnvelope, Highlight, PipelineSuccess, ShortClip, Transcript};
 use crate::core::errors::{redact_message, ErrorCode};
@@ -101,6 +102,14 @@ pub fn generate_shorts_with_progress(
     };
 
     if mode == "local" {
+        if !is_local_runtime_pack_ready() {
+            return Err(ErrorEnvelope {
+                mode: Some("local".to_string()),
+                source_video_url: Some(request.youtube_url.clone()),
+                error: "Local processing runtime is not ready. Download Local Processing Runtime from Settings.".to_string(),
+                details: Some(json!({"stage":"runtime_pack","code":"E_RUNTIME_PACK_SETUP_REQUIRED"})),
+            });
+        }
         emit_progress(
             &mut progress_cb,
             "local_bridge:start",

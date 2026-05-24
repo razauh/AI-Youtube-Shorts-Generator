@@ -39,6 +39,30 @@ describe('authState store', () => {
     expect(get(state).lifecycle).toBe('unauthenticated');
   });
 
+  it('bootstraps into licensed state when stored session validates successfully', async () => {
+    validateSession.mockResolvedValue({
+      auth_state: {
+        status: 'licensed',
+        masked_license_key: '****-1234',
+        device_id: 'dev-1',
+        token_expires_at_ms: 1000,
+        last_validated_at_ms: 100,
+        next_validation_due_ms: 200,
+      },
+    });
+    const { createAuthState } = await import('../lib/stores/authState');
+    const state = createAuthState();
+
+    await state.bootstrap();
+
+    expect(get(state).lifecycle).toBe('licensed');
+    expect(get(state).authState).toMatchObject({
+      status: 'licensed',
+      masked_license_key: '****-1234',
+      device_id: 'dev-1',
+    });
+  });
+
   it('shows startup-specific prompt when bootstrap lands in reauth_required', async () => {
     validateSession.mockResolvedValue({
       auth_state: { status: 'reauth_required', masked_license_key: '****-1234' },

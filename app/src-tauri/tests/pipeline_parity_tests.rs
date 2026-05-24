@@ -149,11 +149,10 @@ fn mode_api_clip_failure_matches_partial_success_golden() {
 
 #[test]
 fn mode_local_routes_via_bridge() {
-    std::env::set_var("PYTHON_BRIDGE_BIN", "../../.venv/bin/python");
     let req = base_request("local");
     let mut stages = MockPipelineStages::default();
-
-    let out = generate_shorts_with(&req, &mut stages).expect("local bridge path");
-    assert_eq!(out.mode, "local");
+    let err = generate_shorts_with(&req, &mut stages).expect_err("runtime-pack should be required");
+    assert_eq!(err.mode.as_deref(), Some("local"));
+    assert!(err.error.contains("Local processing runtime is not ready"));
     assert_eq!(stages.call_log().len(), 0);
 }

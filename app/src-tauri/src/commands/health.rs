@@ -1,4 +1,5 @@
 use crate::core::config::Config;
+use crate::commands::runtime::local_runtime_pack_status;
 use crate::runtime::python_runtime::resolve_python_bridge_paths;
 use crate::runtime::tool_resolver::{validate_runtime_tools, ResolveConfig, ToolKind, ToolStatus};
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,9 @@ pub struct RuntimeValidation {
     pub tools: Vec<ToolStatus>,
     pub python_packages: Vec<ToolStatus>,
     pub local_runtime_ready: bool,
+    pub runtime_pack_status: Option<String>,
+    pub runtime_pack_version: Option<String>,
+    pub runtime_pack_install_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +70,17 @@ pub fn validate_runtime() -> RuntimeValidation {
         tools: validation.tools,
         python_packages: validation.python_packages,
         local_runtime_ready: validation.local_runtime_ready,
+        runtime_pack_status: local_runtime_pack_status().ok().and_then(|status| {
+            serde_json::to_value(status.status)
+                .ok()
+                .and_then(|value| value.as_str().map(|s| s.to_string()))
+        }),
+        runtime_pack_version: local_runtime_pack_status()
+            .ok()
+            .and_then(|status| status.version),
+        runtime_pack_install_dir: local_runtime_pack_status()
+            .ok()
+            .map(|status| status.install_dir),
     }
 }
 

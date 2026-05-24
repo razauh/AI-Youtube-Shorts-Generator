@@ -35,6 +35,14 @@ Normal development uses the existing dependency tree. Dependency changes must be
 - Do not run `wrangler deploy`, Tauri bundle/sign/release commands, updater publication commands, or any command that changes cloud state unless explicitly requested.
 - If a test/build command fails because of missing dependencies or blocked network, do not “fix” it by installing packages. Report the blocker or ask for approval.
 
+## Strict Toolchain Command Policy
+
+- Agents must not run project toolchain validation commands. This includes but is not limited to: `cargo test`, `cargo check`, `cargo build`, `cargo clippy`, `cargo fmt --check`, `npm test`, `npm run test`, `npm run build`, `npm run lint`, `npm run check`, `pnpm test`, `pnpm build`, `pnpm lint`, `pnpm run check`, `yarn test`, `yarn build`, `yarn lint`, `pytest`, `python -m pytest`, and any equivalent install/build/lint/format-check/test/validation command.
+- Agents must not run dependency installation commands. This includes but is not limited to: `pip install`, `python -m pip install`, `npm install`, `pnpm install`, and `yarn install`.
+- Agents may write or update tests, but must not run those tests.
+- Agents must not run validation scripts themselves.
+- If a test/check/install/build/validation step is needed, agents must tell the user the exact command(s) to run manually.
+
 ## Secrets and Environment
 
 - Treat `.env`, shell environment, keyrings, OS credential stores, Wrangler config, Tauri signing keys, updater private keys, and license worker credentials as sensitive.
@@ -96,12 +104,24 @@ Normal development uses the existing dependency tree. Dependency changes must be
 
 ## Testing and Verification
 
-- Run the narrowest relevant tests first, then broader tests when practical.
-- For frontend changes, prefer `npm --prefix app test` only after confirming no install is needed and package scripts are safe.
-- For Rust/Tauri changes, prefer `cargo test --manifest-path app/src-tauri/Cargo.toml --locked` or the specific test target.
+- Do not run tests/checks/builds/lint/format-check commands directly in agent sessions.
+- Do not run project validation scripts directly in agent sessions.
+- Provide exact manual commands for the user to run when verification is required.
 - For licensing changes, include tests for invalid license, device already bound, reset request/status, session reauth, redaction, and no plaintext license persistence.
 - For worker contract changes, update fixtures and contract tests together.
 - If a command cannot be run safely because of supply-chain, network, sandbox, missing dependency, or secret concerns, say so and provide the exact unrun command.
+
+## Validation Script Requirement
+
+- When an agent changes code and/or writes tests, it must also add or update a validation bash script under `.scripts/` (for example `.scripts/run-validation.sh`) that covers the relevant checks for the task.
+- The script must be safe to run from the repository root.
+- The script must create `.logs/` if it does not exist.
+- The script must write stdout/stderr logs into `.logs/` using timestamped log filenames where practical.
+- The script must exit non-zero if any check fails.
+- The script must not install dependencies.
+- The script must not delete user data, model caches, generated outputs, or logs.
+- The agent must not run the validation script; it must instruct the user how to run it manually.
+- For documentation-only changes where no code/tests are changed, do not create a validation script unless explicitly requested.
 
 ## Git Hygiene
 
@@ -111,6 +131,29 @@ Normal development uses the existing dependency tree. Dependency changes must be
 - Do not commit unless the user asks.
 - Do not stage files unless the user asks.
 - In the final response, list only files you changed and mention unrelated dirty files separately if relevant.
+
+## Scope and Safety Boundaries
+
+- Do not modify unrelated files.
+- Do not change app behavior unless required by the task.
+- Do not remove or weaken existing safety, security, or validation rules.
+- Keep changes minimal and directly related to the requested task.
+- Do not expose secrets, API keys, tokens, or sensitive local paths in logs or user-facing output.
+
+## Final Response Rules
+
+- After completing a task, provide only a very brief final summary in short bullet points. Do not produce a detailed report, long technical explanation, implementation diary, or full analysis unless the user explicitly requests it.
+- Do not include long analysis, long reasoning, implementation diary content, or large technical summaries by default.
+- Final responses must be short bullet points only.
+- Include only essential completion information:
+- Files changed or created.
+- What was fixed or added.
+- Tests written but not run.
+- Validation script path, if created.
+- Exact command(s) the user should run, if needed.
+- Confirmation that prohibited commands were not run.
+- Any critical manual steps the user must perform.
+- Avoid long paragraphs, tables, detailed reports, or full reasoning traces unless explicitly requested by the user.
 
 ## Review Checklist Before Finishing
 

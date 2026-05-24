@@ -22,6 +22,37 @@ pub struct AuthService {
 }
 
 impl AuthService {
+    async fn reactivate_with_stored_license(
+        &self,
+        license_key: LicenseKey,
+    ) -> Result<SessionState, AuthError> {
+        let keypair = self.identity.get_or_create_keypair().await?;
+        let fingerprint = self.identity.collect_fingerprint().await?;
+        let request = ActivationRequest {
+            license_key: license_key.clone(),
+            device_public_key: keypair.public_key().clone(),
+            fingerprint,
+            app_version: self.app_version.clone(),
+            timestamp_ms: self.clock.now_ms(),
+        };
+        let outcome = self.worker.activate(request).await?;
+
+        self.secrets.put_device_keypair(keypair).await?;
+        self.secrets.put_license_key(license_key).await?;
+        self.secrets
+            .put_access_token(outcome.access_token.clone())
+            .await?;
+        let next = SessionState::after_activation(
+            outcome.masked_license_key,
+            outcome.bound_device,
+            outcome.token_expires_at_ms,
+            self.clock.now_ms(),
+            VALIDATION_INTERVAL_MS,
+        );
+        self.state.save_session_state(next.clone()).await?;
+        Ok(next)
+    }
+
     pub fn new(
         worker: Arc<dyn WorkerClient>,
         secrets: Arc<dyn SecretStore>,
@@ -75,6 +106,32 @@ impl AuthService {
 
     pub async fn validate_session(&self) -> Result<SessionState, AuthError> {
         let Some(token) = self.secrets.get_access_token().await? else {
+            if let Some(license_key) = self.secrets.get_license_key().await? {
+                match self.reactivate_with_stored_license(license_key).await {
+                    Ok(next) => return Ok(next),
+                    Err(AuthError::WorkerUnreachable) => {
+                        let current = self.state.load_session_state().await?;
+                        match current
+                            .clone()
+                            .into_offline_grace(self.clock.now_ms(), OFFLINE_GRACE_MS)
+                        {
+                            Ok(next) => {
+                                self.state.save_session_state(next.clone()).await?;
+                                return Ok(next);
+                            }
+                            Err(_) => {
+                                let masked = masked_from_state(&current);
+                                let next = SessionState::require_reauth(masked);
+                                self.state.save_session_state(next.clone()).await?;
+                                return Ok(next);
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        self.secrets.clear_session_secrets().await?;
+                    }
+                }
+            }
             let current = self.state.load_session_state().await?;
             let next = match current {
                 SessionState::Unauthenticated => SessionState::Unauthenticated,
@@ -90,12 +147,6 @@ impl AuthService {
                 bound_device,
                 token_expires_at_ms,
             }) => {
-                if self.secrets.get_license_key().await?.is_none() {
-                    self.secrets.clear_session_secrets().await?;
-                    let next = SessionState::require_reauth(Some(masked_license_key));
-                    self.state.save_session_state(next.clone()).await?;
-                    return Ok(next);
-                }
                 let next = SessionState::after_activation(
                     masked_license_key,
                     bound_device,
@@ -106,7 +157,19 @@ impl AuthService {
                 self.state.save_session_state(next.clone()).await?;
                 Ok(next)
             }
-            Ok(ValidationOutcome::ReauthRequired | ValidationOutcome::Revoked) => {
+            Ok(ValidationOutcome::ReauthRequired) => {
+                if let Some(license_key) = self.secrets.get_license_key().await? {
+                    if let Ok(next) = self.reactivate_with_stored_license(license_key).await {
+                        return Ok(next);
+                    }
+                }
+                self.secrets.clear_session_secrets().await?;
+                let current = self.state.load_session_state().await?;
+                let next = SessionState::require_reauth(masked_from_state(&current));
+                self.state.save_session_state(next.clone()).await?;
+                Ok(next)
+            }
+            Ok(ValidationOutcome::Revoked) => {
                 self.secrets.clear_session_secrets().await?;
                 let current = self.state.load_session_state().await?;
                 let next = SessionState::require_reauth(masked_from_state(&current));
@@ -359,7 +422,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn active_validation_without_stored_license_key_forces_reauth() {
+    async fn active_validation_without_stored_license_key_keeps_licensed_state() {
         let worker = FakeWorkerClient::new().with_validation(Ok(ValidationOutcome::Active {
             masked_license_key: MaskedLicenseKey::new("••••-1234").unwrap(),
             bound_device: outcome().bound_device,
@@ -373,8 +436,30 @@ mod tests {
             .unwrap();
 
         let state = harness.service.validate_session().await.unwrap();
-        assert!(matches!(state, SessionState::ReauthRequired { .. }));
-        assert!(harness.secrets.get_access_token().await.unwrap().is_none());
+        assert!(matches!(state, SessionState::Licensed { .. }));
+        assert!(harness.secrets.get_access_token().await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn reauth_required_validation_with_stored_license_reactivates_session() {
+        let worker = FakeWorkerClient::new()
+            .with_validation(Ok(ValidationOutcome::ReauthRequired))
+            .with_activation(Ok(outcome()));
+        let harness = TestService::new(worker);
+        harness
+            .secrets
+            .put_access_token(AccessToken::new("expired-token").unwrap())
+            .await
+            .unwrap();
+        harness
+            .secrets
+            .put_license_key(LicenseKey::new("LICENSE-1234").unwrap())
+            .await
+            .unwrap();
+
+        let state = harness.service.validate_session().await.unwrap();
+        assert!(matches!(state, SessionState::Licensed { .. }));
+        assert!(harness.secrets.get_access_token().await.unwrap().is_some());
     }
 
     #[tokio::test]

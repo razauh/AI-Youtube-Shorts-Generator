@@ -286,7 +286,7 @@ impl TryFrom<ActivationResponseBody> for ActivationOutcome {
 struct BoundDeviceBody {
     device_id: String,
     public_key: String,
-    fingerprint: DeviceFingerprint,
+    fingerprint: FingerprintBody,
 }
 
 impl TryFrom<BoundDeviceBody> for BoundDeviceSummary {
@@ -296,8 +296,46 @@ impl TryFrom<BoundDeviceBody> for BoundDeviceSummary {
         Ok(Self {
             device_id: DeviceId::new(value.device_id)?,
             public_key: DevicePublicKey::new(value.public_key)?,
-            fingerprint: value.fingerprint,
+            fingerprint: value.fingerprint.try_into()?,
         })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum FingerprintBody {
+    Current {
+        platform: String,
+        os: String,
+        arch: String,
+        hostname_hash: Option<String>,
+    },
+    Legacy {
+        platform_family: String,
+        os_name: String,
+        arch: String,
+        machine_id_hash: Option<String>,
+    },
+}
+
+impl TryFrom<FingerprintBody> for DeviceFingerprint {
+    type Error = AuthError;
+
+    fn try_from(value: FingerprintBody) -> Result<Self, Self::Error> {
+        match value {
+            FingerprintBody::Current {
+                platform,
+                os,
+                arch,
+                hostname_hash,
+            } => DeviceFingerprint::new(platform, os, arch, hostname_hash),
+            FingerprintBody::Legacy {
+                platform_family,
+                os_name,
+                arch,
+                machine_id_hash,
+            } => DeviceFingerprint::new(platform_family, os_name, arch, machine_id_hash),
+        }
     }
 }
 
@@ -320,13 +358,26 @@ impl From<EntitlementStatusBody> for EntitlementStatus {
 }
 
 #[derive(Deserialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
+#[serde(untagged)]
 enum ValidationResponseBody {
-    Active {
+    Tagged {
+        status: ValidationStatusTag,
+        masked_license_key: Option<String>,
+        bound_device: Option<BoundDeviceBody>,
+        token_expires_at_ms: Option<i64>,
+    },
+    LegacyActive {
+        entitlement: EntitlementStatusBody,
         masked_license_key: String,
         bound_device: BoundDeviceBody,
         token_expires_at_ms: i64,
     },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ValidationStatusTag {
+    Active,
     ReauthRequired,
     Revoked,
 }
@@ -336,17 +387,47 @@ impl TryFrom<ValidationResponseBody> for ValidationOutcome {
 
     fn try_from(value: ValidationResponseBody) -> Result<Self, Self::Error> {
         match value {
-            ValidationResponseBody::Active {
+            ValidationResponseBody::Tagged {
+                status: ValidationStatusTag::Active,
                 masked_license_key,
                 bound_device,
                 token_expires_at_ms,
             } => Ok(Self::Active {
-                masked_license_key: MaskedLicenseKey::new(masked_license_key)?,
-                bound_device: bound_device.try_into()?,
-                token_expires_at_ms,
+                masked_license_key: MaskedLicenseKey::new(masked_license_key.ok_or_else(
+                    || AuthError::Serialization("validate active missing masked_license_key".into()),
+                )?)?,
+                bound_device: bound_device
+                    .ok_or_else(|| {
+                        AuthError::Serialization("validate active missing bound_device".into())
+                    })?
+                    .try_into()?,
+                token_expires_at_ms: token_expires_at_ms.ok_or_else(|| {
+                    AuthError::Serialization("validate active missing token_expires_at_ms".into())
+                })?,
             }),
-            ValidationResponseBody::ReauthRequired => Ok(Self::ReauthRequired),
-            ValidationResponseBody::Revoked => Ok(Self::Revoked),
+            ValidationResponseBody::Tagged {
+                status: ValidationStatusTag::ReauthRequired,
+                ..
+            } => Ok(Self::ReauthRequired),
+            ValidationResponseBody::Tagged {
+                status: ValidationStatusTag::Revoked,
+                ..
+            } => Ok(Self::Revoked),
+            ValidationResponseBody::LegacyActive {
+                entitlement,
+                masked_license_key,
+                bound_device,
+                token_expires_at_ms,
+            } => {
+                if !matches!(entitlement, EntitlementStatusBody::Active) {
+                    return Ok(Self::Revoked);
+                }
+                Ok(Self::Active {
+                    masked_license_key: MaskedLicenseKey::new(masked_license_key)?,
+                    bound_device: bound_device.try_into()?,
+                    token_expires_at_ms,
+                })
+            }
         }
     }
 }
@@ -615,6 +696,38 @@ mod tests {
             client.activate(activation_request()).await.unwrap_err(),
             AuthError::DeviceAlreadyBound
         );
+    }
+
+    #[tokio::test]
+    async fn validate_accepts_legacy_active_payload_without_status_tag() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/license/validate"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success(json!({
+                "entitlement": "active",
+                "masked_license_key": "••••-DDDD",
+                "bound_device": {
+                    "device_id": "dev_01HXYZ123",
+                    "public_key": "pubkey-abc-123",
+                    "fingerprint": {
+                        "os_name": "linux",
+                        "platform_family": "linux",
+                        "arch": "x86_64",
+                        "machine_id_hash": "mhash_8f0d9a"
+                    }
+                },
+                "token_expires_at_ms": 1736803600000_i64
+            }))))
+            .mount(&server)
+            .await;
+
+        let client = HttpWorkerClient::new(server.uri()).unwrap();
+        let outcome = client
+            .validate_session(AccessToken::new("token").unwrap())
+            .await
+            .unwrap();
+
+        assert!(matches!(outcome, ValidationOutcome::Active { .. }));
     }
 
     #[tokio::test]

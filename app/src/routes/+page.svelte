@@ -11,11 +11,16 @@
     apiKeyProfiles,
     appConfigSummary,
     listenLocalModelDownloadProgress,
+    listenLocalRuntimePackProgress,
     localModelDownloadStatus,
     localModelProfileActivate,
     localModelProfileAdd,
     localModelProfileDelete,
     localModelProfileRetryDownload,
+    localRuntimePackPrepare,
+    localRuntimePackRepair,
+    localRuntimePackRetry,
+    localRuntimePackStatus,
     localModelProfiles,
     runtimeContext,
     validateRuntime
@@ -85,6 +90,8 @@
   let localProfiles = null;
   let localModelDownload = null;
   let localProfileLabel = '';
+  let localRuntimePack = null;
+  let localRuntimePackProgress = null;
   let muapiProfileLabel = '';
   let muapiKeyInput = '';
   let openaiProfileLabel = '';
@@ -105,7 +112,6 @@
   let generateFormStatusKind = 'info';
   let theme = 'dark';
   let mobileNavOpen = false;
-  let openLocalDropdown = '';
   let setupStatus = {
     checkedAt: '',
     busy: false,
@@ -168,21 +174,28 @@
   $: activeLocalModelNotReady =
     Boolean(activeLocalModelProfile) &&
     !['ready', 'downloading', 'queued'].includes(activeLocalModelProfile?.downloadStatus || '');
-  $: localRunBlocked = mode === 'local' && (activeLocalModelDownloading || activeLocalModelFailed || activeLocalModelNotReady);
+  $: localRunBlocked =
+    mode === 'local' && (localRuntimePackBlocking || activeLocalModelDownloading || activeLocalModelFailed || activeLocalModelNotReady);
+  $: localRuntimePackReady = localRuntimePack?.status === 'ready';
+  $: localRuntimePackBlocking = mode === 'local' && !localRuntimePackReady;
   $: localRunBlockedMessage = activeLocalModelDownloading
     ? 'Local model is still downloading. You can use API mode now or wait for the local model to finish.'
-    : 'Active local model is not ready. Retry the download from Settings or use API mode.';
+    : localRuntimePackBlocking
+      ? 'Local processing runtime is not ready. Download it from Settings before running local mode.'
+      : 'Active local model is not ready. Retry the download from Settings or use API mode.';
   $: activeSetupBlockers = mode === 'local' ? setupStatus.blockersLocal : setupStatus.blockersApi;
   $: setupModalBlockerMessages = friendlySetupBlockers(activeSetupBlockers);
 
   onMount(() => {
     let unlistenLocalModel = null;
+    let unlistenRuntimePack = null;
     try {
       loadState();
       loadCrashDraftFromLocalStorage();
       authState.bootstrap();
       loadLocalModelStatus();
       loadSetupStatus();
+      loadRuntimePackStatus();
       listenLocalModelDownloadProgress((status) => {
         localModelDownload = status;
         loadLocalModelProfilesOnly();
@@ -191,6 +204,13 @@
         unlistenLocalModel = unlisten;
       }).catch(() => {
         localModelDownload = null;
+      });
+      listenLocalRuntimePackProgress((event) => {
+        localRuntimePackProgress = event;
+      }).then((unlisten) => {
+        unlistenRuntimePack = unlisten;
+      }).catch(() => {
+        localRuntimePackProgress = null;
       });
     } catch (_err) {
       projects = [];
@@ -206,6 +226,9 @@
       window.removeEventListener('unhandledrejection', captureUnhandledRejection);
       if (unlistenLocalModel) {
         unlistenLocalModel();
+      }
+      if (unlistenRuntimePack) {
+        unlistenRuntimePack();
       }
     };
   });
@@ -266,6 +289,7 @@
       apiProfiles = { muapi: muapiProfiles, openai: openaiProfiles };
       localProfiles = modelProfiles;
       localModelDownload = downloadStatus;
+      localRuntimePack = await localRuntimePackStatus();
       whisperModelInput = config.localWhisperModel || 'base';
       whisperDeviceInput = config.localWhisperDevice || 'auto';
       diagnosticsLastCheckedAt = new Date().toISOString();
@@ -278,12 +302,14 @@
 
   async function loadLocalModelStatus() {
     try {
-      const [modelProfiles, downloadStatus] = await Promise.all([
+      const [modelProfiles, downloadStatus, runtimePackStatus] = await Promise.all([
         localModelProfiles(),
-        localModelDownloadStatus()
+        localModelDownloadStatus(),
+        localRuntimePackStatus()
       ]);
       localProfiles = modelProfiles;
       localModelDownload = downloadStatus;
+      localRuntimePack = runtimePackStatus;
     } catch (_err) {
       localProfiles = null;
       localModelDownload = null;
@@ -327,6 +353,11 @@
 
     if (!config?.openaiConfigured) {
       blockersLocal.push(setupBlocker('openai_key', 'OpenAI key is not configured for local mode.', 'Open API setup'));
+    }
+    if (runtime?.runtime_pack_status !== 'ready') {
+      const blocker = setupBlocker('runtime_pack', 'Local processing runtime pack is not ready.', 'Open local setup');
+      blockersLocal.push(blocker);
+      dependencyBlockersLocal.push(blocker);
     }
     if (!runtime?.bridge_entry_exists) {
       blockersLocal.push(setupBlocker('bridge_entry', 'Local runtime bridge is unavailable.', 'Open diagnostics'));
@@ -440,6 +471,8 @@
         add('ytdlp', 'yt-dlp is not available for local YouTube downloads');
       } else if (blocker.id === 'bridge_entry') {
         add('bridge_entry', 'Local runtime bridge is unavailable');
+      } else if (blocker.id === 'runtime_pack') {
+        add('runtime_pack', 'Local processing runtime is not installed');
       } else if (blocker.id === 'bundled_runtime_incomplete') {
         add('bundled_runtime_incomplete', 'Bundled local runtime is missing or incomplete');
       } else if (blocker.id?.startsWith('py_pkg_')) {
@@ -453,6 +486,65 @@
 
   function closeSetupRequiredModal() {
     setupRequiredModalOpen = false;
+  }
+
+  async function loadRuntimePackStatus() {
+    try {
+      localRuntimePack = await localRuntimePackStatus();
+    } catch (_err) {
+      localRuntimePack = null;
+    }
+  }
+
+  async function prepareRuntimePack() {
+    settingsActionBusy = true;
+    settingsActionTarget = 'local';
+    try {
+      localRuntimePack = await localRuntimePackPrepare();
+      settingsActionKind = 'success';
+      settingsActionStatus = 'Local processing runtime download started.';
+      await loadSettingsStatus();
+      await loadSetupStatus();
+    } catch (err) {
+      settingsActionKind = 'error';
+      settingsActionStatus = err instanceof Error ? err.message : 'Runtime-pack setup failed.';
+    } finally {
+      settingsActionBusy = false;
+    }
+  }
+
+  async function retryRuntimePack() {
+    settingsActionBusy = true;
+    settingsActionTarget = 'local';
+    try {
+      localRuntimePack = await localRuntimePackRetry();
+      settingsActionKind = 'success';
+      settingsActionStatus = 'Local processing runtime retry started.';
+      await loadSettingsStatus();
+      await loadSetupStatus();
+    } catch (err) {
+      settingsActionKind = 'error';
+      settingsActionStatus = err instanceof Error ? err.message : 'Runtime-pack retry failed.';
+    } finally {
+      settingsActionBusy = false;
+    }
+  }
+
+  async function repairRuntimePack() {
+    settingsActionBusy = true;
+    settingsActionTarget = 'local';
+    try {
+      localRuntimePack = await localRuntimePackRepair();
+      settingsActionKind = 'success';
+      settingsActionStatus = 'Local processing runtime repair started.';
+      await loadSettingsStatus();
+      await loadSetupStatus();
+    } catch (err) {
+      settingsActionKind = 'error';
+      settingsActionStatus = err instanceof Error ? err.message : 'Runtime-pack repair failed.';
+    } finally {
+      settingsActionBusy = false;
+    }
   }
 
   function handleSetupConfigureNow() {
@@ -764,29 +856,6 @@
     return options.find((option) => option.value === value)?.label ?? value;
   }
 
-  function toggleLocalDropdown(name) {
-    openLocalDropdown = openLocalDropdown === name ? '' : name;
-  }
-
-  function chooseLocalOption(name, value) {
-    if (name === 'model') {
-      whisperModelInput = value;
-    } else {
-      whisperDeviceInput = value;
-    }
-    openLocalDropdown = '';
-  }
-
-  function closeLocalDropdown() {
-    openLocalDropdown = '';
-  }
-
-  function closeLocalDropdownOnEscape(event) {
-    if (event.key === 'Escape') {
-      openLocalDropdown = '';
-    }
-  }
-
   function formatLastChecked(timestamp) {
     if (!timestamp) {
       return 'Not checked yet';
@@ -1086,9 +1155,6 @@
   }
 </script>
 
-<svelte:body on:click|capture={closeLocalDropdown} />
-<svelte:window on:keydown={closeLocalDropdownOnEscape} />
-
 <div class="global-theme-toggle">
   <button
     type="button"
@@ -1153,13 +1219,10 @@
           <button type="submit" disabled={$authState.lifecycle === 'activating'}>
             {$authState.lifecycle === 'activating' ? 'Activating...' : 'Activate'}
           </button>
-          <label class="terms-accept-row">
-            <input aria-label="Accept terms and conditions" type="checkbox" bind:checked={termsAccepted} />
-            <span class="terms-copy">
-              By logging in, I accept the
-              <button class="inline-link" type="button" on:click={() => (showTermsModal = true)}>Terms and Conditions</button>.
-            </span>
-          </label>
+            <label class="terms-accept-row">
+              <input aria-label="Accept terms and conditions" type="checkbox" bind:checked={termsAccepted} />
+              <span class="terms-copy">By logging in, I accept the <button class="inline-link" type="button" on:click={() => (showTermsModal = true)}>Terms and Conditions</button>.</span>
+            </label>
           <FormStatus message={licenseFormStatus} kind={licenseFormStatusKind} />
         </form>
       {/if}
@@ -1671,6 +1734,23 @@
             {#if localProfiles?.envOverride}
               <p class="meta warn-text">Environment variable override is active. Saved model profiles are available, but runtime will use the environment model/device.</p>
             {/if}
+            <div class="panel runtime-pack-panel">
+              <h4>Local Processing Runtime</h4>
+              <p class:ok={localRuntimePack?.status === 'ready'} class:warn={localRuntimePack?.status !== 'ready'}>
+                {localRuntimePack?.message || 'Runtime status unavailable.'}
+              </p>
+              {#if localRuntimePackProgress}
+                <p class="meta">Phase: {localRuntimePackProgress.phase} ({Math.round((localRuntimePackProgress.progress || 0) * 100)}%)</p>
+              {/if}
+              <div class="row">
+                <button type="button" on:click={prepareRuntimePack} disabled={settingsActionBusy || localRuntimePack?.status === 'ready'}>Download Runtime</button>
+                <button type="button" class="button-secondary" on:click={retryRuntimePack} disabled={settingsActionBusy}>Retry</button>
+                <button type="button" class="button-secondary" on:click={repairRuntimePack} disabled={settingsActionBusy}>Repair</button>
+              </div>
+              {#if localRuntimePack?.requiredSizeBytes}
+                <p class="meta">Required download: {Math.round(localRuntimePack.requiredSizeBytes / 1024 / 1024)} MB</p>
+              {/if}
+            </div>
             <form class="form config-form local-processing-form" novalidate on:submit|preventDefault={saveLocalProcessing}>
               <label>Profile name <input aria-label="Local model profile name" autocomplete="off" bind:value={localProfileLabel} placeholder="Balanced local model" /></label>
               <label class="select-field">
@@ -1681,32 +1761,12 @@
                     <span id="help-whisper-model" class="help-tooltip" role="tooltip">Small is the safest quality/speed upgrade from Base.</span>
                   </span>
                 </span>
-                <div class="local-select" class:open={openLocalDropdown === 'model'}>
-                  <button
-                    class="local-select-button"
-                    type="button"
-                    aria-label="Whisper model"
-                    aria-haspopup="listbox"
-                    aria-expanded={openLocalDropdown === 'model'}
-                    on:click|preventDefault|stopPropagation={() => toggleLocalDropdown('model')}
-                  >
-                    <span>{optionLabel(whisperModelOptions, whisperModelInput)}</span>
-                  </button>
-                  {#if openLocalDropdown === 'model'}
-                    <div class="local-select-menu" role="listbox" aria-label="Whisper model options">
+                <div class="select-wrap">
+                  <select aria-label="Whisper model" bind:value={whisperModelInput}>
                     {#each whisperModelOptions as option}
-                      <button
-                        class:active={whisperModelInput === option.value}
-                        type="button"
-                        role="option"
-                        aria-selected={whisperModelInput === option.value}
-                        on:click|preventDefault|stopPropagation={() => chooseLocalOption('model', option.value)}
-                      >
-                        {option.label}
-                      </button>
+                      <option value={option.value}>{option.label}</option>
                     {/each}
-                    </div>
-                  {/if}
+                  </select>
                 </div>
               </label>
               <label class="select-field">
@@ -1717,32 +1777,12 @@
                     <span id="help-processing-device" class="help-tooltip" role="tooltip">This device choice is saved with the model profile and becomes active when that profile is selected.</span>
                   </span>
                 </span>
-                <div class="local-select" class:open={openLocalDropdown === 'device'}>
-                  <button
-                    class="local-select-button"
-                    type="button"
-                    aria-label="Processing device"
-                    aria-haspopup="listbox"
-                    aria-expanded={openLocalDropdown === 'device'}
-                    on:click|preventDefault|stopPropagation={() => toggleLocalDropdown('device')}
-                  >
-                    <span>{optionLabel(whisperDeviceOptions, whisperDeviceInput)}</span>
-                  </button>
-                  {#if openLocalDropdown === 'device'}
-                    <div class="local-select-menu compact" role="listbox" aria-label="Processing device options">
+                <div class="select-wrap">
+                  <select aria-label="Processing device" bind:value={whisperDeviceInput}>
                     {#each whisperDeviceOptions as option}
-                      <button
-                        class:active={whisperDeviceInput === option.value}
-                        type="button"
-                        role="option"
-                        aria-selected={whisperDeviceInput === option.value}
-                        on:click|preventDefault|stopPropagation={() => chooseLocalOption('device', option.value)}
-                      >
-                        {option.label}
-                      </button>
+                      <option value={option.value}>{option.label}</option>
                     {/each}
-                    </div>
-                  {/if}
+                  </select>
                 </div>
               </label>
               <div class="settings-actions">
@@ -1753,24 +1793,38 @@
               {#if localProfiles?.profiles?.length}
                 {#each localProfiles.profiles as profile}
                   <div class="api-profile-row local-model-row">
-                    <div>
+                    <div class="model-info">
                       <strong>{profile.label}</strong>
                       <span class="meta">{profile.model} | {optionLabel(whisperDeviceOptions, profile.device)}</span>
                       {#if profile.error}
                         <span class="meta error-text">{profile.error}</span>
                       {/if}
                     </div>
-                    <div class="api-profile-actions">
-                      {#if profile.active}
-                        <span class="profile-active-badge">Active</span>
-                      {:else}
-                        <button class="button-secondary" type="button" on:click={() => activateLocalModelProfile(profile.id)} disabled={settingsActionBusy}>Set active</button>
-                      {/if}
-                      <span class:profile-ready-badge={profile.downloadStatus === 'ready'} class:profile-failed-badge={profile.downloadStatus === 'failed'} class="profile-status-badge">{localModelStatusLabel(profile.downloadStatus)}</span>
-                      {#if profile.downloadStatus === 'failed' || profile.downloadStatus === 'not_downloaded'}
-                        <button class="button-secondary" type="button" on:click={() => retryLocalModelDownload(profile.id)} disabled={settingsActionBusy || Boolean(localModelDownload?.active && localModelDownload?.profileId === profile.id)}>Retry download</button>
-                      {/if}
-                      <button class="button-secondary" type="button" on:click={() => deleteLocalModelProfile(profile.id)} disabled={settingsActionBusy}>Delete</button>
+                    <div class="model-actions">
+                      <div class="model-status-group">
+                        {#if profile.active && profile.downloadStatus === 'ready'}
+                          <span class="profile-active-badge">Active</span>
+                        {/if}
+                        <span
+                          class="profile-status-badge"
+                          class:badge-ready={profile.downloadStatus === 'ready'}
+                          class:badge-failed={profile.downloadStatus === 'failed'}
+                          class:badge-downloading={profile.downloadStatus === 'downloading' || profile.downloadStatus === 'queued'}
+                          class:badge-not-downloaded={profile.downloadStatus === 'not_downloaded' || !profile.downloadStatus}
+                        >{localModelStatusLabel(profile.downloadStatus)}</span>
+                      </div>
+                      <div class="model-action-group">
+                        {#if profile.downloadStatus === 'ready' && !profile.active}
+                          <button type="button" on:click={() => activateLocalModelProfile(profile.id)} disabled={settingsActionBusy}>Set Active</button>
+                        {/if}
+                        {#if profile.downloadStatus === 'failed'}
+                          <button type="button" on:click={() => retryLocalModelDownload(profile.id)} disabled={settingsActionBusy || Boolean(localModelDownload?.active && localModelDownload?.profileId === profile.id)}>Retry Download</button>
+                        {/if}
+                        {#if profile.downloadStatus === 'not_downloaded'}
+                          <button type="button" on:click={() => retryLocalModelDownload(profile.id)} disabled={settingsActionBusy || Boolean(localModelDownload?.active && localModelDownload?.profileId === profile.id)}>Download</button>
+                        {/if}
+                        <button class="button-danger" type="button" on:click={() => deleteLocalModelProfile(profile.id)} disabled={settingsActionBusy}>Delete</button>
+                      </div>
                     </div>
                   </div>
                 {/each}
@@ -1936,6 +1990,18 @@
                 </span>
               </div>
               <div class="tool-row">
+                <span>Runtime-pack status</span>
+                <span>{settingsRuntime?.runtime_pack_status || 'unknown'}</span>
+              </div>
+              <div class="tool-row">
+                <span>Runtime-pack version</span>
+                <span>{settingsRuntime?.runtime_pack_version || 'n/a'}</span>
+              </div>
+              <div class="tool-row">
+                <span>Runtime-pack path</span>
+                <span>{settingsRuntime?.runtime_pack_install_dir || 'n/a'}</span>
+              </div>
+              <div class="tool-row">
                 <span>Config path</span>
                 <span>{settingsContext?.configPath || 'Unavailable'}</span>
               </div>
@@ -2082,10 +2148,11 @@
     margin-top: .15rem;
   }
 
-  .terms-copy {
-    color: var(--color-text-tertiary);
-    line-height: 1.4;
-  }
+   .terms-copy {
+     color: var(--color-text-tertiary);
+     line-height: 1.4;
+     white-space: nowrap;
+   }
 
   .inline-link {
     background: none;
@@ -2566,9 +2633,10 @@
     padding: var(--space-md);
   }
 
-  .local-model-row > div:first-child {
+  .local-model-row .model-info {
     display: grid;
-    gap: .18rem;
+    gap: var(--space-xs);
+    min-width: 0;
   }
 
   .profile-status-badge {
@@ -2579,16 +2647,52 @@
     background: color-mix(in srgb, var(--color-panel-card) 80%, transparent);
     font-size: .78rem;
     font-weight: 800;
+    min-width: 88px;
+    text-align: center;
+    white-space: nowrap;
   }
 
-  .profile-ready-badge {
+  .badge-ready {
     color: var(--color-state-success);
     border-color: color-mix(in srgb, var(--color-state-success) 32%, transparent);
+    background: color-mix(in srgb, var(--color-state-success) 6%, transparent);
   }
 
-  .profile-failed-badge {
+  .badge-failed {
     color: var(--color-state-error);
     border-color: color-mix(in srgb, var(--color-state-error) 32%, transparent);
+    background: color-mix(in srgb, var(--color-state-error) 6%, transparent);
+  }
+
+  .badge-downloading {
+    color: var(--color-secondary);
+    border-color: color-mix(in srgb, var(--color-secondary) 28%, transparent);
+    background: color-mix(in srgb, var(--color-secondary) 6%, transparent);
+  }
+
+  .badge-not-downloaded {
+    color: var(--color-text-tertiary);
+  }
+
+  .model-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    flex-shrink: 0;
+  }
+
+  .model-status-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding-right: var(--space-sm);
+    border-right: 1px solid color-mix(in srgb, var(--color-border-strong) 16%, transparent);
+  }
+
+  .model-action-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
   }
 
   .select-field {
@@ -2607,100 +2711,6 @@
     white-space: normal;
   }
 
-  .local-select {
-    position: relative;
-    z-index: 1;
-    width: 100%;
-    min-width: 0;
-  }
-
-  .local-select.open {
-    z-index: 30;
-  }
-
-  .local-select-button {
-    position: relative;
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-    min-height: 46px;
-    padding: .66rem 2.25rem .66rem .78rem;
-    text-align: left;
-    color: var(--color-text-primary);
-    background:
-      linear-gradient(180deg, color-mix(in srgb, var(--color-surface-input) 92%, var(--color-panel-card)), var(--color-surface-input));
-    border: 1px solid color-mix(in srgb, var(--color-border-medium) 34%, transparent);
-    box-shadow: inset 0 1px 0 color-mix(in srgb, white 7%, transparent);
-    font-weight: 700;
-    line-height: 1.25;
-  }
-
-  .local-select-button::after {
-    content: "";
-    position: absolute;
-    right: .85rem;
-    top: 50%;
-    width: .48rem;
-    height: .48rem;
-    border-right: 2px solid var(--color-text-tertiary);
-    border-bottom: 2px solid var(--color-text-tertiary);
-    transform: translateY(-62%) rotate(45deg);
-  }
-
-  .local-select-button span {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .local-select-menu {
-    position: absolute;
-    top: calc(100% + .35rem);
-    left: 0;
-    right: 0;
-    display: grid;
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-    max-height: 220px;
-    overflow-y: auto;
-    padding: .35rem;
-    border-radius: var(--radius-sm);
-    border: 1px solid color-mix(in srgb, var(--color-border-strong) 40%, transparent);
-    background: color-mix(in srgb, var(--color-panel-card) 94%, var(--color-surface-input));
-    box-shadow: 0 18px 44px rgba(0, 0, 0, .34);
-  }
-
-  .local-select-menu.compact {
-    max-height: 168px;
-  }
-
-  .local-select-menu button {
-    width: 100%;
-    min-width: 0;
-    padding: .58rem .62rem;
-    color: var(--color-text-secondary);
-    background: transparent;
-    border: 0;
-    border-radius: calc(var(--radius-sm) - 4px);
-    text-align: left;
-    font-weight: 650;
-    line-height: 1.25;
-  }
-
-  .local-select-menu button:hover,
-  .local-select-menu button:focus-visible {
-    color: var(--color-text-primary);
-    background: color-mix(in srgb, var(--color-primary) 18%, var(--color-panel-card));
-    outline: none;
-  }
-
-  .local-select-menu button.active {
-    color: var(--color-on-accent);
-    background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
-  }
-
   .api-profile-form label {
     min-width: 0;
   }
@@ -2713,9 +2723,9 @@
   .api-profile-row {
     display: flex;
     justify-content: space-between;
-    gap: var(--space-sm);
+    gap: var(--space-md);
     align-items: center;
-    padding: .68rem;
+    padding: var(--space-md);
     border-radius: var(--radius-sm);
     background: color-mix(in srgb, var(--color-surface-input) 44%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-border-strong) 16%, transparent);
@@ -2871,6 +2881,14 @@
     }
     .settings-actions {
       display: grid;
+    }
+    .model-actions {
+      flex-direction: column;
+      align-items: flex-end;
+    }
+    .model-status-group {
+      border-right: none;
+      padding-right: 0;
     }
     .tool-row {
       align-items: stretch;

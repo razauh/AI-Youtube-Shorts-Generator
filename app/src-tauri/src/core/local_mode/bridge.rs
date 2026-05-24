@@ -1,6 +1,8 @@
 use crate::core::config::Config;
 use crate::core::contracts::{ErrorEnvelope, PipelineSuccess};
-use crate::runtime::python_runtime::{invoke_python, resolve_python_bridge_paths, PythonInvokeRequest};
+use crate::runtime::python_runtime::{
+    invoke_python, resolve_python_bridge_paths, with_python_runtime_env, PythonInvokeRequest,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fmt;
@@ -169,15 +171,16 @@ pub fn run_local_pipeline_bridge(
     };
 
     let bridge = resolve_python_bridge_paths();
+    let env = local_bridge_env().map_err(|e| ErrorEnvelope {
+        mode: Some("local".to_string()),
+        source_video_url: None,
+        error: e.to_string(),
+        details: Some(json!({"stage": "local_bridge_config"})),
+    })?;
     let cfg = BridgeConfig {
-        python_bin: bridge.python_bin,
-        entry_script: bridge.entry_script,
-        env: local_bridge_env().map_err(|e| ErrorEnvelope {
-            mode: Some("local".to_string()),
-            source_video_url: None,
-            error: e.to_string(),
-            details: Some(json!({"stage": "local_bridge_config"})),
-        })?,
+        python_bin: bridge.python_bin.clone(),
+        entry_script: bridge.entry_script.clone(),
+        env: with_python_runtime_env(env, &bridge),
         timeout_ms: std::env::var("PYTHON_BRIDGE_TIMEOUT_MS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())

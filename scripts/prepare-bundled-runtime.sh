@@ -20,6 +20,7 @@ fi
 
 SRC_DIR="$ROOT_DIR/bundled-runtime-input/$TARGET"
 DEST_DIR="$ROOT_DIR/app/src-tauri/bundled-runtime"
+FORCE_REPLACE="${FORCE_REPLACE:-0}"
 
 if [[ ! -d "$SRC_DIR" ]]; then
   echo "Missing runtime input directory: $SRC_DIR"
@@ -27,9 +28,18 @@ if [[ ! -d "$SRC_DIR" ]]; then
 fi
 
 if [[ -e "$DEST_DIR" ]]; then
-  echo "Destination already exists: $DEST_DIR"
-  echo "Move or remove it manually before rebuilding bundled runtime."
-  exit 1
+  if [[ "$FORCE_REPLACE" == "1" ]]; then
+    rm -rf "$DEST_DIR"
+  else
+    # Allow replacing the scaffold README-only directory without requiring manual cleanup.
+    if [[ -f "$DEST_DIR/README.md" ]] && [[ "$(find "$DEST_DIR" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ]]; then
+      rm -rf "$DEST_DIR"
+    else
+      echo "Destination already exists: $DEST_DIR"
+      echo "Move or remove it manually before rebuilding bundled runtime, or rerun with FORCE_REPLACE=1."
+      exit 1
+    fi
+  fi
 fi
 
 mkdir -p "$DEST_DIR"

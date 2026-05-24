@@ -20,6 +20,11 @@ const localModelProfileActivate = vi.fn();
 const localModelProfileDelete = vi.fn();
 const localModelProfileRetryDownload = vi.fn();
 const listenLocalModelDownloadProgress = vi.fn();
+const localRuntimePackStatus = vi.fn();
+const localRuntimePackPrepare = vi.fn();
+const localRuntimePackRetry = vi.fn();
+const localRuntimePackRepair = vi.fn();
+const listenLocalRuntimePackProgress = vi.fn();
 const apiKeyProfiles = vi.fn();
 const apiKeyProfileAdd = vi.fn();
 const apiKeyProfileActivate = vi.fn();
@@ -91,6 +96,11 @@ vi.mock('../lib/api/runtimeClient', () => ({
   localModelProfileDelete: (...args: unknown[]) => localModelProfileDelete(...args),
   localModelProfileRetryDownload: (...args: unknown[]) => localModelProfileRetryDownload(...args),
   listenLocalModelDownloadProgress: (...args: unknown[]) => listenLocalModelDownloadProgress(...args),
+  localRuntimePackStatus: (...args: unknown[]) => localRuntimePackStatus(...args),
+  localRuntimePackPrepare: (...args: unknown[]) => localRuntimePackPrepare(...args),
+  localRuntimePackRetry: (...args: unknown[]) => localRuntimePackRetry(...args),
+  localRuntimePackRepair: (...args: unknown[]) => localRuntimePackRepair(...args),
+  listenLocalRuntimePackProgress: (...args: unknown[]) => listenLocalRuntimePackProgress(...args),
   apiKeyProfiles: (...args: unknown[]) => apiKeyProfiles(...args),
   apiKeyProfileAdd: (...args: unknown[]) => apiKeyProfileAdd(...args),
   apiKeyProfileActivate: (...args: unknown[]) => apiKeyProfileActivate(...args),
@@ -121,6 +131,11 @@ describe('test_ui flow parity', () => {
     localModelProfileDelete.mockReset();
     localModelProfileRetryDownload.mockReset();
     listenLocalModelDownloadProgress.mockReset();
+    localRuntimePackStatus.mockReset();
+    localRuntimePackPrepare.mockReset();
+    localRuntimePackRetry.mockReset();
+    localRuntimePackRepair.mockReset();
+    listenLocalRuntimePackProgress.mockReset();
     apiKeyProfiles.mockReset();
     apiKeyProfileAdd.mockReset();
     apiKeyProfileActivate.mockReset();
@@ -159,6 +174,21 @@ describe('test_ui flow parity', () => {
       profiles: [{ id: profileId, label: 'Retry local', model: 'small', device: 'cpu', active: true, downloadStatus: 'downloading', error: null, createdAtMs: 1, updatedAtMs: 2 }]
     }));
     listenLocalModelDownloadProgress.mockResolvedValue(() => {});
+    localRuntimePackStatus.mockResolvedValue({
+      status: 'ready',
+      version: '1.0.0',
+      platform: 'linux',
+      arch: 'x86_64',
+      installDir: '/home/test/.local/share/app/runtime-pack/current',
+      manifestUrl: 'https://example.test/manifest.json',
+      requiredSizeBytes: 1,
+      message: 'Local processing runtime is ready.',
+      errorCode: null
+    });
+    localRuntimePackPrepare.mockImplementation(() => localRuntimePackStatus());
+    localRuntimePackRetry.mockImplementation(() => localRuntimePackStatus());
+    localRuntimePackRepair.mockImplementation(() => localRuntimePackStatus());
+    listenLocalRuntimePackProgress.mockResolvedValue(() => {});
     apiKeyProfiles.mockImplementation((provider: 'muapi' | 'openai') => Promise.resolve({
       provider,
       envOverride: false,
@@ -456,17 +486,9 @@ describe('test_ui flow parity', () => {
     expect(document.body.textContent).not.toContain('openai-secret');
 
     await fireEvent.click(screen.getByRole('tab', { name: 'Local Processing' }));
-    await fireEvent.click(screen.getByLabelText('Whisper model'));
-    await fireEvent.click(screen.getByRole('option', { name: 'Small - better accuracy, still practical on CPU' }));
-    expect(screen.queryByRole('option', { name: 'Small - better accuracy, still practical on CPU' })).toBeNull();
-    await fireEvent.click(screen.getByLabelText('Whisper model'));
-    expect(screen.getByRole('option', { name: 'Medium - slower, higher accuracy' })).toBeTruthy();
-    await fireEvent.click(document.body);
-    expect(screen.queryByRole('option', { name: 'Medium - slower, higher accuracy' })).toBeNull();
+    await fireEvent.change(screen.getByLabelText('Whisper model'), { target: { value: 'small' } });
     await fireEvent.input(screen.getByLabelText('Local model profile name'), { target: { value: 'Small CPU' } });
-    await fireEvent.click(screen.getByLabelText('Processing device'));
-    await fireEvent.click(screen.getByRole('option', { name: 'CPU - most compatible' }));
-    expect(screen.queryByRole('option', { name: 'CPU - most compatible' })).toBeNull();
+    await fireEvent.change(screen.getByLabelText('Processing device'), { target: { value: 'cpu' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Save and Download' }));
     expect(localModelProfileAdd).toHaveBeenCalledWith('Small CPU', 'small', 'cpu', true);
 
@@ -522,7 +544,7 @@ describe('test_ui flow parity', () => {
 
     render(Page);
     await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
-    await fireEvent.change(screen.getByLabelText('Mode'), { target: { value: 'local' } });
+    await fireEvent.change(screen.getByLabelText('Mode'), { target: { value: 'api' } });
     await fireEvent.input(screen.getByLabelText('Num clips'), { target: { value: '5' } });
     await fireEvent.input(screen.getByLabelText('Resolution'), { target: { value: '1080' } });
     await fireEvent.change(screen.getByLabelText('Aspect ratio'), { target: { value: '1:1' } });
@@ -534,7 +556,7 @@ describe('test_ui flow parity', () => {
     const req = runGenerateAndStream.mock.calls[0][0];
     expect(req).toEqual({
       youtube_url: 'https://youtube.com/watch?v=abc',
-      mode: 'local',
+      mode: 'api',
       num_clips: 5,
       aspect_ratio: '1:1',
       download_format: '1080',
@@ -628,8 +650,8 @@ describe('test_ui flow parity', () => {
     render(Page);
     await fireEvent.change(screen.getByLabelText('Mode'), { target: { value: 'local' } });
     await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Configure Now' }));
+    expect(screen.getByText('Local processing runtime is not ready. Download it from Settings before running local mode.')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
 
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Configuration', selected: true })).toBeTruthy();

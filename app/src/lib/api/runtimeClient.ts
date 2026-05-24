@@ -34,6 +34,41 @@ export interface RuntimeValidation {
   tools: RuntimeToolStatus[];
   python_packages: RuntimeToolStatus[];
   local_runtime_ready: boolean;
+  runtime_pack_status?: string | null;
+  runtime_pack_version?: string | null;
+  runtime_pack_install_dir?: string | null;
+}
+
+export type RuntimePackStatusKind =
+  | 'not_installed'
+  | 'downloading'
+  | 'installing'
+  | 'installed'
+  | 'ready'
+  | 'failed'
+  | 'corrupted'
+  | 'incompatible_platform'
+  | 'missing_files'
+  | 'validation_failed';
+
+export interface LocalRuntimePackStatus {
+  status: RuntimePackStatusKind;
+  version?: string | null;
+  platform: string;
+  arch: string;
+  installDir: string;
+  manifestUrl: string;
+  requiredSizeBytes?: number | null;
+  message: string;
+  errorCode?: string | null;
+  debugRef?: string | null;
+}
+
+export interface RuntimePackProgressEvent {
+  phase: string;
+  progress: number;
+  message: string;
+  status: RuntimePackStatusKind;
 }
 
 export interface AppConfigSummary {
@@ -247,9 +282,32 @@ export function localModelProfileRetryDownload(profileId: string): Promise<Local
   return invoke<LocalModelProfilesView>('local_model_profile_retry_download', { profileId });
 }
 
+export function localRuntimePackStatus(): Promise<LocalRuntimePackStatus> {
+  return invoke<LocalRuntimePackStatus>('local_runtime_pack_status');
+}
+
+export function localRuntimePackPrepare(): Promise<LocalRuntimePackStatus> {
+  return invoke<LocalRuntimePackStatus>('local_runtime_pack_prepare');
+}
+
+export function localRuntimePackRetry(): Promise<LocalRuntimePackStatus> {
+  return invoke<LocalRuntimePackStatus>('local_runtime_pack_retry');
+}
+
+export function localRuntimePackRepair(): Promise<LocalRuntimePackStatus> {
+  return invoke<LocalRuntimePackStatus>('local_runtime_pack_repair');
+}
+
 export async function listenLocalModelDownloadProgress(
   handler: (status: LocalModelDownloadStatus) => void
 ): Promise<() => void> {
   const events = await getEventApi();
   return events.listen<LocalModelDownloadStatus>('local-model-download-progress', (event) => handler(event.payload));
+}
+
+export async function listenLocalRuntimePackProgress(
+  handler: (event: RuntimePackProgressEvent) => void
+): Promise<() => void> {
+  const events = await getEventApi();
+  return events.listen<RuntimePackProgressEvent>('local-runtime-pack-progress', (event) => handler(event.payload));
 }
