@@ -4,6 +4,7 @@ const FRIENDLY_MESSAGES: Record<string, string> = {
   unauthorized: 'Admin token is invalid or expired.',
   bad_request: 'The request was invalid.',
   route_not_found: 'This Worker does not expose the admin endpoint required by this app. Deploy the current Worker version or check that the admin base URL points to the right environment.',
+  license_not_found: 'This license could not be found.',
   reset_request_not_found: 'This reset request no longer exists.',
   invalid_transition: 'This request is no longer pending.',
   storage: 'The Worker storage service is temporarily unavailable.',

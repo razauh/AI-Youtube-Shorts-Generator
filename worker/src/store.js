@@ -108,6 +108,30 @@ export async function getLicenseByHash(db, licenseKeyHash) {
     .first();
 }
 
+export async function listLicensesByHashPrefix(db, licenseHashPrefix, limit = 5) {
+  return db
+    .prepare(
+      `SELECT license_key_hash, entitlement_status, purchaser_email, provider, provider_sale_id, updated_at_ms
+       FROM licenses
+       WHERE LOWER(license_key_hash) LIKE ?
+       ORDER BY updated_at_ms DESC
+       LIMIT ?`,
+    )
+    .bind(`${String(licenseHashPrefix).toLowerCase()}%`, limit)
+    .all();
+}
+
+export async function updateLicenseEntitlementStatus(db, licenseKeyHash, entitlementStatus, updatedAtMs) {
+  return db
+    .prepare(
+      `UPDATE licenses
+       SET entitlement_status = ?, updated_at_ms = ?
+       WHERE license_key_hash = ?`,
+    )
+    .bind(entitlementStatus, updatedAtMs, licenseKeyHash)
+    .run();
+}
+
 export async function upsertDeviceBinding(
   db,
   { deviceId, licenseKeyHash, publicKey, fingerprintJson, status, updatedAtMs },

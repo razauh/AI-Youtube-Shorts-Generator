@@ -9,6 +9,7 @@ export const ERROR_CODES = new Set([
   "not_found",
   "route_not_found",
   "reset_request_not_found",
+  "license_not_found",
   "unauthorized",
   "storage",
   "serialization",

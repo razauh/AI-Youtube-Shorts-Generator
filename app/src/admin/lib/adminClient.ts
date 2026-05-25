@@ -6,6 +6,7 @@ import type {
   AdminAuditEventListData,
   AdminIdempotencyRecordListData,
   AdminResetDecisionData,
+  AdminDisableLicenseData,
   AdminResetListData,
   ResetRequestStatus
 } from './contracts';
@@ -113,5 +114,17 @@ export function rejectResetRequest(requestId: string, reason?: string): Promise<
   return invoke<AdminResetDecisionData>('admin_reject_reset_request', {
     requestId,
     reason: reason?.trim() ? reason.trim() : null
+  });
+}
+
+export function disableLicense(
+  licenseHashPrefix: string,
+  reason: string,
+  deactivateBindings: boolean
+): Promise<AdminDisableLicenseData> {
+  return invoke<AdminDisableLicenseData>('admin_disable_license', {
+    licenseHashPrefix: licenseHashPrefix.trim(),
+    reason: reason.trim(),
+    deactivateBindings
   });
 }

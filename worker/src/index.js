@@ -18,6 +18,8 @@ import {
   listAdminDeviceBindings,
   listAdminAuditEvents,
   listAdminIdempotencyRecords,
+  listLicensesByHashPrefix,
+  updateLicenseEntitlementStatus,
 } from "./store.js";
 
 export default {
@@ -65,6 +67,9 @@ export default {
     }
     if (method === "POST" && path === "/v1/admin/reset/reject") {
       return handleAdminResetDecision(request, env, "rejected");
+    }
+    if (method === "POST" && path === "/v1/admin/licenses/disable") {
+      return handleAdminDisableLicense(request, env);
     }
     if (method === "POST" && path === "/v1/license/webhooks/gumroad") {
       return handleGumroadWebhook(request, env);
@@ -466,6 +471,109 @@ async function handleAdminOverview(request, env) {
   } catch {
     return err("storage", "Failed to load overview.", rid, true, 503);
   }
+}
+
+async function handleAdminDisableLicense(request, env) {
+  const rid = requestId();
+  const auth = requireAdminAuth(request, env, rid);
+  if (auth) return auth;
+  if (!env?.DB) {
+    return err("storage", "D1 database binding is not configured.", rid, false, 503);
+  }
+
+  const idem = request.headers.get("x-idempotency-key");
+  if (!idem) {
+    return err("bad_request", "Missing required header: X-Idempotency-Key", rid, false, 400);
+  }
+
+  const body = await readJson(request);
+  const licenseHashPrefix = asOptionalString(body?.license_hash_prefix);
+  const reason = asOptionalString(body?.reason);
+  const deactivateBindings = Boolean(body?.deactivate_bindings);
+  if (!licenseHashPrefix || !reason) {
+    return err("bad_request", "license_hash_prefix and reason are required.", rid, false, 400);
+  }
+
+  const payloadHash = stableHash({
+    license_hash_prefix: licenseHashPrefix,
+    reason,
+    deactivate_bindings: deactivateBindings,
+  });
+  const replay = await getD1Idempotent(env.DB, "admin_license_disable", idem);
+  if (replay) {
+    if (replay.payload_hash !== payloadHash) {
+      return err(
+        "invalid_transition",
+        "Idempotency key reuse does not match original request payload.",
+        rid,
+        false,
+        409,
+      );
+    }
+    return new Response(replay.response_body, {
+      status: replay.response_status,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  }
+
+  const matches = normalizeD1Results(await listLicensesByHashPrefix(env.DB, licenseHashPrefix, 2));
+  if (matches.length === 0) {
+    return err("license_not_found", "License was not found.", rid, false, 404);
+  }
+  if (matches.length > 1) {
+    return err("bad_request", "license_hash_prefix matches multiple licenses.", rid, false, 400);
+  }
+
+  const license = matches[0];
+  if (String(license.entitlement_status).toLowerCase() !== "active") {
+    return err(
+      "invalid_transition",
+      "This license cannot be disabled from its current state.",
+      rid,
+      false,
+      409,
+    );
+  }
+
+  const now = Date.now();
+  try {
+    await updateLicenseEntitlementStatus(env.DB, license.license_key_hash, "disabled", now);
+    if (deactivateBindings) {
+      await deactivateDeviceBindingsByLicenseHash(env.DB, license.license_key_hash, now);
+    }
+    await writeAuditEvent(
+      env.DB,
+      "license_disabled",
+      "admin",
+      JSON.stringify({
+        license_hash_prefix: hashPrefix(license.license_key_hash),
+        from_status: String(license.entitlement_status).toLowerCase(),
+        to_status: "disabled",
+        reason,
+        reason_present: true,
+        deactivate_bindings: deactivateBindings,
+      }),
+      now,
+    );
+  } catch {
+    return err("storage", "Failed to disable license.", rid, true, 503);
+  }
+
+  const response = ok({
+    license_hash_prefix: hashPrefix(license.license_key_hash),
+    entitlement_status: "disabled",
+    deactivate_bindings: deactivateBindings,
+  });
+  const responseBody = await response.clone().text();
+  await putD1Idempotent(
+    env.DB,
+    "admin_license_disable",
+    idem,
+    payloadHash,
+    { status: response.status, body: responseBody },
+    now,
+  );
+  return response;
 }
 
 async function handleAdminLicenses(request, env) {

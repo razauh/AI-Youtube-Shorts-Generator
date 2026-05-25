@@ -2,6 +2,7 @@
   import {
     approveResetRequest,
     clearAdminConfig,
+    disableLicense,
     listAuditEvents,
     listDeviceBindings,
     listIdempotencyRecords,
@@ -51,6 +52,9 @@
   let confirmAction = null;
   let confirmRequest = null;
   let confirmReason = '';
+  let disableTarget = null;
+  let disableReason = '';
+  let disableDeactivateBindings = true;
 
   $: configured = Boolean(config.baseUrl && config.tokenConfigured);
 
@@ -64,6 +68,10 @@
     const next = { kind: 'error', message: friendly.message, requestId: friendly.request_id };
     if (target === 'setup') setupMessage = next;
     else notice = next;
+  }
+
+  function canDisableLicense(item) {
+    return String(item?.entitlement_status || '').toLowerCase() === 'active';
   }
 
   async function bootstrap() {
@@ -191,6 +199,19 @@
     confirmReason = '';
   }
 
+  function openDisable(item) {
+    disableTarget = item;
+    disableReason = '';
+    disableDeactivateBindings = true;
+  }
+
+  function closeDisable() {
+    if (actionBusyFor) return;
+    disableTarget = null;
+    disableReason = '';
+    disableDeactivateBindings = true;
+  }
+
   async function submitDecision() {
     if (!confirmAction || !confirmRequest || actionBusyFor) return;
     const requestId = confirmRequest.reset_request_id;
@@ -201,6 +222,29 @@
         : await rejectResetRequest(requestId, confirmReason);
       notice = { kind: 'success', message: `Reset request ${result.reset_request_id} ${result.status}.` };
       closeConfirm();
+      await refreshCurrentSection();
+    } catch (error) {
+      showError(error);
+    } finally {
+      actionBusyFor = null;
+    }
+  }
+
+  async function submitDisable() {
+    if (!disableTarget || actionBusyFor) return;
+    const reason = disableReason.trim();
+    if (!reason) {
+      notice = { kind: 'error', message: 'Reason for disabling is required.' };
+      return;
+    }
+    actionBusyFor = `disable:${disableTarget.license_hash_prefix}`;
+    try {
+      const result = await disableLicense(disableTarget.license_hash_prefix, reason, disableDeactivateBindings);
+      notice = {
+        kind: 'success',
+        message: `License ${result.license_hash_prefix} is now ${result.entitlement_status}.`
+      };
+      closeDisable();
       await refreshCurrentSection();
     } catch (error) {
       showError(error);
@@ -273,19 +317,46 @@
           </label>
         </div>
         {#if !loading && resetRequests.length === 0}<div class="empty-state">No results.</div>{/if}
-        {#each resetRequests as item (item.reset_request_id)}
-          <div class="table-row">
-            <span>{item.reset_request_id}</span><span>{item.status}</span><span>{item.masked_license_key ?? 'Unavailable'}</span><span>{item.purchaser_email ?? 'Unavailable'}</span>
-            <span>{formatDate(item.updated_at_ms)}</span>
-            <span class="row-actions">
-              <button class="secondary" on:click={() => openDetail('Reset Request', item)}>Details</button>
-              {#if item.status === 'pending'}
-                <button on:click={() => openConfirm('approve', item)}>Approve</button>
-                <button class="danger" on:click={() => openConfirm('reject', item)}>Reject</button>
-              {/if}
-            </span>
+        {#if resetRequests.length > 0}
+          <div class="table-scroll" role="region" aria-label="Reset requests table">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">Request ID</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">License State</th>
+                  <th scope="col">Masked License Key</th>
+                  <th scope="col">Purchaser Email</th>
+                  <th scope="col">Created</th>
+                  <th scope="col">Updated</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each resetRequests as item (item.reset_request_id)}
+                  <tr>
+                    <td>{item.reset_request_id}</td>
+                    <td>{item.status}</td>
+                    <td>{item.license_state}</td>
+                    <td>{item.masked_license_key ?? 'Unavailable'}</td>
+                    <td>{item.purchaser_email ?? 'Unavailable'}</td>
+                    <td>{formatDate(item.created_at_ms)}</td>
+                    <td>{formatDate(item.updated_at_ms)}</td>
+                    <td class="row-actions">
+                      <button class="secondary" on:click={() => openDetail('Reset Request', item)}>Details</button>
+                      {#if item.status === 'pending'}
+                        <button on:click={() => openConfirm('approve', item)}>Approve</button>
+                        <button class="danger" on:click={() => openConfirm('reject', item)}>Reject</button>
+                      {:else}
+                        <span class="muted">Decision already final</span>
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
           </div>
-        {/each}
+        {/if}
       {:else if section === 'licenses'}
         <div class="actions">
           <input placeholder="Search email/sale/hash prefix" bind:value={licenseQ} />
@@ -293,13 +364,43 @@
           <button class="secondary" on:click={refreshCurrentSection}>Apply</button>
         </div>
         {#if !loading && licenses.length === 0}<div class="empty-state">No results.</div>{/if}
-        {#each licenses as item (item.license_hash_prefix)}
-          <div class="table-row">
-            <span>{item.license_hash_prefix}</span><span>{item.purchaser_email_masked || 'Unavailable'}</span><span>{item.entitlement_status}</span><span>{item.provider ?? 'n/a'}</span>
-            <span>{item.active_device_count}/{item.inactive_device_count}</span>
-            <span class="row-actions"><button class="secondary" on:click={() => openDetail('License', item)}>Details</button></span>
+        {#if licenses.length > 0}
+          <div class="table-scroll" role="region" aria-label="Licenses table">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">License</th>
+                  <th scope="col">Purchaser Email</th>
+                  <th scope="col">Entitlement Status</th>
+                  <th scope="col">Provider</th>
+                  <th scope="col">Provider Sale ID</th>
+                  <th scope="col">Active Devices</th>
+                  <th scope="col">Updated</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each licenses as item (item.license_hash_prefix)}
+                  <tr>
+                    <td>{item.license_hash_prefix}</td>
+                    <td>{item.purchaser_email_masked || 'Unavailable'}</td>
+                    <td>{item.entitlement_status}</td>
+                    <td>{item.provider ?? 'n/a'}</td>
+                    <td>{item.provider_sale_id ?? 'n/a'}</td>
+                    <td>{item.active_device_count}/{item.inactive_device_count}</td>
+                    <td>{formatDate(item.updated_at_ms)}</td>
+                    <td class="row-actions">
+                      <button class="secondary" on:click={() => openDetail('License', item)}>Details</button>
+                      {#if canDisableLicense(item)}
+                        <button class="danger" on:click={() => openDisable(item)}>Disable License</button>
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
           </div>
-        {/each}
+        {/if}
       {:else if section === 'device_bindings'}
         <div class="actions">
           <input placeholder="Search device/email/hash prefix" bind:value={bindingQ} />
@@ -307,13 +408,36 @@
           <button class="secondary" on:click={refreshCurrentSection}>Apply</button>
         </div>
         {#if !loading && deviceBindings.length === 0}<div class="empty-state">No results.</div>{/if}
-        {#each deviceBindings as item (item.device_id)}
-          <div class="table-row">
-            <span>{item.device_id}</span><span>{item.status}</span><span>{item.license_hash_prefix}</span><span>{item.purchaser_email_masked || 'Unavailable'}</span>
-            <span>{item.fingerprint_summary?.os_name ?? 'n/a'} / {item.fingerprint_summary?.arch ?? 'n/a'}</span>
-            <span class="row-actions"><button class="secondary" on:click={() => openDetail('Device Binding', item)}>Details</button></span>
+        {#if deviceBindings.length > 0}
+          <div class="table-scroll" role="region" aria-label="Device bindings table">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">Device ID</th>
+                  <th scope="col">License</th>
+                  <th scope="col">Purchaser Email</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Fingerprint Summary</th>
+                  <th scope="col">Updated</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each deviceBindings as item (item.device_id)}
+                  <tr>
+                    <td>{item.device_id}</td>
+                    <td>{item.license_hash_prefix}</td>
+                    <td>{item.purchaser_email_masked || 'Unavailable'}</td>
+                    <td>{item.status}</td>
+                    <td>{item.fingerprint_summary?.os_name ?? 'n/a'} / {item.fingerprint_summary?.arch ?? 'n/a'}</td>
+                    <td>{formatDate(item.updated_at_ms)}</td>
+                    <td class="row-actions"><button class="secondary" on:click={() => openDetail('Device Binding', item)}>Details</button></td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
           </div>
-        {/each}
+        {/if}
       {:else if section === 'audit_events'}
         <div class="actions">
           <input placeholder="event_type" bind:value={auditEventType} />
@@ -321,25 +445,66 @@
           <button class="secondary" on:click={refreshCurrentSection}>Apply</button>
         </div>
         {#if !loading && auditEvents.length === 0}<div class="empty-state">No results.</div>{/if}
-        {#each auditEvents as item, index (`${item.event_type}:${item.created_at_ms}:${index}`)}
-          <div class="table-row">
-            <span>{item.event_type}</span><span>{item.actor ?? 'unknown'}</span><span>{formatDate(item.created_at_ms)}</span><span>[redacted summary]</span>
-            <span></span>
-            <span class="row-actions"><button class="secondary" on:click={() => openDetail('Audit Event', item)}>Details</button></span>
+        {#if auditEvents.length > 0}
+          <div class="table-scroll" role="region" aria-label="Audit events table">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">Event Type</th>
+                  <th scope="col">Actor</th>
+                  <th scope="col">Metadata Summary</th>
+                  <th scope="col">Created</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each auditEvents as item, index (`${item.event_type}:${item.created_at_ms}:${index}`)}
+                  <tr>
+                    <td>{item.event_type}</td>
+                    <td>{item.actor ?? 'unknown'}</td>
+                    <td>[redacted summary]</td>
+                    <td>{formatDate(item.created_at_ms)}</td>
+                    <td class="row-actions"><button class="secondary" on:click={() => openDetail('Audit Event', item)}>Details</button></td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
           </div>
-        {/each}
+        {/if}
       {:else}
         <div class="actions">
           <input placeholder="operation name" bind:value={idempotencyOp} />
           <button class="secondary" on:click={refreshCurrentSection}>Apply</button>
         </div>
         {#if !loading && idempotencyRecords.length === 0}<div class="empty-state">No results.</div>{/if}
-        {#each idempotencyRecords as item, index (`${item.op}:${item.created_at_ms}:${index}`)}
-          <div class="table-row">
-            <span>{item.op}</span><span>{item.idempotency_key_prefix}</span><span>{item.payload_hash_prefix}</span><span>{item.response_status}</span><span>{formatDate(item.created_at_ms)}</span>
-            <span class="row-actions"><button class="secondary" on:click={() => openDetail('Idempotency Record', item)}>Details</button></span>
+        {#if idempotencyRecords.length > 0}
+          <div class="table-scroll" role="region" aria-label="Idempotency records table">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">Operation</th>
+                  <th scope="col">Idempotency Key</th>
+                  <th scope="col">Payload Hash</th>
+                  <th scope="col">Response Status</th>
+                  <th scope="col">Created</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each idempotencyRecords as item, index (`${item.op}:${item.created_at_ms}:${index}`)}
+                  <tr>
+                    <td>{item.op}</td>
+                    <td>{item.idempotency_key_prefix}</td>
+                    <td>{item.payload_hash_prefix}</td>
+                    <td>{item.response_status}</td>
+                    <td>{formatDate(item.created_at_ms)}</td>
+                    <td class="row-actions"><button class="secondary" on:click={() => openDetail('Idempotency Record', item)}>Details</button></td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
           </div>
-        {/each}
+        {/if}
       {/if}
     </section>
   {/if}
@@ -364,6 +529,26 @@
           {actionBusyFor ? 'Submitting...' : confirmAction === 'approve' ? 'Confirm approve' : 'Confirm reject'}
         </button>
         <button class="secondary" on:click={closeConfirm} disabled={Boolean(actionBusyFor)}>Cancel</button>
+      </div>
+    </section>
+  </div>
+{/if}
+
+{#if disableTarget}
+  <div class="modal-backdrop" role="presentation" on:click|self={closeDisable}>
+    <section class="modal decision-modal" role="dialog" aria-modal="true" aria-labelledby="disable-dialog-title">
+      <header><h2 id="disable-dialog-title">Disable License?</h2></header>
+      <p>This action may prevent the customer from activating or using the application with this license. This does not delete the license record. The action will be recorded in the audit log.</p>
+      <label>Reason for disabling <textarea bind:value={disableReason} rows="4" /></label>
+      <label class="checkbox-label">
+        <input type="checkbox" bind:checked={disableDeactivateBindings} />
+        Deactivate active device bindings now
+      </label>
+      <div class="actions">
+        <button class="danger" on:click={submitDisable} disabled={Boolean(actionBusyFor) || !disableReason.trim()}>
+          {actionBusyFor ? 'Disabling...' : 'Disable License'}
+        </button>
+        <button class="secondary" on:click={closeDisable} disabled={Boolean(actionBusyFor)}>Cancel</button>
       </div>
     </section>
   </div>

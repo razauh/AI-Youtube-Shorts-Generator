@@ -48,6 +48,12 @@ export interface AdminLicenseItem {
   inactive_device_count: number;
 }
 
+export interface AdminDisableLicenseData {
+  license_hash_prefix: string;
+  entitlement_status: string;
+  deactivate_bindings: boolean;
+}
+
 export interface AdminLicenseListData {
   licenses: AdminLicenseItem[];
 }

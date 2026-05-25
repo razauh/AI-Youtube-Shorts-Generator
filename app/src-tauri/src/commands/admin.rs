@@ -67,6 +67,14 @@ pub struct AdminResetDecisionData {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub struct AdminDisableLicenseData {
+    pub license_hash_prefix: String,
+    pub entitlement_status: String,
+    pub deactivate_bindings: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct AdminOverviewData {
     pub total_licenses: u64,
     pub entitlement_counts: std::collections::BTreeMap<String, u64>,
@@ -192,6 +200,13 @@ struct AdminDecisionRequest<'a> {
     reason: Option<&'a str>,
 }
 
+#[derive(Debug, Serialize)]
+struct AdminDisableLicenseRequest<'a> {
+    license_hash_prefix: &'a str,
+    reason: &'a str,
+    deactivate_bindings: bool,
+}
+
 #[derive(Debug, Clone)]
 struct AdminConfig {
     base_url: String,
@@ -209,6 +224,7 @@ enum AdminAction {
     IdempotencyRecords,
     Approve,
     Reject,
+    DisableLicense,
 }
 
 impl AdminAction {
@@ -223,6 +239,7 @@ impl AdminAction {
             Self::IdempotencyRecords => "idempotency_records",
             Self::Approve => "approve_reset_request",
             Self::Reject => "reject_reset_request",
+            Self::DisableLicense => "disable_license",
         }
     }
 }
@@ -752,6 +769,38 @@ pub async fn admin_reject_reset_request(
     .await
 }
 
+#[tauri::command]
+pub async fn admin_disable_license(
+    license_hash_prefix: String,
+    reason: String,
+    deactivate_bindings: bool,
+) -> Result<AdminDisableLicenseData, AdminCommandError> {
+    let normalized_prefix = license_hash_prefix.trim();
+    let normalized_reason = reason.trim();
+    if normalized_prefix.is_empty() || normalized_reason.is_empty() {
+        return Err(command_error(
+            "bad_request",
+            "License hash prefix and reason are required.",
+            None,
+            false,
+        ));
+    }
+    let idempotency_key = generate_admin_idempotency_key("disable_license", normalized_prefix);
+    let body = AdminDisableLicenseRequest {
+        license_hash_prefix: normalized_prefix,
+        reason: normalized_reason,
+        deactivate_bindings,
+    };
+    send_admin_request(
+        AdminAction::DisableLicense,
+        HttpMethod::Post,
+        "/v1/admin/licenses/disable",
+        Some(&body),
+        Some(&idempotency_key),
+    )
+    .await
+}
+
 fn encode_query_component(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for byte in input.bytes() {
@@ -847,5 +896,27 @@ mod tests {
         .unwrap_err();
         assert_eq!(parsed.code, "invalid_transition");
         assert_eq!(parsed.request_id.as_deref(), Some("req_123"));
+    }
+
+    #[test]
+    fn admin_parses_disable_license_success_envelope() {
+        let body = r#"{
+          "ok": true,
+          "data": {
+            "license_hash_prefix": "abc123",
+            "entitlement_status": "disabled",
+            "deactivate_bindings": true
+          }
+        }"#;
+        let parsed: AdminDisableLicenseData = parse_worker_response(
+            AdminAction::DisableLicense,
+            "/v1/admin/licenses/disable",
+            StatusCode::OK,
+            body,
+        )
+        .unwrap();
+        assert_eq!(parsed.license_hash_prefix, "abc123");
+        assert_eq!(parsed.entitlement_status, "disabled");
+        assert!(parsed.deactivate_bindings);
     }
 }

@@ -11,6 +11,7 @@ const clearAdminConfig = vi.fn();
 const testAdminConnection = vi.fn();
 const loadOverview = vi.fn();
 const listLicenses = vi.fn();
+const disableLicense = vi.fn();
 const listDeviceBindings = vi.fn();
 const listAuditEvents = vi.fn();
 const listIdempotencyRecords = vi.fn();
@@ -25,6 +26,7 @@ vi.mock('../../admin/lib/adminClient', () => ({
   testAdminConnection: (...args: unknown[]) => testAdminConnection(...args),
   loadOverview: (...args: unknown[]) => loadOverview(...args),
   listLicenses: (...args: unknown[]) => listLicenses(...args),
+  disableLicense: (...args: unknown[]) => disableLicense(...args),
   listDeviceBindings: (...args: unknown[]) => listDeviceBindings(...args),
   listAuditEvents: (...args: unknown[]) => listAuditEvents(...args),
   listIdempotencyRecords: (...args: unknown[]) => listIdempotencyRecords(...args)
@@ -63,6 +65,7 @@ describe('AdminApp', () => {
     testAdminConnection.mockReset();
     loadOverview.mockReset();
     listLicenses.mockReset();
+    disableLicense.mockReset();
     listDeviceBindings.mockReset();
     listAuditEvents.mockReset();
     listIdempotencyRecords.mockReset();
@@ -124,5 +127,50 @@ describe('AdminApp', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'licenses' }));
     await waitFor(() => expect(listLicenses).toHaveBeenCalled());
+  });
+
+  it('renders table headers across admin tabs', async () => {
+    loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
+    loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, recent_audit_events_24h: 0 });
+    listResetRequests.mockResolvedValue({ requests: [pendingRequest] });
+    listLicenses.mockResolvedValue({ licenses: [{ license_hash_prefix: 'hash-1', purchaser_email_masked: 'b***@example.com', entitlement_status: 'active', provider: 'gumroad', provider_sale_id: 'sale-1', updated_at_ms: 1, active_device_count: 1, inactive_device_count: 0 }] });
+    listDeviceBindings.mockResolvedValue({ bindings: [{ device_id: 'dev-1', status: 'active', license_hash_prefix: 'hash-1', updated_at_ms: 1, purchaser_email_masked: 'b***@example.com', public_key_prefix: 'abc', fingerprint_summary: { os_name: 'linux', platform_family: 'linux', arch: 'x64', app_version: '1.0.0' } }] });
+    listAuditEvents.mockResolvedValue({ events: [{ event_type: 'license_disabled', actor: 'admin', created_at_ms: 1, metadata_summary: {} }] });
+    listIdempotencyRecords.mockResolvedValue({ records: [{ op: 'admin_license_disable', idempotency_key_prefix: 'idk', payload_hash_prefix: 'ph', response_status: 200, response_body_size: 10, created_at_ms: 1 }] });
+
+    render(AdminApp);
+    await fireEvent.click(await screen.findByRole('button', { name: 'reset requests' }));
+    expect(await screen.findByText('Request ID')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'licenses' }));
+    expect(await screen.findByText('Entitlement Status')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'device bindings' }));
+    expect(await screen.findByText('Fingerprint Summary')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'audit events' }));
+    expect(await screen.findByText('Event Type')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'idempotency' }));
+    expect(await screen.findByText('Idempotency Key')).toBeInTheDocument();
+  });
+
+  it('opens disable modal, requires reason, and sends toggle value', async () => {
+    loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
+    loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, recent_audit_events_24h: 0 });
+    listLicenses.mockResolvedValue({ licenses: [{ license_hash_prefix: 'hash-1', purchaser_email_masked: 'b***@example.com', entitlement_status: 'active', provider: 'gumroad', provider_sale_id: 'sale-1', updated_at_ms: 1, active_device_count: 1, inactive_device_count: 0 }] });
+    disableLicense.mockResolvedValue({ license_hash_prefix: 'hash-1', entitlement_status: 'disabled', deactivate_bindings: false });
+
+    render(AdminApp);
+    await fireEvent.click(await screen.findByRole('button', { name: 'licenses' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Disable License' }));
+
+    expect(screen.getByText('Disable License?')).toBeInTheDocument();
+    await fireEvent.input(screen.getByLabelText('Reason for disabling'), { target: { value: 'fraud' } });
+    await fireEvent.click(screen.getByLabelText('Deactivate active device bindings now'));
+    const disableButtons = screen.getAllByRole('button', { name: 'Disable License' });
+    await fireEvent.click(disableButtons[disableButtons.length - 1]);
+
+    await waitFor(() => expect(disableLicense).toHaveBeenCalledWith('hash-1', 'fraud', false));
   });
 });

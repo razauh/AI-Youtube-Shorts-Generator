@@ -15,6 +15,7 @@ fn main() {
             shorts_tauri_app::commands::admin::admin_list_reset_requests,
             shorts_tauri_app::commands::admin::admin_approve_reset_request,
             shorts_tauri_app::commands::admin::admin_reject_reset_request,
+            shorts_tauri_app::commands::admin::admin_disable_license,
         ])
         .run(tauri::generate_context!("tauri.admin.conf.json"))
         .expect("error while running admin desktop application");

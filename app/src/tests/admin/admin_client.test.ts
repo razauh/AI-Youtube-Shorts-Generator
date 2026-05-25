@@ -59,7 +59,8 @@ describe('adminClient', () => {
       listLicenses,
       listDeviceBindings,
       listAuditEvents,
-      listIdempotencyRecords
+      listIdempotencyRecords,
+      disableLicense
     } = await import('../../admin/lib/adminClient');
 
     await loadOverview();
@@ -67,6 +68,7 @@ describe('adminClient', () => {
     await listDeviceBindings({ q: 'dev_', status: 'active', licenseHashPrefix: 'abc123', limit: 15 });
     await listAuditEvents({ eventType: 'gumroad_sale_verified', actor: 'gumroad', limit: 20 });
     await listIdempotencyRecords({ op: 'reset_request', limit: 5 });
+    await disableLicense(' hash123 ', ' abuse ', true);
 
     expect(invoke).toHaveBeenNthCalledWith(1, 'admin_overview', undefined);
     expect(invoke).toHaveBeenNthCalledWith(2, 'admin_list_licenses', {
@@ -89,6 +91,11 @@ describe('adminClient', () => {
     expect(invoke).toHaveBeenNthCalledWith(5, 'admin_list_idempotency_records', {
       op: 'reset_request',
       limit: 5
+    });
+    expect(invoke).toHaveBeenNthCalledWith(6, 'admin_disable_license', {
+      licenseHashPrefix: 'hash123',
+      reason: 'abuse',
+      deactivateBindings: true
     });
   });
 });
