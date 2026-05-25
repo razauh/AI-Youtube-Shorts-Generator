@@ -7,16 +7,38 @@ MAIN_GRAPH="$OUT_DIR/graph.json"
 MERGED_GRAPH="$OUT_DIR/merged-graph.json"
 TMP_MERGED="$OUT_DIR/.merged-graph.tmp.json"
 SPLIT_MERGE_SCRIPT="$ROOT_DIR/scripts/graphify_split_merge.py"
+GRAPHIFY_BIN="$(command -v graphify)"
+PYTHON_BIN="${PYTHON_BIN:-}"
 
 cd "$ROOT_DIR"
 
-if ! command -v graphify >/dev/null 2>&1; then
+if [[ -z "$GRAPHIFY_BIN" ]]; then
   echo "Error: graphify command not found in PATH." >&2
   exit 1
 fi
 
 if [[ ! -f "$SPLIT_MERGE_SCRIPT" ]]; then
   echo "Error: expected split/merge pass script at $SPLIT_MERGE_SCRIPT." >&2
+  exit 1
+fi
+
+if [[ -z "$PYTHON_BIN" ]]; then
+  SHEBANG="$(head -n 1 "$GRAPHIFY_BIN" 2>/dev/null || true)"
+  if [[ "$SHEBANG" == '#!'* ]]; then
+    CANDIDATE="${SHEBANG#\#!}"
+    CANDIDATE="${CANDIDATE%% *}"
+    if [[ -x "$CANDIDATE" ]]; then
+      PYTHON_BIN="$CANDIDATE"
+    fi
+  fi
+fi
+
+if [[ -z "$PYTHON_BIN" ]]; then
+  PYTHON_BIN="python3"
+fi
+
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1 && [[ ! -x "$PYTHON_BIN" ]]; then
+  echo "Error: python runtime not found: $PYTHON_BIN" >&2
   exit 1
 fi
 
@@ -29,14 +51,22 @@ if [[ ! -f "$MAIN_GRAPH" ]]; then
 fi
 
 echo "[update_graphify] Pass 2/3: dependency/relationship scope build + merged graph"
-"$SPLIT_MERGE_SCRIPT"
+"$PYTHON_BIN" "$SPLIT_MERGE_SCRIPT"
 
 if [[ ! -f "$MERGED_GRAPH" ]]; then
   echo "Error: expected merged graph at $MERGED_GRAPH after split/merge pass." >&2
   exit 1
 fi
 
-echo "[update_graphify] Pass 3/3: semantic summary/community analysis refresh"
+echo "[update_graphify] Pass 3/3: semantic pending check + community analysis"
+if ! graphify check-update .; then
+  echo "[update_graphify] Warning: semantic pending check command failed; continuing with clustering." >&2
+fi
+
+if [[ -f "$OUT_DIR/needs_update" ]]; then
+  echo "[update_graphify] Semantic/doc changes are pending. Run '/graphify --update' in your AI assistant to refresh non-code semantics."
+fi
+
 graphify cluster-only .
 
 mkdir -p "$OUT_DIR"
