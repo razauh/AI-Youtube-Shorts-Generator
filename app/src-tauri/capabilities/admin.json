@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "admin",
+  "description": "Admin reset queue desktop permissions.",
+  "windows": ["admin"],
+  "permissions": ["core:default"]
+}

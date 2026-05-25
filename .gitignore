@@ -71,7 +71,11 @@ genetrate_shorts/
 docs/WEBHOOK_VERIFICATION_NOTES.md
 scripts/graphify_split_merge.py
 .script/
-.scripts/
+/.scripts/
+!/.scripts/
+/.scripts/*
+!/.scripts/run-admin-desktop-validation.sh
+app/.scripts/
 .opencode/
 app/.opencode/
 app/src-tauri/bundled-runtime/site-packages
