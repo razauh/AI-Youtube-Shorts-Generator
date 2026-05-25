@@ -169,6 +169,17 @@ button:focus-visible {
   flex-wrap: wrap;
 }
 
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.tabs button.active {
+  border-color: rgba(143, 227, 157, 0.5);
+  background: rgba(143, 227, 157, 0.25);
+}
+
 .toolbar {
   display: flex;
   justify-content: space-between;
@@ -208,6 +219,27 @@ button:focus-visible {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1rem;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.8rem;
+}
+
+.metrics article {
+  border-radius: 16px;
+  padding: 0.9rem;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.metrics h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.9rem;
+}
+
+.metrics strong {
+  font-size: 1.5rem;
 }
 
 .request-table {
@@ -308,6 +340,14 @@ button:focus-visible {
 .decision-modal {
   display: grid;
   gap: 1rem;
+}
+
+pre {
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: rgba(5, 12, 8, 0.72);
+  overflow: auto;
 }
 
 @media (max-width: 960px) {

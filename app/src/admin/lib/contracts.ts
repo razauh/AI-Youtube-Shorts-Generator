@@ -29,6 +29,74 @@ export interface AdminResetDecisionData {
   license_state: LicenseState;
 }
 
+export interface AdminOverviewData {
+  total_licenses: number;
+  entitlement_counts: Record<string, number>;
+  device_binding_counts: Record<string, number>;
+  reset_request_counts: Record<string, number>;
+  recent_audit_events_24h: number;
+}
+
+export interface AdminLicenseItem {
+  license_hash_prefix: string;
+  purchaser_email_masked: string;
+  entitlement_status: string;
+  provider: string | null;
+  provider_sale_id: string | null;
+  updated_at_ms: number;
+  active_device_count: number;
+  inactive_device_count: number;
+}
+
+export interface AdminLicenseListData {
+  licenses: AdminLicenseItem[];
+}
+
+export interface FingerprintSummary {
+  os_name: string | null;
+  platform_family: string | null;
+  arch: string | null;
+  app_version: string | null;
+}
+
+export interface AdminDeviceBindingItem {
+  device_id: string;
+  status: string;
+  license_hash_prefix: string;
+  updated_at_ms: number;
+  purchaser_email_masked: string;
+  public_key_prefix: string;
+  fingerprint_summary: FingerprintSummary;
+}
+
+export interface AdminDeviceBindingListData {
+  bindings: AdminDeviceBindingItem[];
+}
+
+export interface AdminAuditEventItem {
+  event_type: string;
+  actor: string | null;
+  created_at_ms: number;
+  metadata_summary: Record<string, unknown>;
+}
+
+export interface AdminAuditEventListData {
+  events: AdminAuditEventItem[];
+}
+
+export interface AdminIdempotencyRecordItem {
+  op: string;
+  idempotency_key_prefix: string;
+  payload_hash_prefix: string;
+  response_status: number;
+  response_body_size: number;
+  created_at_ms: number;
+}
+
+export interface AdminIdempotencyRecordListData {
+  records: AdminIdempotencyRecordItem[];
+}
+
 export interface AdminCommandError {
   code: string;
   message: string;

@@ -1,5 +1,10 @@
 import type {
   AdminConfigView,
+  AdminOverviewData,
+  AdminLicenseListData,
+  AdminDeviceBindingListData,
+  AdminAuditEventListData,
+  AdminIdempotencyRecordListData,
   AdminResetDecisionData,
   AdminResetListData,
   ResetRequestStatus
@@ -35,8 +40,62 @@ export function clearAdminConfig(): Promise<AdminConfigView> {
   return invoke<AdminConfigView>('admin_config_clear');
 }
 
-export function testAdminConnection(): Promise<AdminResetListData> {
-  return invoke<AdminResetListData>('admin_test_connection');
+export function testAdminConnection(): Promise<AdminOverviewData> {
+  return invoke<AdminOverviewData>('admin_test_connection');
+}
+
+export function loadOverview(): Promise<AdminOverviewData> {
+  return invoke<AdminOverviewData>('admin_overview');
+}
+
+export function listLicenses(filters: {
+  q?: string;
+  entitlementStatus?: string;
+  provider?: string;
+  limit?: number;
+}): Promise<AdminLicenseListData> {
+  return invoke<AdminLicenseListData>('admin_list_licenses', {
+    q: filters.q?.trim() || null,
+    entitlementStatus: filters.entitlementStatus?.trim() || null,
+    provider: filters.provider?.trim() || null,
+    limit: filters.limit ?? null
+  });
+}
+
+export function listDeviceBindings(filters: {
+  q?: string;
+  status?: string;
+  licenseHashPrefix?: string;
+  limit?: number;
+}): Promise<AdminDeviceBindingListData> {
+  return invoke<AdminDeviceBindingListData>('admin_list_device_bindings', {
+    q: filters.q?.trim() || null,
+    status: filters.status?.trim() || null,
+    licenseHashPrefix: filters.licenseHashPrefix?.trim() || null,
+    limit: filters.limit ?? null
+  });
+}
+
+export function listAuditEvents(filters: {
+  eventType?: string;
+  actor?: string;
+  limit?: number;
+}): Promise<AdminAuditEventListData> {
+  return invoke<AdminAuditEventListData>('admin_list_audit_events', {
+    eventType: filters.eventType?.trim() || null,
+    actor: filters.actor?.trim() || null,
+    limit: filters.limit ?? null
+  });
+}
+
+export function listIdempotencyRecords(filters: {
+  op?: string;
+  limit?: number;
+}): Promise<AdminIdempotencyRecordListData> {
+  return invoke<AdminIdempotencyRecordListData>('admin_list_idempotency_records', {
+    op: filters.op?.trim() || null,
+    limit: filters.limit ?? null
+  });
 }
 
 export function listResetRequests(status: ResetRequestStatus): Promise<AdminResetListData> {

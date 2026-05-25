@@ -9,6 +9,11 @@ const rejectResetRequest = vi.fn();
 const saveAdminConfig = vi.fn();
 const clearAdminConfig = vi.fn();
 const testAdminConnection = vi.fn();
+const loadOverview = vi.fn();
+const listLicenses = vi.fn();
+const listDeviceBindings = vi.fn();
+const listAuditEvents = vi.fn();
+const listIdempotencyRecords = vi.fn();
 
 vi.mock('../../admin/lib/adminClient', () => ({
   loadAdminConfig: (...args: unknown[]) => loadAdminConfig(...args),
@@ -17,7 +22,12 @@ vi.mock('../../admin/lib/adminClient', () => ({
   rejectResetRequest: (...args: unknown[]) => rejectResetRequest(...args),
   saveAdminConfig: (...args: unknown[]) => saveAdminConfig(...args),
   clearAdminConfig: (...args: unknown[]) => clearAdminConfig(...args),
-  testAdminConnection: (...args: unknown[]) => testAdminConnection(...args)
+  testAdminConnection: (...args: unknown[]) => testAdminConnection(...args),
+  loadOverview: (...args: unknown[]) => loadOverview(...args),
+  listLicenses: (...args: unknown[]) => listLicenses(...args),
+  listDeviceBindings: (...args: unknown[]) => listDeviceBindings(...args),
+  listAuditEvents: (...args: unknown[]) => listAuditEvents(...args),
+  listIdempotencyRecords: (...args: unknown[]) => listIdempotencyRecords(...args)
 }));
 
 const pendingRequest = {
@@ -51,6 +61,11 @@ describe('AdminApp', () => {
     saveAdminConfig.mockReset();
     clearAdminConfig.mockReset();
     testAdminConnection.mockReset();
+    loadOverview.mockReset();
+    listLicenses.mockReset();
+    listDeviceBindings.mockReset();
+    listAuditEvents.mockReset();
+    listIdempotencyRecords.mockReset();
     AdminApp = (await import('../../admin/AdminApp.svelte')).default;
   });
 
@@ -68,10 +83,12 @@ describe('AdminApp', () => {
 
   it('shows approve and reject only for pending requests', async () => {
     loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
+    loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, recent_audit_events_24h: 0 });
     listResetRequests.mockResolvedValue({ requests: [pendingRequest, approvedRequest] });
 
     render(AdminApp);
 
+    await fireEvent.click(await screen.findByRole('button', { name: 'reset requests' }));
     expect(await screen.findByText('reset-pending')).toBeInTheDocument();
     expect(screen.getByText('reset-approved')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
@@ -81,15 +98,31 @@ describe('AdminApp', () => {
 
   it('confirms approve actions and sends the optional reason', async () => {
     loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
+    loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, recent_audit_events_24h: 0 });
     listResetRequests.mockResolvedValue({ requests: [pendingRequest] });
     approveResetRequest.mockResolvedValue({ reset_request_id: 'reset-pending', status: 'approved', license_state: 'UNBOUND' });
 
     render(AdminApp);
 
+    await fireEvent.click(await screen.findByRole('button', { name: 'reset requests' }));
     await fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
     await fireEvent.input(screen.getByLabelText('Optional reason'), { target: { value: 'verified by support' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Confirm approve' }));
 
     await waitFor(() => expect(approveResetRequest).toHaveBeenCalledWith('reset-pending', 'verified by support'));
+  });
+
+  it('loads overview by default and allows section switching', async () => {
+    loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
+    loadOverview.mockResolvedValue({ total_licenses: 8, entitlement_counts: {}, device_binding_counts: { active: 2 }, reset_request_counts: { pending: 1 }, recent_audit_events_24h: 3 });
+    listLicenses.mockResolvedValue({ licenses: [] });
+
+    render(AdminApp);
+
+    expect(await screen.findByText('Total licenses')).toBeInTheDocument();
+    expect(screen.getByText('8')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'licenses' }));
+    await waitFor(() => expect(listLicenses).toHaveBeenCalled());
   });
 });

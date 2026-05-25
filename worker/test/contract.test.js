@@ -37,6 +37,12 @@ class MockStatement {
   }
 
   async first() {
+    if (this.sql.includes('COUNT(*) AS count FROM licenses')) {
+      return { count: this.db.licenses.size };
+    }
+    if (this.sql.includes('COUNT(*) AS count FROM audit_events')) {
+      return { count: this.db.auditEvents.length };
+    }
     if (this.sql.includes('FROM idempotency_records')) {
       const [op, key] = this.args;
       return this.db.idempotency.get(`${op}:${key}`) ?? null;
@@ -57,10 +63,72 @@ class MockStatement {
   }
 
   async all() {
+    if (this.sql.includes('FROM licenses GROUP BY entitlement_status')) {
+      const counts = new Map();
+      for (const row of this.db.licenses.values()) {
+        const key = String(row.entitlement_status || 'unknown').toLowerCase();
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+      return { results: Array.from(counts.entries()).map(([key, count]) => ({ key, count })) };
+    }
+    if (this.sql.includes('FROM device_bindings GROUP BY status')) {
+      const counts = new Map();
+      for (const row of this.db.deviceBindings.values()) {
+        const key = String(row.status || 'unknown').toLowerCase();
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+      return { results: Array.from(counts.entries()).map(([key, count]) => ({ key, count })) };
+    }
+    if (this.sql.includes('FROM reset_requests GROUP BY status')) {
+      const counts = new Map();
+      for (const row of this.db.resetRequests.values()) {
+        const key = String(row.status || 'unknown').toLowerCase();
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+      return { results: Array.from(counts.entries()).map(([key, count]) => ({ key, count })) };
+    }
     if (this.sql.includes('FROM reset_requests')) {
       const [status] = this.args;
       return {
         results: Array.from(this.db.resetRequests.values()).filter((row) => row.status === status),
+      };
+    }
+    if (this.sql.includes('FROM licenses l')) {
+      return {
+        results: Array.from(this.db.licenses.values()).map((row) => {
+          const bindings = Array.from(this.db.deviceBindings.values()).filter((it) => it.license_key_hash === row.license_key_hash);
+          return {
+            ...row,
+            active_device_count: bindings.filter((it) => it.status === 'active').length,
+            inactive_device_count: bindings.filter((it) => it.status !== 'active').length,
+          };
+        }),
+      };
+    }
+    if (this.sql.includes('FROM device_bindings db')) {
+      return {
+        results: Array.from(this.db.deviceBindings.values()).map((row) => ({
+          ...row,
+          purchaser_email: this.db.licenses.get(row.license_key_hash)?.purchaser_email ?? null,
+        })),
+      };
+    }
+    if (this.sql.includes('FROM audit_events')) {
+      return { results: this.db.auditEvents.slice() };
+    }
+    if (this.sql.includes('FROM idempotency_records')) {
+      return {
+        results: Array.from(this.db.idempotency.entries()).map(([key, row]) => {
+          const [op, idempotencyKey] = key.split(':');
+          return {
+            op,
+            idempotency_key: idempotencyKey,
+            payload_hash: row.payload_hash,
+            response_status: row.response_status,
+            response_body: row.response_body,
+            created_at_ms: 1,
+          };
+        }),
       };
     }
     return { results: [] };
@@ -278,6 +346,80 @@ test('admin lists pending reset requests without raw purchaser email', async () 
   assert.equal(json.data.requests[0].has_license_hash, true);
   assert.equal(json.data.requests[0].purchaser_email, 'b***@example.com');
   assert.equal(JSON.stringify(json).includes('buyer@example.com'), false);
+});
+
+test('admin overview returns aggregate counts', async () => {
+  const db = new MockD1Database();
+  db.licenses.set('hash-1', {
+    license_key_hash: 'hash-1',
+    purchaser_email: 'buyer@example.com',
+    entitlement_status: 'active',
+    provider: 'gumroad',
+    provider_sale_id: 'sale_1',
+    updated_at_ms: 1,
+  });
+  db.resetRequests.set('reset-1', {
+    request_id: 'reset-1',
+    license_key_hash: 'hash-1',
+    masked_license_key: '••••-1111',
+    purchaser_email: 'buyer@example.com',
+    status: 'pending',
+    created_at_ms: 1,
+    updated_at_ms: 1,
+  });
+  const res = await call('/v1/admin/overview', {
+    method: 'GET',
+    headers: { authorization: 'Bearer admin-secret' },
+    env: { DB: db, ADMIN_API_TOKEN: 'admin-secret' },
+  });
+  assert.equal(res.status, 200);
+  const json = await res.json();
+  assert.equal(json.ok, true);
+  assert.equal(json.data.total_licenses, 1);
+  assert.equal(json.data.reset_request_counts.pending, 1);
+});
+
+test('admin licenses endpoint masks email and returns prefixes', async () => {
+  const db = new MockD1Database();
+  const licenseHashFixture = 'test-license-hash-fixture';
+  db.licenses.set(licenseHashFixture, {
+    license_key_hash: licenseHashFixture,
+    purchaser_email: 'buyer@example.com',
+    entitlement_status: 'active',
+    provider: 'gumroad',
+    provider_sale_id: 'sale_1',
+    updated_at_ms: 1,
+  });
+  const res = await call('/v1/admin/licenses?limit=10', {
+    method: 'GET',
+    headers: { authorization: 'Bearer admin-secret' },
+    env: { DB: db, ADMIN_API_TOKEN: 'admin-secret' },
+  });
+  assert.equal(res.status, 200);
+  const json = await res.json();
+  assert.equal(json.ok, true);
+  assert.equal(json.data.licenses[0].license_hash_prefix, 'test-license');
+  assert.equal(json.data.licenses[0].purchaser_email_masked, 'b***@example.com');
+  assert.equal(JSON.stringify(json).includes('buyer@example.com'), false);
+});
+
+test('admin audit events endpoint redacts email-like metadata', async () => {
+  const db = new MockD1Database();
+  db.auditEvents.push({
+    event_type: 'gumroad_sale_verified',
+    actor: 'gumroad',
+    metadata_json: JSON.stringify({ email: 'buyer@example.com', sale_id: 'sale_1' }),
+    created_at_ms: 1,
+  });
+  const res = await call('/v1/admin/audit-events?limit=10', {
+    method: 'GET',
+    headers: { authorization: 'Bearer admin-secret' },
+    env: { DB: db, ADMIN_API_TOKEN: 'admin-secret' },
+  });
+  assert.equal(res.status, 200);
+  const json = await res.json();
+  assert.equal(json.ok, true);
+  assert.equal(json.data.events[0].metadata_summary.email, 'b***@example.com');
 });
 
 test('admin approve reset unbinds active device and idempotently replays', async () => {

@@ -13,6 +13,11 @@ import {
   listResetRequestsByStatus,
   updateResetRequestStatus,
   deactivateDeviceBindingsByLicenseHash,
+  getAdminOverviewCounts,
+  listAdminLicenses,
+  listAdminDeviceBindings,
+  listAdminAuditEvents,
+  listAdminIdempotencyRecords,
 } from "./store.js";
 
 export default {
@@ -39,6 +44,21 @@ export default {
     }
     if (method === "GET" && path === "/v1/admin/reset/requests") {
       return handleAdminListResetRequests(request, env);
+    }
+    if (method === "GET" && path === "/v1/admin/overview") {
+      return handleAdminOverview(request, env);
+    }
+    if (method === "GET" && path === "/v1/admin/licenses") {
+      return handleAdminLicenses(request, env);
+    }
+    if (method === "GET" && path === "/v1/admin/device-bindings") {
+      return handleAdminDeviceBindings(request, env);
+    }
+    if (method === "GET" && path === "/v1/admin/audit-events") {
+      return handleAdminAuditEvents(request, env);
+    }
+    if (method === "GET" && path === "/v1/admin/idempotency-records") {
+      return handleAdminIdempotencyRecords(request, env);
     }
     if (method === "POST" && path === "/v1/admin/reset/approve") {
       return handleAdminResetDecision(request, env, "approved");
@@ -434,6 +454,155 @@ async function handleAdminResetDecision(request, env, decision) {
   return response;
 }
 
+async function handleAdminOverview(request, env) {
+  const rid = requestId();
+  const auth = requireAdminAuth(request, env, rid);
+  if (auth) return auth;
+  if (!env?.DB) {
+    return err("storage", "D1 database binding is not configured.", rid, false, 503);
+  }
+  try {
+    return ok(await getAdminOverviewCounts(env.DB));
+  } catch {
+    return err("storage", "Failed to load overview.", rid, true, 503);
+  }
+}
+
+async function handleAdminLicenses(request, env) {
+  const rid = requestId();
+  const auth = requireAdminAuth(request, env, rid);
+  if (auth) return auth;
+  if (!env?.DB) {
+    return err("storage", "D1 database binding is not configured.", rid, false, 503);
+  }
+  const url = new URL(request.url);
+  const q = asOptionalString(url.searchParams.get("q"));
+  const entitlementStatus = asOptionalString(url.searchParams.get("entitlement_status"));
+  const provider = asOptionalString(url.searchParams.get("provider"));
+  const limit = parseLimit(url.searchParams.get("limit"), 25, 100);
+  if (!limit.ok) return err("bad_request", limit.message, rid, false, 400);
+  try {
+    const rows = await listAdminLicenses(env.DB, {
+      q,
+      entitlementStatus,
+      provider,
+      limit: limit.value,
+    });
+    return ok({
+      licenses: rows.map((row) => ({
+        license_hash_prefix: hashPrefix(row.license_key_hash),
+        purchaser_email_masked: maskEmail(row.purchaser_email),
+        entitlement_status: row.entitlement_status,
+        provider: row.provider || null,
+        provider_sale_id: row.provider_sale_id || null,
+        updated_at_ms: row.updated_at_ms,
+        active_device_count: Number(row.active_device_count || 0),
+        inactive_device_count: Number(row.inactive_device_count || 0),
+      })),
+    });
+  } catch {
+    return err("storage", "Failed to load licenses.", rid, true, 503);
+  }
+}
+
+async function handleAdminDeviceBindings(request, env) {
+  const rid = requestId();
+  const auth = requireAdminAuth(request, env, rid);
+  if (auth) return auth;
+  if (!env?.DB) {
+    return err("storage", "D1 database binding is not configured.", rid, false, 503);
+  }
+  const url = new URL(request.url);
+  const q = asOptionalString(url.searchParams.get("q"));
+  const status = asOptionalString(url.searchParams.get("status"));
+  if (status && !["active", "inactive"].includes(status.toLowerCase())) {
+    return err("bad_request", "Invalid device binding status filter.", rid, false, 400);
+  }
+  const licenseHashPrefix = asOptionalString(url.searchParams.get("license_hash_prefix"));
+  const limit = parseLimit(url.searchParams.get("limit"), 25, 100);
+  if (!limit.ok) return err("bad_request", limit.message, rid, false, 400);
+  try {
+    const rows = await listAdminDeviceBindings(env.DB, {
+      q,
+      status,
+      licenseHashPrefix,
+      limit: limit.value,
+    });
+    return ok({
+      bindings: rows.map((row) => ({
+        device_id: row.device_id,
+        status: row.status,
+        license_hash_prefix: hashPrefix(row.license_key_hash),
+        updated_at_ms: row.updated_at_ms,
+        purchaser_email_masked: maskEmail(row.purchaser_email),
+        public_key_prefix: keyPrefix(row.public_key),
+        fingerprint_summary: summarizeFingerprint(row.fingerprint_json),
+      })),
+    });
+  } catch {
+    return err("storage", "Failed to load device bindings.", rid, true, 503);
+  }
+}
+
+async function handleAdminAuditEvents(request, env) {
+  const rid = requestId();
+  const auth = requireAdminAuth(request, env, rid);
+  if (auth) return auth;
+  if (!env?.DB) {
+    return err("storage", "D1 database binding is not configured.", rid, false, 503);
+  }
+  const url = new URL(request.url);
+  const eventType = asOptionalString(url.searchParams.get("event_type"));
+  const actor = asOptionalString(url.searchParams.get("actor"));
+  const limit = parseLimit(url.searchParams.get("limit"), 25, 100);
+  if (!limit.ok) return err("bad_request", limit.message, rid, false, 400);
+  try {
+    const rows = await listAdminAuditEvents(env.DB, {
+      eventType,
+      actor,
+      limit: limit.value,
+    });
+    return ok({
+      events: rows.map((row) => ({
+        event_type: row.event_type,
+        actor: row.actor || null,
+        created_at_ms: row.created_at_ms,
+        metadata_summary: summarizeAuditMetadata(row.metadata_json),
+      })),
+    });
+  } catch {
+    return err("storage", "Failed to load audit events.", rid, true, 503);
+  }
+}
+
+async function handleAdminIdempotencyRecords(request, env) {
+  const rid = requestId();
+  const auth = requireAdminAuth(request, env, rid);
+  if (auth) return auth;
+  if (!env?.DB) {
+    return err("storage", "D1 database binding is not configured.", rid, false, 503);
+  }
+  const url = new URL(request.url);
+  const op = asOptionalString(url.searchParams.get("op"));
+  const limit = parseLimit(url.searchParams.get("limit"), 25, 100);
+  if (!limit.ok) return err("bad_request", limit.message, rid, false, 400);
+  try {
+    const rows = await listAdminIdempotencyRecords(env.DB, { op, limit: limit.value });
+    return ok({
+      records: rows.map((row) => ({
+        op: row.op,
+        idempotency_key_prefix: keyPrefix(row.idempotency_key),
+        payload_hash_prefix: hashPrefix(row.payload_hash),
+        response_status: row.response_status,
+        response_body_size: String(row.response_body || "").length,
+        created_at_ms: row.created_at_ms,
+      })),
+    });
+  } catch {
+    return err("storage", "Failed to load idempotency records.", rid, true, 503);
+  }
+}
+
 async function handleGumroadWebhook(request, env) {
   const rid = requestId();
   const contentType = request.headers.get("content-type") || "";
@@ -668,6 +837,84 @@ function maskEmail(value) {
   if (!local || !domain) return "";
   const prefix = local.slice(0, 1);
   return `${prefix}***@${domain}`;
+}
+
+function hashPrefix(value) {
+  const input = String(value || "");
+  if (!input) return null;
+  return input.slice(0, 12);
+}
+
+function keyPrefix(value) {
+  const input = String(value || "");
+  if (!input) return null;
+  return `${input.slice(0, 12)}...`;
+}
+
+function asOptionalString(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function parseLimit(value, fallback, max) {
+  if (value == null || String(value).trim() === "") {
+    return { ok: true, value: fallback };
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0 || parsed > max) {
+    return { ok: false, message: `limit must be an integer between 1 and ${max}.` };
+  }
+  return { ok: true, value: parsed };
+}
+
+function summarizeFingerprint(fingerprintJson) {
+  try {
+    const parsed = JSON.parse(String(fingerprintJson || "{}"));
+    return {
+      os_name: asOptionalString(parsed.os_name) || null,
+      platform_family: asOptionalString(parsed.platform_family) || null,
+      arch: asOptionalString(parsed.arch) || null,
+      app_version: asOptionalString(parsed.app_version) || null,
+    };
+  } catch {
+    return {
+      os_name: null,
+      platform_family: null,
+      arch: null,
+      app_version: null,
+    };
+  }
+}
+
+function summarizeAuditMetadata(metadataJson) {
+  let parsed = {};
+  try {
+    parsed = JSON.parse(String(metadataJson || "{}"));
+  } catch {
+    return { invalid_json: true };
+  }
+  const summary = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (key.toLowerCase().includes("email")) {
+      summary[key] = maskEmail(value);
+      continue;
+    }
+    if (typeof value === "string") {
+      summary[key] = value.length > 80 ? `${value.slice(0, 80)}...` : value;
+      continue;
+    }
+    if (typeof value === "number" || typeof value === "boolean") {
+      summary[key] = value;
+      continue;
+    }
+    if (value === null) {
+      summary[key] = null;
+      continue;
+    }
+    summary[key] = "[redacted]";
+  }
+  return summary;
 }
 
 function requireAdminAuth(request, env, requestIdValue) {

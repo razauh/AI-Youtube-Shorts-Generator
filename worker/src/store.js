@@ -236,3 +236,151 @@ export async function deactivateDeviceBindingsByLicenseHash(db, licenseKeyHash, 
     .bind(updatedAtMs, licenseKeyHash)
     .run();
 }
+
+export async function getAdminOverviewCounts(db) {
+  const queries = [
+    db.prepare("SELECT COUNT(*) AS count FROM licenses").first(),
+    db.prepare("SELECT entitlement_status AS key, COUNT(*) AS count FROM licenses GROUP BY entitlement_status").all(),
+    db.prepare("SELECT status AS key, COUNT(*) AS count FROM device_bindings GROUP BY status").all(),
+    db.prepare("SELECT status AS key, COUNT(*) AS count FROM reset_requests GROUP BY status").all(),
+    db.prepare("SELECT COUNT(*) AS count FROM audit_events WHERE created_at_ms >= ?").bind(Date.now() - 86_400_000).first(),
+  ];
+  const [licensesTotal, entitlementRows, deviceRows, resetRows, recentAuditCount] = await Promise.all(queries);
+  return {
+    total_licenses: Number(licensesTotal?.count || 0),
+    entitlement_counts: normalizeCountRows(entitlementRows),
+    device_binding_counts: normalizeCountRows(deviceRows),
+    reset_request_counts: normalizeCountRows(resetRows),
+    recent_audit_events_24h: Number(recentAuditCount?.count || 0),
+  };
+}
+
+export async function listAdminLicenses(db, { q, entitlementStatus, provider, limit }) {
+  const where = [];
+  const args = [];
+  if (q) {
+    where.push("(LOWER(purchaser_email) LIKE ? OR LOWER(provider_sale_id) LIKE ? OR LOWER(license_key_hash) LIKE ?)");
+    args.push(`%${q.toLowerCase()}%`, `%${q.toLowerCase()}%`, `${q.toLowerCase()}%`);
+  }
+  if (entitlementStatus) {
+    where.push("LOWER(entitlement_status) = ?");
+    args.push(entitlementStatus.toLowerCase());
+  }
+  if (provider) {
+    where.push("LOWER(provider) = ?");
+    args.push(provider.toLowerCase());
+  }
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+  const sql = `SELECT
+      l.license_key_hash,
+      l.purchaser_email,
+      l.entitlement_status,
+      l.provider,
+      l.provider_sale_id,
+      l.updated_at_ms,
+      COALESCE(SUM(CASE WHEN db.status = 'active' THEN 1 ELSE 0 END), 0) AS active_device_count,
+      COALESCE(SUM(CASE WHEN db.status = 'inactive' THEN 1 ELSE 0 END), 0) AS inactive_device_count
+    FROM licenses l
+    LEFT JOIN device_bindings db ON db.license_key_hash = l.license_key_hash
+    ${whereSql}
+    GROUP BY l.license_key_hash, l.purchaser_email, l.entitlement_status, l.provider, l.provider_sale_id, l.updated_at_ms
+    ORDER BY l.updated_at_ms DESC
+    LIMIT ?`;
+  const result = await db.prepare(sql).bind(...args, limit).all();
+  return normalizeRows(result);
+}
+
+export async function listAdminDeviceBindings(db, { q, status, licenseHashPrefix, limit }) {
+  const where = [];
+  const args = [];
+  if (q) {
+    where.push("(LOWER(db.device_id) LIKE ? OR LOWER(db.license_key_hash) LIKE ? OR LOWER(l.purchaser_email) LIKE ?)");
+    args.push(`%${q.toLowerCase()}%`, `${q.toLowerCase()}%`, `%${q.toLowerCase()}%`);
+  }
+  if (status) {
+    where.push("LOWER(db.status) = ?");
+    args.push(status.toLowerCase());
+  }
+  if (licenseHashPrefix) {
+    where.push("LOWER(db.license_key_hash) LIKE ?");
+    args.push(`${licenseHashPrefix.toLowerCase()}%`);
+  }
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+  const sql = `SELECT
+      db.device_id,
+      db.license_key_hash,
+      db.public_key,
+      db.fingerprint_json,
+      db.status,
+      db.updated_at_ms,
+      l.purchaser_email
+    FROM device_bindings db
+    LEFT JOIN licenses l ON l.license_key_hash = db.license_key_hash
+    ${whereSql}
+    ORDER BY db.updated_at_ms DESC
+    LIMIT ?`;
+  const result = await db.prepare(sql).bind(...args, limit).all();
+  return normalizeRows(result);
+}
+
+export async function listAdminAuditEvents(db, { eventType, actor, limit }) {
+  const where = [];
+  const args = [];
+  if (eventType) {
+    where.push("LOWER(event_type) = ?");
+    args.push(eventType.toLowerCase());
+  }
+  if (actor) {
+    where.push("LOWER(actor) = ?");
+    args.push(actor.toLowerCase());
+  }
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+  const result = await db
+    .prepare(
+      `SELECT event_type, actor, metadata_json, created_at_ms
+       FROM audit_events
+       ${whereSql}
+       ORDER BY created_at_ms DESC
+       LIMIT ?`,
+    )
+    .bind(...args, limit)
+    .all();
+  return normalizeRows(result);
+}
+
+export async function listAdminIdempotencyRecords(db, { op, limit }) {
+  const where = [];
+  const args = [];
+  if (op) {
+    where.push("LOWER(op) = ?");
+    args.push(op.toLowerCase());
+  }
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+  const result = await db
+    .prepare(
+      `SELECT op, idempotency_key, payload_hash, response_status, response_body, created_at_ms
+       FROM idempotency_records
+       ${whereSql}
+       ORDER BY created_at_ms DESC
+       LIMIT ?`,
+    )
+    .bind(...args, limit)
+    .all();
+  return normalizeRows(result);
+}
+
+function normalizeRows(result) {
+  if (Array.isArray(result)) return result;
+  if (Array.isArray(result?.results)) return result.results;
+  return [];
+}
+
+function normalizeCountRows(result) {
+  const rows = normalizeRows(result);
+  const counts = {};
+  for (const row of rows) {
+    const key = String(row.key || "unknown").toLowerCase();
+    counts[key] = Number(row.count || 0);
+  }
+  return counts;
+}

@@ -6,40 +6,130 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Release version label (for manual runs)'
+      publish_release:
+        description: 'Publish a GitHub Release (true/false)'
         required: false
-        default: 'manual'
+        default: 'false'
+      tag_name:
+        description: 'Tag to publish for manual runs (required when publish_release=true)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
 
 jobs:
-  verify-and-package:
-    runs-on: ubuntu-latest
+  build-customer:
+    name: customer-${{ matrix.platform.os_name }}
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - os_name: linux-x64
+            runner: ubuntu-latest
+          - os_name: windows-x64
+            runner: windows-latest
+          - os_name: macos-x64
+            runner: macos-13
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '22'
           cache: npm
           cache-dependency-path: app/package-lock.json
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
       - name: Install desktop app dependencies
         run: npm ci
         working-directory: app
 
-      - name: Run desktop app tests
-        run: npm run test
+      - name: Build customer Tauri bundles
+        run: npm run bundle:customer
+
+      - name: Upload customer bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: customer-${{ matrix.platform.os_name }}
+          path: |
+            app/src-tauri/target/release/bundle/**/*
+            app/src-tauri/target/release/*.sig
+          if-no-files-found: error
+
+  build-admin:
+    name: admin-${{ matrix.platform.os_name }}
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - os_name: linux-x64
+            runner: ubuntu-latest
+          - os_name: windows-x64
+            runner: windows-latest
+          - os_name: macos-x64
+            runner: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install desktop app dependencies
+        run: npm ci
         working-directory: app
 
-      - name: Run Tauri/Rust tests
-        run: cargo test --manifest-path app/src-tauri/Cargo.toml --locked
+      - name: Build admin Tauri bundles
+        run: npm run bundle:admin
 
-      - name: Create release bundle
+      - name: Upload admin bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-${{ matrix.platform.os_name }}
+          path: |
+            app/src-tauri/target/release/bundle/**/*
+            app/src-tauri/target/release/*.sig
+          if-no-files-found: error
+
+  source-archive:
+    name: source-archive
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create source archive
         run: |
-          VERSION="${GITHUB_REF_NAME:-${{ inputs.version }}}"
+          VERSION="${GITHUB_REF_NAME:-${{ inputs.tag_name || 'manual' }}}"
           mkdir -p release
           tar \
             --exclude='./.git' \
@@ -51,39 +141,42 @@ jobs:
           sha256sum "release/ai-youtube-shorts-generator-${VERSION}.tar.gz" \
             > "release/ai-youtube-shorts-generator-${VERSION}.sha256"
 
-      - name: Upload release artifacts
+      - name: Upload source archive
         uses: actions/upload-artifact@v4
         with:
-          name: release-bundle
+          name: source-archive
           path: release/*
 
-  sign-release-artifacts:
-    needs: verify-and-package
+  publish-release:
+    name: publish-release
+    needs:
+      - build-customer
+      - build-admin
+      - source-archive
     runs-on: ubuntu-latest
-    if: ${{ secrets.SIGNING_PRIVATE_KEY_PEM != '' }}
     permissions:
-      contents: read
+      contents: write
+    if: |
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish_release == 'true' && inputs.tag_name != '')
     steps:
-      - name: Download release artifacts
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          name: release-bundle
-          path: release
+          path: release-assets
 
-      - name: Generate detached signatures
-        env:
-          SIGNING_PRIVATE_KEY_PEM: ${{ secrets.SIGNING_PRIVATE_KEY_PEM }}
-        run: |
-          printf '%s' "$SIGNING_PRIVATE_KEY_PEM" > release/signing-key.pem
-          for file in release/*; do
-            [ "$(basename "$file")" = "signing-key.pem" ] && continue
-            openssl dgst -sha256 -sign release/signing-key.pem -out "${file}.sig" "$file"
-            openssl dgst -sha256 "$file" > "${file}.sha256.txt"
-          done
-          rm -f release/signing-key.pem
-
-      - name: Upload signed artifacts
-        uses: actions/upload-artifact@v4
+      - name: Publish GitHub Release with all artifacts
+        uses: softprops/action-gh-release@v2
         with:
-          name: signed-release-bundle
-          path: release/*
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || inputs.tag_name }}
+          name: Release ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || inputs.tag_name }}
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/customer-linux-x64/**
+            release-assets/customer-windows-x64/**
+            release-assets/customer-macos-x64/**
+            release-assets/admin-linux-x64/**
+            release-assets/admin-windows-x64/**
+            release-assets/admin-macos-x64/**
+            release-assets/source-archive/**

@@ -65,6 +65,94 @@ pub struct AdminResetDecisionData {
     pub license_state: LicenseState,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AdminOverviewData {
+    pub total_licenses: u64,
+    pub entitlement_counts: std::collections::BTreeMap<String, u64>,
+    pub device_binding_counts: std::collections::BTreeMap<String, u64>,
+    pub reset_request_counts: std::collections::BTreeMap<String, u64>,
+    pub recent_audit_events_24h: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AdminLicenseItem {
+    pub license_hash_prefix: String,
+    pub purchaser_email_masked: String,
+    pub entitlement_status: String,
+    pub provider: Option<String>,
+    pub provider_sale_id: Option<String>,
+    pub updated_at_ms: u64,
+    pub active_device_count: u64,
+    pub inactive_device_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AdminLicenseListData {
+    pub licenses: Vec<AdminLicenseItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct FingerprintSummary {
+    pub os_name: Option<String>,
+    pub platform_family: Option<String>,
+    pub arch: Option<String>,
+    pub app_version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AdminDeviceBindingItem {
+    pub device_id: String,
+    pub status: String,
+    pub license_hash_prefix: String,
+    pub updated_at_ms: u64,
+    pub purchaser_email_masked: String,
+    pub public_key_prefix: String,
+    pub fingerprint_summary: FingerprintSummary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AdminDeviceBindingListData {
+    pub bindings: Vec<AdminDeviceBindingItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AdminAuditEventItem {
+    pub event_type: String,
+    pub actor: Option<String>,
+    pub created_at_ms: u64,
+    pub metadata_summary: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AdminAuditEventListData {
+    pub events: Vec<AdminAuditEventItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AdminIdempotencyRecordItem {
+    pub op: String,
+    pub idempotency_key_prefix: String,
+    pub payload_hash_prefix: String,
+    pub response_status: u16,
+    pub response_body_size: usize,
+    pub created_at_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AdminIdempotencyRecordListData {
+    pub records: Vec<AdminIdempotencyRecordItem>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdminConfigView {
@@ -114,6 +202,11 @@ struct AdminConfig {
 enum AdminAction {
     TestConnection,
     List,
+    Overview,
+    Licenses,
+    DeviceBindings,
+    AuditEvents,
+    IdempotencyRecords,
     Approve,
     Reject,
 }
@@ -123,6 +216,11 @@ impl AdminAction {
         match self {
             Self::TestConnection => "test_connection",
             Self::List => "list_reset_requests",
+            Self::Overview => "overview",
+            Self::Licenses => "licenses",
+            Self::DeviceBindings => "device_bindings",
+            Self::AuditEvents => "audit_events",
+            Self::IdempotencyRecords => "idempotency_records",
             Self::Approve => "approve_reset_request",
             Self::Reject => "reject_reset_request",
         }
@@ -404,11 +502,187 @@ pub fn admin_config_clear() -> Result<AdminConfigView, AdminCommandError> {
 }
 
 #[tauri::command]
-pub async fn admin_test_connection() -> Result<AdminResetListData, AdminCommandError> {
-    send_admin_request::<AdminResetListData, ()>(
+pub async fn admin_test_connection() -> Result<AdminOverviewData, AdminCommandError> {
+    send_admin_request::<AdminOverviewData, ()>(
         AdminAction::TestConnection,
         HttpMethod::Get,
-        "/v1/admin/reset/requests?status=pending",
+        "/v1/admin/overview",
+        None,
+        None,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn admin_overview() -> Result<AdminOverviewData, AdminCommandError> {
+    send_admin_request::<AdminOverviewData, ()>(
+        AdminAction::Overview,
+        HttpMethod::Get,
+        "/v1/admin/overview",
+        None,
+        None,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn admin_list_licenses(
+    q: Option<String>,
+    entitlement_status: Option<String>,
+    provider: Option<String>,
+    limit: Option<u32>,
+) -> Result<AdminLicenseListData, AdminCommandError> {
+    let mut query = vec![];
+    if let Some(v) = q.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        query.push(("q", v.to_string()));
+    }
+    if let Some(v) = entitlement_status.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        query.push(("entitlement_status", v.to_string()));
+    }
+    if let Some(v) = provider.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        query.push(("provider", v.to_string()));
+    }
+    if let Some(v) = limit {
+        query.push(("limit", v.to_string()));
+    }
+    let query_string = if query.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "?{}",
+            query
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, encode_query_component(v)))
+                .collect::<Vec<_>>()
+                .join("&")
+        )
+    };
+    let path = format!("/v1/admin/licenses{query_string}");
+    send_admin_request::<AdminLicenseListData, ()>(
+        AdminAction::Licenses,
+        HttpMethod::Get,
+        &path,
+        None,
+        None,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn admin_list_device_bindings(
+    q: Option<String>,
+    status: Option<String>,
+    license_hash_prefix: Option<String>,
+    limit: Option<u32>,
+) -> Result<AdminDeviceBindingListData, AdminCommandError> {
+    let mut query = vec![];
+    if let Some(v) = q.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        query.push(("q", v.to_string()));
+    }
+    if let Some(v) = status.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        query.push(("status", v.to_string()));
+    }
+    if let Some(v) = license_hash_prefix
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        query.push(("license_hash_prefix", v.to_string()));
+    }
+    if let Some(v) = limit {
+        query.push(("limit", v.to_string()));
+    }
+    let query_string = if query.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "?{}",
+            query
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, encode_query_component(v)))
+                .collect::<Vec<_>>()
+                .join("&")
+        )
+    };
+    let path = format!("/v1/admin/device-bindings{query_string}");
+    send_admin_request::<AdminDeviceBindingListData, ()>(
+        AdminAction::DeviceBindings,
+        HttpMethod::Get,
+        &path,
+        None,
+        None,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn admin_list_audit_events(
+    event_type: Option<String>,
+    actor: Option<String>,
+    limit: Option<u32>,
+) -> Result<AdminAuditEventListData, AdminCommandError> {
+    let mut query = vec![];
+    if let Some(v) = event_type.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        query.push(("event_type", v.to_string()));
+    }
+    if let Some(v) = actor.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        query.push(("actor", v.to_string()));
+    }
+    if let Some(v) = limit {
+        query.push(("limit", v.to_string()));
+    }
+    let query_string = if query.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "?{}",
+            query
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, encode_query_component(v)))
+                .collect::<Vec<_>>()
+                .join("&")
+        )
+    };
+    let path = format!("/v1/admin/audit-events{query_string}");
+    send_admin_request::<AdminAuditEventListData, ()>(
+        AdminAction::AuditEvents,
+        HttpMethod::Get,
+        &path,
+        None,
+        None,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn admin_list_idempotency_records(
+    op: Option<String>,
+    limit: Option<u32>,
+) -> Result<AdminIdempotencyRecordListData, AdminCommandError> {
+    let mut query = vec![];
+    if let Some(v) = op.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        query.push(("op", v.to_string()));
+    }
+    if let Some(v) = limit {
+        query.push(("limit", v.to_string()));
+    }
+    let query_string = if query.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "?{}",
+            query
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, encode_query_component(v)))
+                .collect::<Vec<_>>()
+                .join("&")
+        )
+    };
+    let path = format!("/v1/admin/idempotency-records{query_string}");
+    send_admin_request::<AdminIdempotencyRecordListData, ()>(
+        AdminAction::IdempotencyRecords,
+        HttpMethod::Get,
+        &path,
         None,
         None,
     )
@@ -476,6 +750,20 @@ pub async fn admin_reject_reset_request(
         Some(&idempotency_key),
     )
     .await
+}
+
+fn encode_query_component(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for byte in input.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
+            b' ' => out.push('+'),
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
 }
 
 #[cfg(test)]

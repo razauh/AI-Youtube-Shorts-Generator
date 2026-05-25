@@ -60,6 +60,7 @@ pnpm-debug.log*
 .codex/
 graphify-out/
 worker/.wrangler/
+*repomix*.xml
 
 # User-requested ignores
 .codex

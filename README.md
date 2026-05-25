@@ -308,4 +308,23 @@ AI-Youtube-Shorts-Generator/
 Root task runners:
 - `npm run dev`
 - `npm run test`
-- `npm run bundle`
+- `npm run bundle` (customer app)
+- `npm run bundle:customer`
+- `npm run bundle:admin`
+- `npm run bundle:all`
+
+## Release Automation
+
+- GitHub release workflow: `.github/workflows/release.yml`
+- Tag-triggered release publishing uses tags that match `v*` (example: `v0.1.0`).
+- Normal branch pushes do not publish GitHub Releases.
+- Manual runs are supported with `workflow_dispatch`; set `publish_release=true` and provide `tag_name` to publish.
+
+Release workflow builds and uploads artifacts for both desktop apps:
+- Customer app build uses `app/src-tauri/tauri.conf.json`
+- Admin app build uses `app/src-tauri/tauri.admin.conf.json`
+
+Expected artifact groups include clear app/platform names:
+- `customer-linux-x64`, `customer-windows-x64`, `customer-macos-x64`
+- `admin-linux-x64`, `admin-windows-x64`, `admin-macos-x64`
+- `source-archive`
