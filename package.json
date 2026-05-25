@@ -8,8 +8,10 @@
     "worker:test": "npm --prefix worker run test",
     "test:config": "cargo test --manifest-path app/src-tauri/Cargo.toml --test config_tests -- --test-threads=1",
     "test": "npm run test:config && npm --prefix app run test",
-    "bundle:customer": "npm --prefix app run tauri build -- --config src-tauri/tauri.conf.json",
-    "bundle:admin": "npm --prefix app run tauri build -- --config src-tauri/tauri.admin.conf.json",
+    "tauri:dev:customer": "npm --prefix app run tauri:dev:customer",
+    "tauri:dev:admin": "npm --prefix app run tauri:dev:admin",
+    "bundle:customer": "npm --prefix app run tauri:build:customer",
+    "bundle:admin": "npm --prefix app run tauri:build:admin",
     "bundle:all": "npm run bundle:customer && npm run bundle:admin",
     "bundle": "npm run bundle:customer",
     "build": "npm --prefix app run build"

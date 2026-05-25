@@ -76,6 +76,7 @@ scripts/graphify_split_merge.py
 !/.scripts/
 /.scripts/*
 !/.scripts/run-admin-desktop-validation.sh
+!/.scripts/run-svelte-warning-validation.sh
 app/.scripts/
 .opencode/
 app/.opencode/

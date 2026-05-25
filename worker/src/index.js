@@ -70,7 +70,7 @@ export default {
       return handleGumroadWebhook(request, env);
     }
 
-    return err("bad_request", "Route not found", requestId(), false, 404);
+    return err("route_not_found", "Route not found", requestId(), false, 404);
   },
 };
 

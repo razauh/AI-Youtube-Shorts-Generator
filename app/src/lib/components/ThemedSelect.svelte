@@ -35,7 +35,7 @@
     buttonEl?.focus();
   }
 
-  function onOptionClick(event, nextValue) {
+  function onOptionMouseDown(event, nextValue) {
     event.preventDefault();
     event.stopPropagation();
     selectValue(nextValue);
@@ -90,7 +90,7 @@
   });
 </script>
 
-<div class="themed-select" bind:this={rootEl} on:keydown={onKeydown}>
+<div class="themed-select" bind:this={rootEl}>
   <button
     type="button"
     class="select-trigger"
@@ -100,6 +100,7 @@
     aria-expanded={open}
     disabled={disabled}
     on:click={toggleMenu}
+    on:keydown={onKeydown}
   >
     <span>{selectedLabel}</span>
     <span class="chevron" aria-hidden="true"></span>
@@ -111,7 +112,6 @@
       bind:this={listEl}
       aria-label={ariaLabel}
       on:mousedown|preventDefault
-      on:click|stopPropagation
     >
       {#each options as option, index}
         <li
@@ -119,7 +119,7 @@
           aria-selected={option.value === value}
           class:selected={option.value === value}
           class:active={index === activeIndex}
-          on:click={(event) => onOptionClick(event, option.value)}
+          on:mousedown={(event) => onOptionMouseDown(event, option.value)}
         >
           {option.label}
         </li>

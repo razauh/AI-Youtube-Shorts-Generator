@@ -20,6 +20,20 @@ describe('admin messages and validation', () => {
     expect(error.message).toBe('This request is no longer pending.');
   });
 
+  it('maps route not found responses to Worker version guidance', () => {
+    const currentWorkerError = friendlyAdminError({ code: 'route_not_found', request_id: 'req_789' });
+    expect(currentWorkerError.message).toContain('Deploy the current Worker version');
+
+    const oldWorkerError = friendlyAdminError({
+      code: 'bad_request',
+      message: 'Route not found',
+      request_id: 'req_old',
+      retryable: false
+    });
+    expect(oldWorkerError.code).toBe('route_not_found');
+    expect(oldWorkerError.message).toContain('admin endpoint required by this app');
+  });
+
   it('validates base URL and token input', () => {
     expect(validateAdminConfig('', 'token')).toBe('Worker API base URL is required.');
     expect(validateAdminConfig('file:///tmp/token', 'token')).toBe('Worker API base URL must be a valid http or https URL.');

@@ -346,18 +346,18 @@
 </main>
 
 {#if detailItem}
-  <div class="modal-backdrop" on:click={closeDetail}>
-    <section class="modal" on:click|stopPropagation>
-      <header><h2>{detailTitle}</h2><button class="ghost" on:click={closeDetail}>Close</button></header>
+  <div class="modal-backdrop" role="presentation" on:click|self={closeDetail}>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="detail-dialog-title">
+      <header><h2 id="detail-dialog-title">{detailTitle}</h2><button class="ghost" on:click={closeDetail}>Close</button></header>
       <pre>{JSON.stringify(detailItem, null, 2)}</pre>
     </section>
   </div>
 {/if}
 
 {#if confirmAction && confirmRequest}
-  <div class="modal-backdrop" on:click={closeConfirm}>
-    <section class="modal decision-modal" on:click|stopPropagation>
-      <header><h2>{confirmAction === 'approve' ? 'Approve reset request?' : 'Reject reset request?'}</h2></header>
+  <div class="modal-backdrop" role="presentation" on:click|self={closeConfirm}>
+    <section class="modal decision-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+      <header><h2 id="confirm-dialog-title">{confirmAction === 'approve' ? 'Approve reset request?' : 'Reject reset request?'}</h2></header>
       <label>Optional reason <textarea bind:value={confirmReason} rows="4" /></label>
       <div class="actions">
         <button class={confirmAction === 'reject' ? 'danger' : ''} on:click={submitDecision} disabled={Boolean(actionBusyFor)}>

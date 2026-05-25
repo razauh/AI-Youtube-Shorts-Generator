@@ -1380,25 +1380,29 @@
       <section class="panel">
         <form class="form" novalidate on:submit|preventDefault={submitRun}>
           <label>Project title <input aria-label="Project title" bind:value={projectName} placeholder="My Product Launch Highlights" /></label>
-          <label>Source type
+          <div class="field">
+            <span>Source type</span>
             <ThemedSelect ariaLabel="Source type" bind:value={sourceType} options={SOURCE_TYPE_OPTIONS} />
-          </label>
+          </div>
           <label>{sourceLabel} <input aria-label="YouTube video URL" bind:value={url} placeholder={sourcePlaceholder} /></label>
           {#if sourceType === 'local'}
             <div class="row picker-row">
               <button type="button" on:click={chooseLocalFile}>Choose File</button>
             </div>
           {/if}
-          <label>Mode
+          <div class="field">
+            <span>Mode</span>
             <ThemedSelect ariaLabel="Mode" bind:value={mode} options={MODE_OPTIONS} />
-          </label>
+          </div>
           <label>Num clips <input aria-label="Num clips" type="number" bind:value={numClips} /></label>
-          <label>Aspect ratio
+          <div class="field">
+            <span>Aspect ratio</span>
             <ThemedSelect ariaLabel="Aspect ratio" bind:value={aspectRatio} options={ASPECT_RATIO_OPTIONS} />
-          </label>
-          <label>Resolution
+          </div>
+          <div class="field">
+            <span>Resolution</span>
             <ThemedSelect ariaLabel="Resolution" bind:value={format} options={RESOLUTION_OPTIONS} />
-          </label>
+          </div>
           <details class="advanced">
             <summary>Advanced</summary>
             <label>Save detailed report to file (optional) <input aria-label="Output JSON path" bind:value={outputJson} /></label>
@@ -1749,7 +1753,7 @@
             </div>
             <form class="form config-form local-processing-form" novalidate on:submit|preventDefault={saveLocalProcessing}>
               <label>Profile name <input aria-label="Local model profile name" autocomplete="off" bind:value={localProfileLabel} placeholder="Balanced local model" /></label>
-              <label class="select-field">
+              <div class="select-field">
                 <span class="field-label-row">
                   Whisper model
                   <span class="help-wrap field-help">
@@ -1758,8 +1762,8 @@
                   </span>
                 </span>
                 <ThemedSelect ariaLabel="Whisper model" bind:value={whisperModelInput} options={whisperModelOptions} />
-              </label>
-              <label class="select-field">
+              </div>
+              <div class="select-field">
                 <span class="field-label-row">
                   Processing device
                   <span class="help-wrap field-help">
@@ -1768,7 +1772,7 @@
                   </span>
                 </span>
                 <ThemedSelect ariaLabel="Processing device" bind:value={whisperDeviceInput} options={whisperDeviceOptions} />
-              </label>
+              </div>
               <div class="settings-actions">
                 <button type="submit" disabled={settingsActionBusy || !canSaveLocalProcessing}>Save and Download</button>
               </div>
@@ -2349,7 +2353,7 @@
     transform: translateX(.94rem);
   }
 
-  button, input, select {
+  button, input {
     border-radius: var(--radius-sm);
     border: 1px solid var(--color-border-medium);
     border: 1px solid color-mix(in srgb, var(--color-border-medium) 30%, transparent);
@@ -2359,48 +2363,6 @@
     padding: .6rem .7rem;
     font-family: inherit;
   }
-  select {
-    appearance: none;
-    -webkit-appearance: none;
-    color-scheme: var(--ui-color-scheme, dark);
-    background-color: var(--color-surface-input);
-    background-color: color-mix(in srgb, var(--color-surface-input) 88%, var(--color-panel-card));
-    color: var(--color-text-primary);
-    border-color: var(--color-border-medium);
-    border-color: color-mix(in srgb, var(--color-border-strong) 34%, transparent);
-    border-width: 1px;
-    border-style: solid;
-    min-height: 2.45rem;
-    line-height: 1.25;
-    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-text-primary) 8%, transparent);
-    transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease, color 150ms ease;
-  }
-  select:hover:not(:disabled) {
-    border-color: var(--color-focus-ring);
-    border-color: color-mix(in srgb, var(--color-focus-ring) 44%, var(--color-border-strong));
-    background-color: var(--color-surface-input);
-    background-color: color-mix(in srgb, var(--color-surface-input) 94%, var(--color-panel-card));
-  }
-  select:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--color-focus-ring) 62%, transparent);
-    outline-offset: 1px;
-    border-color: color-mix(in srgb, var(--color-focus-ring) 62%, var(--color-border-strong));
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-focus-ring) 24%, transparent);
-  }
-  select:disabled {
-    cursor: not-allowed;
-    opacity: .66;
-    color: color-mix(in srgb, var(--color-text-primary) 58%, transparent);
-    background-color: var(--color-surface-input);
-    background-color: color-mix(in srgb, var(--color-surface-input) 68%, var(--color-panel-card));
-    border-color: var(--color-border-medium);
-    border-color: color-mix(in srgb, var(--color-border-strong) 16%, transparent);
-  }
-  select option,
-  select optgroup {
-    background-color: var(--color-surface-input);
-    color: var(--color-text-primary);
-  }
   button { cursor: pointer; background: linear-gradient(90deg, var(--color-primary), var(--color-secondary)); color: var(--color-on-accent); border: none; font-weight: 700; }
   button:disabled {
     cursor: not-allowed;
@@ -2409,7 +2371,7 @@
   nav button { text-align: left; background: color-mix(in srgb, var(--color-panel-card) 80%, transparent); color: var(--color-text-primary); border: 1px solid color-mix(in srgb, var(--color-border-strong) 25%, transparent); }
   nav button.active { border-color: var(--color-focus-ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-focus-ring) 25%, transparent); }
   .form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); align-items: end; }
-  label { display: grid; gap: var(--space-xs); }
+  label, .field, .select-field { display: grid; gap: var(--space-xs); }
   .form-full { grid-column: 1 / -1; }
   .form-action-row {
     grid-column: 1 / -1;

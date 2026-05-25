@@ -7,6 +7,7 @@ export const ERROR_CODES = new Set([
   "reauth_required",
   "worker_unreachable",
   "not_found",
+  "route_not_found",
   "reset_request_not_found",
   "unauthorized",
   "storage",

@@ -254,6 +254,14 @@ test('health works', async () => {
   assert.equal(json.ok, true);
 });
 
+test('unknown routes return route_not_found', async () => {
+  const res = await call('/v1/admin/missing', { method: 'GET' });
+  assert.equal(res.status, 404);
+  const json = await res.json();
+  assert.equal(json.ok, false);
+  assert.equal(json.error.code, 'route_not_found');
+});
+
 test('activate requires idempotency key', async () => {
   const res = await call('/v1/license/activate', {
     body: {

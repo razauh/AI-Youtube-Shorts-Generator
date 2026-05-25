@@ -8,7 +8,12 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test tests/frontend_boot.test.js && vitest run --config vitest.config.ts",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:dev": "npm run tauri:dev:customer",
+    "tauri:dev:customer": "tauri dev --config src-tauri/tauri.conf.json -- --bin shorts_tauri_app",
+    "tauri:dev:admin": "tauri dev --config src-tauri/tauri.admin.conf.json -- --bin admin_desktop",
+    "tauri:build:customer": "tauri build --config src-tauri/tauri.conf.json -- --bin shorts_tauri_app",
+    "tauri:build:admin": "tauri build --config src-tauri/tauri.admin.conf.json -- --bin admin_desktop"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^3.1.2",
