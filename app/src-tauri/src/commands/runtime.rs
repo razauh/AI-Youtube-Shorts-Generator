@@ -5,10 +5,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 use tauri::Emitter;
 
 const APP_DIR_NAME: &str = "ai-youtube-shorts-generator";
@@ -129,6 +132,7 @@ struct LocalModelProfileStore {
 #[derive(Debug)]
 pub struct LocalModelDownloadState {
     current: Arc<Mutex<LocalModelDownloadStatus>>,
+    cancel_token: Arc<Mutex<Option<Arc<AtomicBool>>>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,7 +147,12 @@ pub enum RuntimePackStatusKind {
     Corrupted,
     IncompatiblePlatform,
     MissingFiles,
+    MissingDependency,
+    NativeImportFailure,
+    PermissionError,
+    NetworkError,
     ValidationFailed,
+    UnknownError,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -204,6 +213,7 @@ impl Default for LocalModelDownloadState {
     fn default() -> Self {
         Self {
             current: Arc::new(Mutex::new(default_download_status())),
+            cancel_token: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -347,12 +357,15 @@ fn local_runtime_pack_state_path() -> Result<PathBuf, String> {
     Ok(runtime_root()?.join("config").join("local-runtime-pack-state.json"))
 }
 
-fn local_runtime_pack_manifest_url() -> String {
+fn local_runtime_pack_manifest_url() -> Option<String> {
     std::env::var("LOCAL_RUNTIME_PACK_MANIFEST_URL")
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "https://example.com/runtime-pack/manifest.json".to_string())
+}
+
+fn local_runtime_pack_manifest_local_path() -> Result<PathBuf, String> {
+    Ok(local_runtime_pack_root()?.join("manifest.json"))
 }
 
 fn load_runtime_pack_state_store() -> Result<LocalRuntimePackStateStore, String> {
@@ -440,6 +453,85 @@ fn emit_runtime_pack_progress(
     );
 }
 
+fn sanitize_runtime_error(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return "runtime operation failed".to_string();
+    }
+    let mut output = trimmed.to_string();
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.trim().is_empty() {
+            output = output.replace(&home, "[home]");
+        }
+    }
+    output.chars().take(2000).collect()
+}
+
+fn manifest_url_host(url: &str) -> String {
+    reqwest::Url::parse(url)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(str::to_string))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn sanitize_body_preview(body: &str) -> String {
+    let collapsed = body.replace('\n', " ").replace('\r', " ");
+    sanitize_runtime_error(collapsed.trim())
+        .chars()
+        .take(200)
+        .collect()
+}
+
+fn append_runtime_setup_log(debug_ref: &str, stage: &str, category: &str, message: &str) {
+    let line = format!(
+        "[{}] [{}] local_runtime_setup stage={} category={} message=\"{}\"",
+        now_epoch_ms(),
+        debug_ref,
+        stage,
+        category,
+        sanitize_runtime_error(message).replace('\n', "\\n")
+    );
+    let _ = runtime_fs_append_line("logs/app.log".to_string(), line);
+}
+
+fn log_runtime_setup(stage: &str, category: &str, message: &str) {
+    eprintln!(
+        "local_runtime_setup stage={} category={} message=\"{}\" timestamp_ms={}",
+        stage,
+        category,
+        sanitize_runtime_error(message).replace('\n', "\\n"),
+        now_epoch_ms()
+    );
+}
+
+fn log_runtime_setup_manifest(
+    stage: &str,
+    category: &str,
+    manifest_source: &str,
+    manifest_url: &str,
+    http_status: Option<u16>,
+    content_type: Option<&str>,
+    body_preview: Option<&str>,
+    parse_error: Option<&str>,
+    schema_error: Option<&str>,
+) {
+    eprintln!(
+        "local_runtime_setup stage={} category={} manifest_source={} manifest_url_host={} http_status={} content_type={} body_preview=\"{}\" parse_error=\"{}\" schema_error=\"{}\" platform={} app_version={} timestamp_ms={}",
+        stage,
+        category,
+        manifest_source,
+        manifest_url_host(manifest_url),
+        http_status.map(|v| v.to_string()).unwrap_or_else(|| "not_applicable".to_string()),
+        content_type.unwrap_or("unknown"),
+        body_preview.map(sanitize_body_preview).unwrap_or_default(),
+        parse_error.map(sanitize_runtime_error).unwrap_or_default(),
+        schema_error.map(sanitize_runtime_error).unwrap_or_default(),
+        format!("{}-{}", runtime_pack_platform(), runtime_pack_arch()),
+        env!("CARGO_PKG_VERSION"),
+        now_epoch_ms()
+    );
+}
+
 fn sha256_file(path: &Path) -> Result<String, String> {
     let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
     let mut hasher = Sha256::new();
@@ -499,7 +591,28 @@ fn extract_runtime_pack_zip(zip_path: &Path, target_dir: &Path) -> Result<(), St
 fn read_runtime_pack_status() -> Result<LocalRuntimePackStatus, String> {
     let store = load_runtime_pack_state_store()?;
     let install_dir = local_runtime_pack_current_dir()?;
-    let manifest_url = local_runtime_pack_manifest_url();
+    let manifest_url = local_runtime_pack_manifest_url()
+        .unwrap_or_else(|| "local://runtime-pack/manifest.json".to_string());
+
+    let bridge = resolve_python_bridge_paths();
+    if let Some(dir) = bridge.bundled_runtime_dir {
+        let required_modules = vec!["faster_whisper".to_string()];
+        if validate_runtime_pack_install(&dir, &required_modules).is_ok() {
+            return Ok(LocalRuntimePackStatus {
+                status: RuntimePackStatusKind::Ready,
+                version: store.version,
+                platform: runtime_pack_platform(),
+                arch: runtime_pack_arch(),
+                install_dir: dir.display().to_string(),
+                manifest_url,
+                required_size_bytes: None,
+                message: "Local processing runtime is ready.".to_string(),
+                error_code: None,
+                debug_ref: None,
+            });
+        }
+    }
+
     let status = store.status.unwrap_or(RuntimePackStatusKind::NotInstalled);
     let message = match status {
         RuntimePackStatusKind::NotInstalled => "Local processing runtime is not installed.",
@@ -513,9 +626,20 @@ fn read_runtime_pack_status() -> Result<LocalRuntimePackStatus, String> {
             "No compatible local processing runtime is available for this platform."
         }
         RuntimePackStatusKind::MissingFiles => "Local processing runtime is missing required files.",
+        RuntimePackStatusKind::MissingDependency => {
+            "Local processing runtime is missing required dependencies."
+        }
+        RuntimePackStatusKind::NativeImportFailure => {
+            "Local processing runtime failed to load a native dependency."
+        }
+        RuntimePackStatusKind::PermissionError => {
+            "Local processing runtime does not have required permissions."
+        }
+        RuntimePackStatusKind::NetworkError => "Could not download local processing runtime.",
         RuntimePackStatusKind::ValidationFailed => {
             "Local processing runtime validation failed."
         }
+        RuntimePackStatusKind::UnknownError => "Local processing runtime failed unexpectedly.",
     };
     Ok(LocalRuntimePackStatus {
         status,
@@ -832,8 +956,59 @@ fn classify_local_model_download_error(raw: &str) -> LocalModelErrorSummary {
     if lower.contains("runtime_pack_setup_required") {
         return LocalModelErrorSummary {
             code: "runtime_pack_setup_required".to_string(),
+            user_message: "Local processing setup failed. Please try again.".to_string(),
+        };
+    }
+    if lower.contains("runtime pack setup failed")
+        || lower.contains("runtime pack validation failed")
+    {
+        if lower.contains("network_error") {
+            return LocalModelErrorSummary {
+                code: "network_error".to_string(),
+                user_message: "Could not download the required local processing components. Check your internet connection and try again.".to_string(),
+            };
+        }
+        if lower.contains("permission_error") {
+            return LocalModelErrorSummary {
+                code: "permission_error".to_string(),
+                user_message:
+                    "Local processing setup failed because the app could not write required files."
+                        .to_string(),
+            };
+        }
+        return LocalModelErrorSummary {
+            code: "validation_failed".to_string(),
+            user_message: "The local processing setup appears incomplete. Please retry setup."
+                .to_string(),
+        };
+    }
+    if lower.contains("runtime pack manifest fetch failed")
+        || lower.contains("runtime pack download failed")
+    {
+        return LocalModelErrorSummary {
+            code: "network_error".to_string(),
+            user_message: "Could not download the required local processing components. Check your internet connection and try again.".to_string(),
+        };
+    }
+    if lower.contains("runtime pack manifest is empty")
+        || lower.contains("runtime pack manifest is not json")
+        || lower.contains("runtime pack manifest parse failed")
+        || lower.contains("runtime pack manifest schema failed")
+        || lower.contains("runtime pack manifest read failed")
+        || lower.contains("runtime pack manifest url not configured")
+    {
+        return LocalModelErrorSummary {
+            code: "runtime_manifest_parse_error".to_string(),
             user_message:
-                "Local Processing Runtime is required before model download. Open Settings > Local Processing and download it."
+                "Could not read the local processing setup manifest. Please try again later."
+                    .to_string(),
+        };
+    }
+    if lower.contains("failed to install python dependency") {
+        return LocalModelErrorSummary {
+            code: "dependency_install_failed".to_string(),
+            user_message:
+                "Local setup could not download a required Python component. Check your internet connection and try again."
                     .to_string(),
         };
     }
@@ -841,6 +1016,14 @@ fn classify_local_model_download_error(raw: &str) -> LocalModelErrorSummary {
         || lower.contains("no module named 'faster_whisper'")
         || lower.contains("no module named faster_whisper")
         || lower.contains("module not found: faster_whisper")
+        || lower.contains("no module named 'requests'")
+        || lower.contains("no module named requests")
+        || lower.contains("no module named 'yt_dlp'")
+        || lower.contains("no module named yt_dlp")
+        || lower.contains("no module named 'openai'")
+        || lower.contains("no module named openai")
+        || lower.contains("no module named 'cv2'")
+        || lower.contains("no module named cv2")
     {
         return LocalModelErrorSummary {
             code: "missing_dependency".to_string(),
@@ -919,27 +1102,131 @@ fn append_local_model_download_log(
     raw_error: &str,
 ) {
     let bridge = resolve_python_bridge_paths();
-    let root = match runtime_root() {
-        Ok(root) => root,
-        Err(_) => return,
+    let python_source = if bridge.python_bin.contains("runtime-pack") {
+        "runtime_pack"
+    } else {
+        "system_path"
     };
-    if ensure_runtime_dirs(&root).is_err() {
-        return;
-    }
-    let cache_dir = root.join("models").join("huggingface");
     let line = format!(
-        "[{}] [{}] local_model_download_failed code={} model={} device={} cache_dir={} python_bin={} bridge_entry={} error=\"{}\"",
+        "[{}] [{}] local_model_download_failed code={} model={} device={} cache_dir_class=models/huggingface python_source={} bridge_entry_file={} error=\"{}\"",
         now_epoch_ms(),
         debug_ref,
         error_code,
         model,
         device,
-        cache_dir.display(),
-        bridge.python_bin,
-        bridge.entry_script,
+        python_source,
+        Path::new(&bridge.entry_script)
+            .file_name()
+            .and_then(|v| v.to_str())
+            .unwrap_or("bridge_entry.py"),
         redact_local_model_error(raw_error).replace('\n', "\\n")
     );
+    eprintln!("{line}");
     let _ = runtime_fs_append_line("logs/app.log".to_string(), line);
+}
+
+fn ensure_runtime_pack_for_model_download(
+    app: &tauri::AppHandle,
+    state: &LocalModelDownloadState,
+    profile_id: &str,
+    model: &str,
+    device: &str,
+) -> Result<(), String> {
+    publish_download_status(
+        app,
+        state,
+        LocalModelDownloadStatus {
+            active: true,
+            profile_id: Some(profile_id.to_string()),
+            model: Some(model.to_string()),
+            device: Some(device.to_string()),
+            phase: "checking_runtime".to_string(),
+            progress: 0.1,
+            message: "Checking local processing setup...".to_string(),
+            error: None,
+            error_code: None,
+            debug_ref: None,
+        },
+    );
+    log_runtime_setup("checking_runtime", "start", "Starting runtime status check before model download.");
+    let status = read_runtime_pack_status()?;
+    if matches!(status.status, RuntimePackStatusKind::Ready) {
+        log_runtime_setup("checking_runtime", "already_ready", "Runtime is already ready.");
+        return Ok(());
+    }
+
+    publish_download_status(
+        app,
+        state,
+        LocalModelDownloadStatus {
+            active: true,
+            profile_id: Some(profile_id.to_string()),
+            model: Some(model.to_string()),
+            device: Some(device.to_string()),
+            phase: "installing_runtime".to_string(),
+            progress: 0.25,
+            message: "Installing required local processing components...".to_string(),
+            error: None,
+            error_code: None,
+            debug_ref: None,
+        },
+    );
+    log_runtime_setup("installing_runtime", "start", "Runtime setup/repair started.");
+    let prepared = match tauri::async_runtime::block_on(local_runtime_pack_prepare(app.clone())) {
+        Ok(status) => status,
+        Err(err) => {
+            if err.trim() == "runtime pack manifest url not configured"
+                && can_use_dev_python_bridge_without_runtime_pack()
+            {
+                log_runtime_setup(
+                    "installing_runtime",
+                    "dev_fallback",
+                    "Runtime pack manifest missing; using development bridge fallback.",
+                );
+                return Ok(());
+            }
+            return Err(err);
+        }
+    };
+    if !matches!(prepared.status, RuntimePackStatusKind::Ready) {
+        return Err(format!(
+            "runtime pack setup failed status={:?} error_code={}",
+            prepared.status,
+            prepared
+                .error_code
+                .as_deref()
+                .unwrap_or("unknown_error")
+        ));
+    }
+    publish_download_status(
+        app,
+        state,
+        LocalModelDownloadStatus {
+            active: true,
+            profile_id: Some(profile_id.to_string()),
+            model: Some(model.to_string()),
+            device: Some(device.to_string()),
+            phase: "validating_runtime".to_string(),
+            progress: 0.4,
+            message: "Checking local processing setup...".to_string(),
+            error: None,
+            error_code: None,
+            debug_ref: None,
+        },
+    );
+    let validated = read_runtime_pack_status()?;
+    if !matches!(validated.status, RuntimePackStatusKind::Ready) {
+        return Err(format!(
+            "runtime pack validation failed status={:?} error_code={}",
+            validated.status,
+            validated
+                .error_code
+                .as_deref()
+                .unwrap_or("unknown_error")
+        ));
+    }
+    log_runtime_setup("validating_runtime", "success", "Runtime validation succeeded before model download.");
+    Ok(())
 }
 
 fn migrate_legacy_api_key(provider: &str, store: &mut ApiKeyProfileStore) -> Result<bool, String> {
@@ -1614,8 +1901,13 @@ pub fn local_model_profile_activate(
 }
 
 #[tauri::command]
-pub fn local_model_profile_delete(profile_id: String) -> Result<LocalModelProfilesView, String> {
+pub fn local_model_profile_delete(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, LocalModelDownloadState>,
+    profile_id: String,
+) -> Result<LocalModelProfilesView, String> {
     let profile_id = profile_id.trim();
+    cancel_active_local_model_download(&app, &state, profile_id);
     let mut store = load_local_model_profile_store()?;
     let before_len = store.profiles.len();
     store.profiles.retain(|profile| profile.id != profile_id);
@@ -1664,6 +1956,31 @@ fn publish_download_status(
     let _ = app.emit("local-model-download-progress", next);
 }
 
+fn cancel_active_local_model_download(
+    app: &tauri::AppHandle,
+    state: &LocalModelDownloadState,
+    profile_id: &str,
+) {
+    let should_cancel = state
+        .current
+        .lock()
+        .map(|current| current.active && current.profile_id.as_deref() == Some(profile_id))
+        .unwrap_or(false);
+    if !should_cancel {
+        return;
+    }
+    if let Ok(token) = state.cancel_token.lock() {
+        if let Some(token) = token.as_ref() {
+            token.store(true, Ordering::SeqCst);
+        }
+    }
+    publish_download_status(app, state, default_download_status());
+}
+
+fn local_model_download_was_cancelled(cancel_token: &Arc<AtomicBool>) -> bool {
+    cancel_token.load(Ordering::SeqCst)
+}
+
 fn start_local_model_download(
     app: tauri::AppHandle,
     state: &LocalModelDownloadState,
@@ -1697,14 +2014,71 @@ fn start_local_model_download(
         }
         *current = initial.clone();
     }
+    let cancel_token = Arc::new(AtomicBool::new(false));
+    if let Ok(mut current_token) = state.cancel_token.lock() {
+        *current_token = Some(Arc::clone(&cancel_token));
+    }
 
     let _ = set_local_model_profile_download_state(&profile_id, "downloading", None, None, None);
     let _ = app.emit("local-model-download-progress", initial);
 
     let state_for_thread = LocalModelDownloadState {
         current: Arc::clone(&state.current),
+        cancel_token: Arc::clone(&state.cancel_token),
     };
     std::thread::spawn(move || {
+        eprintln!(
+            "local_model_setup stage=start category=start message=\"Starting one-step local model setup.\" model={} device={} timestamp_ms={}",
+            model,
+            device,
+            now_epoch_ms()
+        );
+        let runtime_ready = ensure_runtime_pack_for_model_download(
+            &app,
+            &state_for_thread,
+            &profile_id,
+            &model,
+            &device,
+        );
+        if local_model_download_was_cancelled(&cancel_token) {
+            log_runtime_setup("cancelled", "cancelled", "Local model setup cancelled.");
+            return;
+        }
+        if let Err(err) = runtime_ready {
+            let summary = classify_local_model_download_error(&err);
+            let debug_ref = local_model_debug_ref();
+            log_runtime_setup(
+                "failed",
+                summary.code.as_str(),
+                &format!("Combined setup failed before model download: {err}"),
+            );
+            append_runtime_setup_log(&debug_ref, "failed", summary.code.as_str(), &err);
+            let _ = set_local_model_profile_download_state(
+                &profile_id,
+                "failed",
+                Some(summary.user_message.clone()),
+                Some(summary.code.clone()),
+                Some(debug_ref.clone()),
+            );
+            publish_download_status(
+                &app,
+                &state_for_thread,
+                LocalModelDownloadStatus {
+                    active: false,
+                    profile_id: Some(profile_id),
+                    model: Some(model),
+                    device: Some(device),
+                    phase: "failed".to_string(),
+                    progress: 1.0,
+                    message: "Setup failed. Please try again.".to_string(),
+                    error: Some(summary.user_message),
+                    error_code: Some(summary.code),
+                    debug_ref: Some(debug_ref),
+                },
+            );
+            return;
+        }
+
         publish_download_status(
             &app,
             &state_for_thread,
@@ -1713,18 +2087,35 @@ fn start_local_model_download(
                 profile_id: Some(profile_id.clone()),
                 model: Some(model.clone()),
                 device: Some(device.clone()),
-                phase: "downloading".to_string(),
-                progress: 0.35,
-                message: format!("Downloading local model {model}..."),
+                phase: "downloading_model".to_string(),
+                progress: 0.65,
+                message: "Downloading model...".to_string(),
                 error: None,
                 error_code: None,
                 debug_ref: None,
             },
         );
 
-        let result = prefetch_local_model(&model, &device);
+        let result = prefetch_local_model(
+            &app,
+            &state_for_thread,
+            Arc::clone(&cancel_token),
+            &profile_id,
+            &model,
+            &device,
+        );
+        if local_model_download_was_cancelled(&cancel_token) {
+            log_runtime_setup("cancelled", "cancelled", "Local model download cancelled.");
+            return;
+        }
         match result {
             Ok(()) => {
+                eprintln!(
+                    "local_model_setup stage=validating_model category=success message=\"Model download and validation succeeded.\" model={} device={} timestamp_ms={}",
+                    model,
+                    device,
+                    now_epoch_ms()
+                );
                 let _ = set_local_model_profile_download_state(
                     &profile_id,
                     "ready",
@@ -1740,9 +2131,9 @@ fn start_local_model_download(
                         profile_id: Some(profile_id.clone()),
                         model: Some(model.clone()),
                         device: Some(device.clone()),
-                        phase: "verifying".to_string(),
+                        phase: "validating_model".to_string(),
                         progress: 0.92,
-                        message: format!("Verifying local model {model}..."),
+                        message: "Validating model...".to_string(),
                         error: None,
                         error_code: None,
                         debug_ref: None,
@@ -1758,7 +2149,7 @@ fn start_local_model_download(
                         device: Some(device),
                         phase: "ready".to_string(),
                         progress: 1.0,
-                        message: format!("Local model {model} is ready."),
+                        message: "Model ready.".to_string(),
                         error: None,
                         error_code: None,
                         debug_ref: None,
@@ -1768,6 +2159,14 @@ fn start_local_model_download(
             Err(err) => {
                 let summary = classify_local_model_download_error(&err);
                 let debug_ref = local_model_debug_ref();
+                eprintln!(
+                    "local_model_setup stage=failed category={} message=\"{}\" model={} device={} timestamp_ms={}",
+                    summary.code,
+                    redact_local_model_error(&err).replace('\n', "\\n"),
+                    model,
+                    device,
+                    now_epoch_ms()
+                );
                 append_local_model_download_log(
                     &debug_ref,
                     &model,
@@ -1792,7 +2191,7 @@ fn start_local_model_download(
                         device: Some(device),
                         phase: "failed".to_string(),
                         progress: 1.0,
-                        message: "Local model download failed.".to_string(),
+                        message: "Download failed. Please check your connection and try again.".to_string(),
                         error: Some(summary.user_message),
                         error_code: Some(summary.code),
                         debug_ref: Some(debug_ref),
@@ -1805,10 +2204,181 @@ fn start_local_model_download(
     Ok(())
 }
 
-fn prefetch_local_model(model: &str, device: &str) -> Result<(), String> {
+fn publish_bridge_progress_line(
+    app: &tauri::AppHandle,
+    state: &LocalModelDownloadState,
+    profile_id: &str,
+    model: &str,
+    device: &str,
+    line: &str,
+) {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+        return;
+    };
+    if value.get("event").and_then(|event| event.as_str()) != Some("local_model_setup_progress") {
+        return;
+    }
+    let phase = value
+        .get("phase")
+        .and_then(|phase| phase.as_str())
+        .unwrap_or("downloading_model")
+        .to_string();
+    let progress = value
+        .get("progress")
+        .and_then(|progress| progress.as_f64())
+        .unwrap_or(0.65);
+    let message = value
+        .get("message")
+        .and_then(|message| message.as_str())
+        .unwrap_or("Preparing local model...")
+        .to_string();
+    eprintln!(
+        "local_model_setup stage={} category=progress message=\"{}\" model={} device={} timestamp_ms={}",
+        phase,
+        sanitize_runtime_error(&message).replace('\n', "\\n"),
+        model,
+        device,
+        now_epoch_ms()
+    );
+    publish_download_status(
+        app,
+        state,
+        LocalModelDownloadStatus {
+            active: true,
+            profile_id: Some(profile_id.to_string()),
+            model: Some(model.to_string()),
+            device: Some(device.to_string()),
+            phase,
+            progress,
+            message,
+            error: None,
+            error_code: None,
+            debug_ref: None,
+        },
+    );
+}
+
+fn invoke_python_for_local_model_prefetch(
+    app: &tauri::AppHandle,
+    state: &LocalModelDownloadState,
+    cancel_token: Arc<AtomicBool>,
+    profile_id: &str,
+    model: &str,
+    device: &str,
+    req: PythonInvokeRequest,
+) -> Result<crate::runtime::process_supervisor::ProcessOutput, String> {
+    let mut command = Command::new(&req.python_bin);
+    command
+        .args([req.entry_script.as_str()])
+        .envs(req.env.iter().map(|(key, value)| (key, value)))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = command
+        .spawn()
+        .map_err(|err| format!("python invoke failed: {}", err))?;
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin
+            .write_all(&req.stdin_json)
+            .map_err(|err| format!("python invoke failed: {}", err))?;
+        stdin
+            .flush()
+            .map_err(|err| format!("python invoke failed: {}", err))?;
+    }
+    drop(child.stdin.take());
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "python invoke failed: missing stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "python invoke failed: missing stderr".to_string())?;
+    let stdout_handle = thread::spawn(move || {
+        let mut output = String::new();
+        let mut reader = BufReader::new(stdout);
+        let _ = reader.read_to_string(&mut output);
+        output
+    });
+    let (line_tx, line_rx) = mpsc::channel::<String>();
+    let stderr_handle = thread::spawn(move || {
+        let mut raw = String::new();
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            match line {
+                Ok(line) => {
+                    let _ = line_tx.send(line.clone());
+                    raw.push_str(&line);
+                    raw.push('\n');
+                }
+                Err(_) => break,
+            }
+        }
+        raw
+    });
+
+    let deadline = Instant::now() + Duration::from_millis(req.timeout_ms);
+    let mut timed_out = false;
+    loop {
+        while let Ok(line) = line_rx.try_recv() {
+            publish_bridge_progress_line(app, state, profile_id, model, device, &line);
+        }
+        if cancel_token.load(Ordering::SeqCst) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("local model download cancelled".to_string());
+        }
+        match child.try_wait() {
+            Ok(Some(_status)) => break,
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    timed_out = true;
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break;
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(err) => return Err(format!("python invoke failed: {}", err)),
+        }
+    }
+    while let Ok(line) = line_rx.try_recv() {
+        publish_bridge_progress_line(app, state, profile_id, model, device, &line);
+    }
+    let status_code = child
+        .try_wait()
+        .map_err(|err| format!("python invoke failed: {}", err))?
+        .and_then(|status| status.code());
+    let stdout = stdout_handle.join().unwrap_or_default();
+    let stderr = stderr_handle.join().unwrap_or_default();
+    Ok(crate::runtime::process_supervisor::ProcessOutput {
+        status_code,
+        stdout,
+        stderr,
+        timed_out,
+    })
+}
+
+fn prefetch_local_model(
+    app: &tauri::AppHandle,
+    state: &LocalModelDownloadState,
+    cancel_token: Arc<AtomicBool>,
+    profile_id: &str,
+    model: &str,
+    device: &str,
+) -> Result<(), String> {
     let runtime_pack = read_runtime_pack_status()?;
     if !matches!(runtime_pack.status, RuntimePackStatusKind::Ready) {
-        return Err("runtime_pack_setup_required".to_string());
+        if !can_use_dev_python_bridge_without_runtime_pack() {
+            return Err("runtime_pack_setup_required".to_string());
+        }
+        log_runtime_setup(
+            "checking_runtime",
+            "dev_fallback",
+            "Runtime pack is not ready; proceeding with development bridge fallback.",
+        );
     }
     let cache_dir = local_model_cache_dir()?;
     fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
@@ -1832,7 +2402,14 @@ fn prefetch_local_model(model: &str, device: &str) -> Result<(), String> {
     ];
     let bridge = resolve_python_bridge_paths();
     let env = with_python_runtime_env(env, &bridge);
-    let proc = invoke_python(PythonInvokeRequest {
+    let proc = invoke_python_for_local_model_prefetch(
+        app,
+        state,
+        cancel_token,
+        profile_id,
+        model,
+        device,
+        PythonInvokeRequest {
         python_bin: bridge.python_bin,
         entry_script: bridge.entry_script,
         env,
@@ -1841,8 +2418,8 @@ fn prefetch_local_model(model: &str, device: &str) -> Result<(), String> {
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(300_000),
-    })
-    .map_err(|e| format!("python invoke failed: {e:?}"))?;
+        },
+    )?;
 
     if proc.timed_out {
         return Err("python bridge timed out while downloading local model".to_string());
@@ -1854,7 +2431,13 @@ fn prefetch_local_model(model: &str, device: &str) -> Result<(), String> {
             proc.stderr
         });
     }
-    let parsed: serde_json::Value = serde_json::from_str(proc.stdout.trim())
+    let bridge_stdout = proc
+        .stdout
+        .lines()
+        .rev()
+        .find(|line| line.trim_start().starts_with('{'))
+        .unwrap_or_else(|| proc.stdout.trim());
+    let parsed: serde_json::Value = serde_json::from_str(bridge_stdout.trim())
         .map_err(|e| format!("invalid bridge json: {e}"))?;
     if parsed.get("ok").and_then(|value| value.as_bool()) == Some(true) {
         Ok(())
@@ -1878,6 +2461,14 @@ fn prefetch_local_model(model: &str, device: &str) -> Result<(), String> {
     }
 }
 
+fn can_use_dev_python_bridge_without_runtime_pack() -> bool {
+    if !cfg!(debug_assertions) {
+        return false;
+    }
+    let bridge = resolve_python_bridge_paths();
+    bridge.bundled_runtime_dir.is_none()
+}
+
 #[tauri::command]
 pub fn local_runtime_pack_status() -> Result<LocalRuntimePackStatus, String> {
     read_runtime_pack_status()
@@ -1886,6 +2477,7 @@ pub fn local_runtime_pack_status() -> Result<LocalRuntimePackStatus, String> {
 #[tauri::command]
 pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRuntimePackStatus, String> {
     let manifest_url = local_runtime_pack_manifest_url();
+    log_runtime_setup("checking_runtime", "start", "Starting local runtime status check.");
     emit_runtime_pack_progress(
         &app,
         "manifest",
@@ -1893,8 +2485,179 @@ pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRu
         "Checking runtime-pack manifest...",
         RuntimePackStatusKind::Downloading,
     );
-    let manifest_response = reqwest::get(&manifest_url).await.map_err(|_| "runtime pack manifest fetch failed".to_string())?;
-    let manifest: RuntimePackManifest = manifest_response.json().await.map_err(|_| "runtime pack manifest parse failed".to_string())?;
+    let (manifest_source, manifest_url_label, status, content_type, body) = if let Some(url) = manifest_url {
+        log_runtime_setup_manifest(
+            "runtime_manifest_load",
+            "start",
+            "remote",
+            &url,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let manifest_response = reqwest::get(&url).await.map_err(|err| {
+            log_runtime_setup_manifest(
+                "runtime_manifest_load",
+                "runtime_manifest_http_error",
+                "remote",
+                &url,
+                None,
+                None,
+                None,
+                Some(&err.to_string()),
+                None,
+            );
+            "runtime pack manifest fetch failed".to_string()
+        })?;
+        let status = manifest_response.status();
+        let content_type = manifest_response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        let body = manifest_response.text().await.map_err(|err| {
+            log_runtime_setup_manifest(
+                "runtime_manifest_load",
+                "runtime_manifest_read_failed",
+                "remote",
+                &url,
+                Some(status.as_u16()),
+                content_type.as_deref(),
+                None,
+                Some(&err.to_string()),
+                None,
+            );
+            "runtime pack manifest read failed".to_string()
+        })?;
+        ("remote".to_string(), url, status, content_type, body)
+    } else {
+        let manifest_path = local_runtime_pack_manifest_local_path()?;
+        let manifest_label = "local://runtime-pack/manifest.json".to_string();
+        log_runtime_setup_manifest(
+            "runtime_manifest_load",
+            "start",
+            "local",
+            &manifest_label,
+            None,
+            Some("application/json"),
+            None,
+            None,
+            None,
+        );
+        if !manifest_path.exists() {
+            log_runtime_setup_manifest(
+                "runtime_manifest_load",
+                "runtime_manifest_missing",
+                "local",
+                &manifest_label,
+                None,
+                Some("application/json"),
+                None,
+                None,
+                Some("set LOCAL_RUNTIME_PACK_MANIFEST_URL or place manifest at runtime-pack/manifest.json"),
+            );
+            return Err("runtime pack manifest url not configured".to_string());
+        }
+        let body = fs::read_to_string(&manifest_path).map_err(|err| {
+            log_runtime_setup_manifest(
+                "runtime_manifest_load",
+                "runtime_manifest_read_failed",
+                "local",
+                &manifest_label,
+                None,
+                Some("application/json"),
+                None,
+                Some(&err.to_string()),
+                None,
+            );
+            "runtime pack manifest read failed".to_string()
+        })?;
+        (
+            "local".to_string(),
+            manifest_label,
+            reqwest::StatusCode::OK,
+            Some("application/json".to_string()),
+            body,
+        )
+    };
+    if manifest_source == "remote" && !status.is_success() {
+        log_runtime_setup_manifest(
+            "runtime_manifest_load",
+            "runtime_manifest_http_error",
+            &manifest_source,
+            &manifest_url_label,
+            Some(status.as_u16()),
+            content_type.as_deref(),
+            Some(&body),
+            None,
+            None,
+        );
+        return Err("runtime pack manifest fetch failed".to_string());
+    }
+    if body.trim().is_empty() {
+        log_runtime_setup_manifest(
+            "runtime_manifest_parse",
+            "runtime_manifest_empty",
+            &manifest_source,
+            &manifest_url_label,
+            Some(status.as_u16()),
+            content_type.as_deref(),
+            Some(&body),
+            None,
+            None,
+        );
+        return Err("runtime pack manifest is empty".to_string());
+    }
+    if content_type
+        .as_deref()
+        .map(|value| value.contains("json"))
+        .unwrap_or(false)
+        == false
+        && body.trim_start().starts_with('<')
+    {
+        log_runtime_setup_manifest(
+            "runtime_manifest_parse",
+            "runtime_manifest_not_json",
+            &manifest_source,
+            &manifest_url_label,
+            Some(status.as_u16()),
+            content_type.as_deref(),
+            Some(&body),
+            None,
+            None,
+        );
+        return Err("runtime pack manifest is not json".to_string());
+    }
+    let manifest_value: serde_json::Value = serde_json::from_str(&body).map_err(|err| {
+        log_runtime_setup_manifest(
+            "runtime_manifest_parse",
+            "runtime_manifest_parse_error",
+            &manifest_source,
+            &manifest_url_label,
+            Some(status.as_u16()),
+            content_type.as_deref(),
+            Some(&body),
+            Some(&err.to_string()),
+            None,
+        );
+        "runtime pack manifest parse failed".to_string()
+    })?;
+    let manifest: RuntimePackManifest = serde_json::from_value(manifest_value).map_err(|err| {
+        log_runtime_setup_manifest(
+            "runtime_manifest_parse",
+            "runtime_manifest_schema_error",
+            &manifest_source,
+            &manifest_url_label,
+            Some(status.as_u16()),
+            content_type.as_deref(),
+            Some(&body),
+            None,
+            Some(&err.to_string()),
+        );
+        "runtime pack manifest schema failed".to_string()
+    })?;
     if let Some(required_app_version) = manifest
         .app_compatibility
         .as_ref()
@@ -1910,6 +2673,11 @@ pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRu
                 last_debug_ref: Some(format!("rp-{}", now_epoch_ms())),
             };
             let _ = save_runtime_pack_state_store(&store);
+            log_runtime_setup(
+                "validating_runtime",
+                "runtime_manifest_incompatible_version",
+                "Runtime app version compatibility check failed.",
+            );
             return read_runtime_pack_status();
         }
     }
@@ -1924,6 +2692,17 @@ pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRu
                 last_debug_ref: Some(format!("rp-{}", now_epoch_ms())),
             };
             let _ = save_runtime_pack_state_store(&store);
+            log_runtime_setup_manifest(
+                "runtime_manifest_parse",
+                "runtime_manifest_platform_missing",
+                &manifest_source,
+                &manifest_url_label,
+                Some(status.as_u16()),
+                content_type.as_deref(),
+                Some(&body),
+                None,
+                Some("no matching platform/arch asset in manifest"),
+            );
             return read_runtime_pack_status();
         }
     };
@@ -1940,10 +2719,16 @@ pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRu
     );
     let bytes = reqwest::get(&asset.url)
         .await
-        .map_err(|_| "runtime pack download failed".to_string())?
+        .map_err(|_| {
+            log_runtime_setup("downloading_runtime", "network_error", "Runtime pack download request failed.");
+            "runtime pack download failed".to_string()
+        })?
         .bytes()
         .await
-        .map_err(|_| "runtime pack download failed".to_string())?;
+        .map_err(|_| {
+            log_runtime_setup("downloading_runtime", "network_error", "Runtime pack download body read failed.");
+            "runtime pack download failed".to_string()
+        })?;
     if let Some(expected_size) = asset.size {
         if bytes.len() as u64 != expected_size {
             let store = LocalRuntimePackStateStore {
@@ -1954,10 +2739,14 @@ pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRu
                 last_debug_ref: Some(format!("rp-{}", now_epoch_ms())),
             };
             let _ = save_runtime_pack_state_store(&store);
+            log_runtime_setup("validating_runtime", "validation_failed", "Runtime pack size did not match manifest.");
             return read_runtime_pack_status();
         }
     }
-    fs::write(&tmp_zip, &bytes).map_err(|e| e.to_string())?;
+    fs::write(&tmp_zip, &bytes).map_err(|e| {
+        log_runtime_setup("installing_runtime", "permission_error", "Failed to write runtime archive.");
+        e.to_string()
+    })?;
     let actual = sha256_file(&tmp_zip)?;
     if actual != asset.sha256.to_ascii_lowercase() {
         let store = LocalRuntimePackStateStore {
@@ -1968,6 +2757,7 @@ pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRu
             last_debug_ref: Some(format!("rp-{}", now_epoch_ms())),
         };
         let _ = save_runtime_pack_state_store(&store);
+        log_runtime_setup("validating_runtime", "corrupted", "Runtime pack checksum mismatch.");
         return read_runtime_pack_status();
     }
 
@@ -1984,6 +2774,8 @@ pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRu
     if let Err(code) = validate_runtime_pack_install(&staging_dir, &required_modules) {
         let status = if code == "missing_files" {
             RuntimePackStatusKind::MissingFiles
+        } else if code == "validation_failed" {
+            RuntimePackStatusKind::NativeImportFailure
         } else {
             RuntimePackStatusKind::ValidationFailed
         };
@@ -1996,6 +2788,7 @@ pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRu
         };
         let _ = save_runtime_pack_state_store(&store);
         let _ = fs::remove_dir_all(&staging_dir);
+        log_runtime_setup("validating_runtime", "validation_failed", "Runtime dependency validation failed.");
         return read_runtime_pack_status();
     }
 
@@ -2026,6 +2819,7 @@ pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRu
         "Runtime-pack ready.",
         RuntimePackStatusKind::Ready,
     );
+    log_runtime_setup("validating_runtime", "success", "Runtime validation succeeded.");
     read_runtime_pack_status()
 }
 
@@ -2043,7 +2837,7 @@ pub async fn local_runtime_pack_repair(app: tauri::AppHandle) -> Result<LocalRun
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_local_model_download_error, resolve_runtime_pack_asset, RuntimePackManifest};
+    use super::{classify_local_model_download_error, resolve_runtime_pack_asset, sanitize_runtime_error, RuntimePackManifest};
 
     #[test]
     fn local_model_error_missing_dependency_for_top_level_module_only() {
@@ -2064,6 +2858,64 @@ mod tests {
     fn local_model_error_runtime_pack_required() {
         let result = classify_local_model_download_error("runtime_pack_setup_required");
         assert_eq!(result.code, "runtime_pack_setup_required");
+    }
+
+    #[test]
+    fn local_model_error_runtime_setup_network_failure() {
+        let result = classify_local_model_download_error(
+            "runtime pack setup failed status=network_error error_code=network_error",
+        );
+        assert_eq!(result.code, "network_error");
+    }
+
+    #[test]
+    fn local_model_error_runtime_setup_permission_failure() {
+        let result = classify_local_model_download_error(
+            "runtime pack setup failed status=permission_error error_code=permission_error",
+        );
+        assert_eq!(result.code, "permission_error");
+    }
+
+    #[test]
+    fn local_model_error_runtime_manifest_parse_failure() {
+        let result = classify_local_model_download_error("runtime pack manifest parse failed");
+        assert_eq!(result.code, "runtime_manifest_parse_error");
+    }
+
+    #[test]
+    fn local_model_error_runtime_manifest_not_json_failure() {
+        let result = classify_local_model_download_error("runtime pack manifest is not json");
+        assert_eq!(result.code, "runtime_manifest_parse_error");
+    }
+
+    #[test]
+    fn local_model_error_runtime_manifest_missing_configuration() {
+        let result =
+            classify_local_model_download_error("runtime pack manifest url not configured");
+        assert_eq!(result.code, "runtime_manifest_parse_error");
+    }
+
+    #[test]
+    fn local_model_error_dependency_install_failure() {
+        let result = classify_local_model_download_error(
+            "failed to install Python dependency requests>=2.31: network is unreachable",
+        );
+        assert_eq!(result.code, "dependency_install_failed");
+    }
+
+    #[test]
+    fn local_model_error_missing_requests_dependency() {
+        let result = classify_local_model_download_error("No module named 'requests'");
+        assert_eq!(result.code, "missing_dependency");
+    }
+
+    #[test]
+    fn runtime_error_sanitizer_redacts_home_path() {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp/home".to_string());
+        let raw = format!("failed at {home}/secret-path");
+        let redacted = sanitize_runtime_error(&raw);
+        assert!(!redacted.contains(&home));
+        assert!(redacted.contains("[home]"));
     }
 
     #[test]

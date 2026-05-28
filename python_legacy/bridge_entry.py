@@ -1,11 +1,23 @@
 #!/usr/bin/env python3
 import json
+import importlib.util
 import os
+from pathlib import Path
+import subprocess
 import sys
 import time
 import traceback
 
 CONTRACT_VERSION = "1"
+DEPENDENCY_INSTALL_TIMEOUT_SECONDS = 900
+MODULE_REQUIREMENTS = {
+    "requests": ("requirements.txt", "requests"),
+    "dotenv": ("requirements.txt", "python-dotenv"),
+    "yt_dlp": ("requirements-local.txt", "yt-dlp"),
+    "faster_whisper": ("requirements-local.txt", "faster-whisper"),
+    "openai": ("requirements-local.txt", "openai"),
+    "cv2": ("requirements-local.txt", "opencv-python"),
+}
 
 
 def _read_request():
@@ -35,6 +47,22 @@ def _err(message, code="PYTHON_ERROR", details=None):
     )
 
 
+def _progress(phase, progress, message):
+    sys.stderr.write(
+        json.dumps(
+            {
+                "event": "local_model_setup_progress",
+                "phase": phase,
+                "progress": progress,
+                "message": message,
+            },
+            ensure_ascii=False,
+        )
+        + "\n"
+    )
+    sys.stderr.flush()
+
+
 def _runtime_details():
     return {
         "python_executable": sys.executable,
@@ -52,6 +80,94 @@ def _cause_details(exc):
         "cause_type": cause.__class__.__name__,
         "cause_message": str(cause),
     }
+
+
+def _repo_root():
+    return Path(__file__).resolve().parent.parent
+
+
+def _requirement_spec(import_name):
+    item = MODULE_REQUIREMENTS.get(import_name)
+    if item is None:
+        raise RuntimeError(f"missing module is not allowlisted for auto-install: {import_name}")
+
+    filename, distribution = item
+    req_path = _repo_root() / filename
+    if not req_path.exists():
+        raise RuntimeError(f"dependency requirements file is missing: {filename}")
+
+    distribution_key = distribution.lower().replace("_", "-")
+    for raw_line in req_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        normalized = line.lower().replace("_", "-")
+        if normalized == distribution_key or normalized.startswith(
+            (
+                f"{distribution_key}<",
+                f"{distribution_key}>",
+                f"{distribution_key}=",
+                f"{distribution_key}~",
+                f"{distribution_key}!",
+                f"{distribution_key}[",
+                f"{distribution_key};",
+            )
+        ):
+            return line
+
+    raise RuntimeError(f"dependency requirement is not declared: {distribution}")
+
+
+def _install_requirement(import_name):
+    spec = _requirement_spec(import_name)
+    _progress(
+        "installing_dependency",
+        0.45,
+        f"Installing Python dependency: {spec}",
+    )
+    cmd = [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--disable-pip-version-check",
+        spec,
+    ]
+    proc = subprocess.run(
+        cmd,
+        cwd=str(_repo_root()),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=DEPENDENCY_INSTALL_TIMEOUT_SECONDS,
+        shell=False,
+    )
+    if proc.returncode != 0:
+        stderr = (proc.stderr or proc.stdout or "").strip()[-2000:]
+        raise RuntimeError(f"failed to install Python dependency {spec}: {stderr}")
+    _progress(
+        "installing_dependency",
+        0.55,
+        f"Installed Python dependency: {spec}",
+    )
+
+
+def _ensure_python_modules(import_names):
+    installed = []
+    for import_name in import_names:
+        if import_name not in MODULE_REQUIREMENTS:
+            raise RuntimeError(f"module is not allowlisted for auto-install: {import_name}")
+        if importlib.util.find_spec(import_name) is not None:
+            continue
+        _install_requirement(import_name)
+        installed.append(import_name)
+    return installed
+
+
+def _dependency_repair_details(installed):
+    if not installed:
+        return {}
+    return {"installed_modules": installed}
 
 
 def main() -> int:
@@ -84,7 +200,14 @@ def main() -> int:
 
     if action != "run_local":
         if action == "prefetch_local_model":
+            installed_modules = []
             try:
+                installed_modules = _ensure_python_modules(["faster_whisper"])
+                _progress(
+                    "downloading_model",
+                    0.68,
+                    f"Downloading Whisper model: {payload.get('model', '') or 'default'}",
+                )
                 from shorts_generator.local.transcriber import prefetch_local_model
                 _ok(
                     prefetch_local_model(
@@ -101,6 +224,7 @@ def main() -> int:
                         "exception_type": exc.__class__.__name__,
                         "traceback": traceback.format_exc(),
                         "runtime": _runtime_details(),
+                        **_dependency_repair_details(installed_modules),
                         **_cause_details(exc),
                     },
                 )
@@ -147,6 +271,9 @@ def main() -> int:
         return 0
 
     try:
+        installed_modules = _ensure_python_modules(
+            ["requests", "dotenv", "yt_dlp", "faster_whisper", "openai", "cv2"]
+        )
         from shorts_generator import generate_shorts
         result = generate_shorts(
             youtube_url=payload.get("youtube_url"),
@@ -166,6 +293,7 @@ def main() -> int:
                 "exception_type": exc.__class__.__name__,
                 "traceback": traceback.format_exc(),
                 "runtime": _runtime_details(),
+                **_dependency_repair_details(locals().get("installed_modules", [])),
                 **_cause_details(exc),
             },
         )

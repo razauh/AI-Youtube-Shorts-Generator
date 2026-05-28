@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, screen, cleanup } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
 import { createRunState } from '../lib/stores/runState';
 
 const runGenerateAndStream = vi.fn();
@@ -301,7 +302,7 @@ describe('test_ui flow parity', () => {
   it('test_select_controls_use_themed_select_wrapper', () => {
     render(Page);
 
-    const selectLabels = ['Source type', 'Mode', 'Aspect ratio', 'Resolution', 'Whisper model', 'Processing device'];
+    const selectLabels = ['Source type', 'Mode', 'Aspect ratio', 'Resolution'];
     for (const label of selectLabels) {
       const selectEl = screen.getByLabelText(label) as HTMLButtonElement;
       expect(selectEl.tagName).toBe('BUTTON');
@@ -447,6 +448,8 @@ describe('test_ui flow parity', () => {
     expect(screen.getByRole('tab', { name: 'Device Reset' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Local Processing help' })).toBeTruthy();
     expect(screen.getByText('On-device pipeline')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Download Runtime' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Repair Local Processing Setup' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'MuAPI Access help' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'OpenAI Access help' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Device Reset help' })).toBeNull();
@@ -505,8 +508,8 @@ describe('test_ui flow parity', () => {
     await chooseThemedSelectOption('Whisper model', 'Small - better accuracy, still practical on CPU');
     await fireEvent.input(screen.getByLabelText('Local model profile name'), { target: { value: 'Small CPU' } });
     await chooseThemedSelectOption('Processing device', 'CPU - most compatible');
-    await fireEvent.click(screen.getByRole('button', { name: 'Save and Download' }));
-    expect(localModelProfileAdd).toHaveBeenCalledWith('Small CPU', 'small', 'cpu', true);
+    await fireEvent.click(screen.getByRole('button', { name: 'Download Model' }));
+    expect(localModelProfileAdd).toHaveBeenCalledWith('Small CPU', 'base', 'auto', true);
 
     await fireEvent.click(screen.getByRole('tab', { name: 'API Providers' }));
     await fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0]);
@@ -574,8 +577,8 @@ describe('test_ui flow parity', () => {
       youtube_url: 'https://youtube.com/watch?v=abc',
       mode: 'api',
       num_clips: 5,
-      aspect_ratio: '1:1',
-      download_format: '1080',
+      aspect_ratio: '9:16',
+      download_format: '720',
       output_json: 'result.json'
     });
   });
@@ -666,12 +669,17 @@ describe('test_ui flow parity', () => {
     render(Page);
     await chooseThemedSelectOption('Mode', 'local');
     await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
-    expect(screen.getByText('Local processing runtime is not ready. Download it from Settings before running local mode.')).toBeTruthy();
     await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
 
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Configuration', selected: true })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Local Processing', selected: true })).toBeTruthy();
+  });
+
+  it('test_local_download_failure_banner_uses_spaced_actions_layout', async () => {
+    const source = readFileSync('src/routes/+page.svelte', 'utf8');
+    expect(source).toContain('.local-download-stack');
+    expect(source).toContain('.local-download-actions');
   });
 
   it('test_generate_form_shows_persistent_error_for_empty_source', async () => {

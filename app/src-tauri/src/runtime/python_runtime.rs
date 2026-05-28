@@ -47,6 +47,16 @@ pub fn invoke_python(req: PythonInvokeRequest) -> Result<ProcessOutput, ProcessE
 }
 
 pub fn resolve_python_bridge_paths() -> PythonBridgePaths {
+    if cfg!(debug_assertions) {
+        if let Some((python, entry)) = detect_dev_bridge_paths() {
+            return PythonBridgePaths {
+                python_bin: python.display().to_string(),
+                entry_script: entry.display().to_string(),
+                bundled_runtime_dir: None,
+            };
+        }
+    }
+
     if let Some(dir) = detect_optional_runtime_pack_dir() {
         let python = if cfg!(windows) {
             dir.join("python.exe")
@@ -77,14 +87,6 @@ pub fn resolve_python_bridge_paths() -> PythonBridgePaths {
                 bundled_runtime_dir: Some(dir),
             };
         }
-    }
-
-    if let Some((python, entry)) = detect_dev_bridge_paths() {
-        return PythonBridgePaths {
-            python_bin: python.display().to_string(),
-            entry_script: entry.display().to_string(),
-            bundled_runtime_dir: None,
-        };
     }
 
     // In release/packaged builds, avoid falling back to PATH/relative bridge paths.
@@ -159,10 +161,12 @@ pub fn with_python_runtime_env(
 
 fn detect_bundled_runtime_dir() -> Option<PathBuf> {
     let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let candidates = vec![
         exe_dir.join("../lib").join("bundled-runtime"),
         exe_dir.join("../resources").join("bundled-runtime"),
         exe_dir.join("resources").join("bundled-runtime"),
+        manifest_dir.join("bundled-runtime"),
     ];
     candidates.into_iter().find(|p| p.exists())
 }

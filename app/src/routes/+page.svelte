@@ -12,15 +12,11 @@
     apiKeyProfiles,
     appConfigSummary,
     listenLocalModelDownloadProgress,
-    listenLocalRuntimePackProgress,
     localModelDownloadStatus,
     localModelProfileActivate,
     localModelProfileAdd,
     localModelProfileDelete,
     localModelProfileRetryDownload,
-    localRuntimePackPrepare,
-    localRuntimePackRepair,
-    localRuntimePackRetry,
     localRuntimePackStatus,
     localModelProfiles,
     runtimeContext,
@@ -115,7 +111,6 @@
   let localModelDownload = null;
   let localProfileLabel = '';
   let localRuntimePack = null;
-  let localRuntimePackProgress = null;
   let muapiProfileLabel = '';
   let muapiKeyInput = '';
   let openaiProfileLabel = '';
@@ -190,6 +185,13 @@
   $: whisperModelOptions = optionListWithCurrent(WHISPER_MODEL_OPTIONS, settingsConfig?.localWhisperModel, 'Current custom model');
   $: whisperDeviceOptions = optionListWithCurrent(WHISPER_DEVICE_OPTIONS, settingsConfig?.localWhisperDevice, 'Current custom device');
   $: activeLocalModelProfile = localProfiles?.profiles?.find((profile) => profile.active) ?? null;
+  $: localModelDownloadProfileExists =
+    Boolean(localModelDownload?.profileId) &&
+    Boolean(localProfiles?.profiles?.some((profile) => profile.id === localModelDownload?.profileId));
+  $: showLocalModelDownloadBanner =
+    Boolean(localModelDownload?.active && (!localModelDownload?.profileId || localModelDownloadProfileExists)) ||
+    Boolean(localModelDownload?.phase === 'failed' && localModelDownloadProfileExists);
+  $: localModelDownloadPercent = Math.max(0, Math.min(100, Math.round((localModelDownload?.progress || 0) * 100)));
   $: activeLocalModelDownloading =
     Boolean(localModelDownload?.active && localModelDownload?.profileId === activeLocalModelProfile?.id) ||
     activeLocalModelProfile?.downloadStatus === 'downloading' ||
@@ -205,14 +207,13 @@
   $: localRunBlockedMessage = activeLocalModelDownloading
     ? 'Local model is still downloading. You can use API mode now or wait for the local model to finish.'
     : localRuntimePackBlocking
-      ? 'Local processing runtime is not ready. Download it from Settings before running local mode.'
+      ? 'Local processing setup is not ready yet. Start model download from Settings to complete setup.'
       : 'Active local model is not ready. Retry the download from Settings or use API mode.';
   $: activeSetupBlockers = mode === 'local' ? setupStatus.blockersLocal : setupStatus.blockersApi;
   $: setupModalBlockerMessages = friendlySetupBlockers(activeSetupBlockers);
 
   onMount(() => {
     let unlistenLocalModel = null;
-    let unlistenRuntimePack = null;
     try {
       loadState();
       loadCrashDraftFromLocalStorage();
@@ -229,13 +230,6 @@
       }).catch(() => {
         localModelDownload = null;
       });
-      listenLocalRuntimePackProgress((event) => {
-        localRuntimePackProgress = event;
-      }).then((unlisten) => {
-        unlistenRuntimePack = unlisten;
-      }).catch(() => {
-        localRuntimePackProgress = null;
-      });
     } catch (_err) {
       projects = [];
       theme = 'dark';
@@ -250,9 +244,6 @@
       window.removeEventListener('unhandledrejection', captureUnhandledRejection);
       if (unlistenLocalModel) {
         unlistenLocalModel();
-      }
-      if (unlistenRuntimePack) {
-        unlistenRuntimePack();
       }
     };
   });
@@ -520,57 +511,6 @@
     }
   }
 
-  async function prepareRuntimePack() {
-    settingsActionBusy = true;
-    settingsActionTarget = 'local';
-    try {
-      localRuntimePack = await localRuntimePackPrepare();
-      settingsActionKind = 'success';
-      settingsActionStatus = 'Local processing runtime download started.';
-      await loadSettingsStatus();
-      await loadSetupStatus();
-    } catch (err) {
-      settingsActionKind = 'error';
-      settingsActionStatus = err instanceof Error ? err.message : 'Runtime-pack setup failed.';
-    } finally {
-      settingsActionBusy = false;
-    }
-  }
-
-  async function retryRuntimePack() {
-    settingsActionBusy = true;
-    settingsActionTarget = 'local';
-    try {
-      localRuntimePack = await localRuntimePackRetry();
-      settingsActionKind = 'success';
-      settingsActionStatus = 'Local processing runtime retry started.';
-      await loadSettingsStatus();
-      await loadSetupStatus();
-    } catch (err) {
-      settingsActionKind = 'error';
-      settingsActionStatus = err instanceof Error ? err.message : 'Runtime-pack retry failed.';
-    } finally {
-      settingsActionBusy = false;
-    }
-  }
-
-  async function repairRuntimePack() {
-    settingsActionBusy = true;
-    settingsActionTarget = 'local';
-    try {
-      localRuntimePack = await localRuntimePackRepair();
-      settingsActionKind = 'success';
-      settingsActionStatus = 'Local processing runtime repair started.';
-      await loadSettingsStatus();
-      await loadSetupStatus();
-    } catch (err) {
-      settingsActionKind = 'error';
-      settingsActionStatus = err instanceof Error ? err.message : 'Runtime-pack repair failed.';
-    } finally {
-      settingsActionBusy = false;
-    }
-  }
-
   function handleSetupConfigureNow() {
     const target = setupTargetFromBlockers(activeSetupBlockers);
     setupRequiredModalOpen = false;
@@ -756,7 +696,7 @@
         true
       );
       localProfileLabel = '';
-      settingsActionStatus = 'Local model profile saved. Download started in the background.';
+      settingsActionStatus = 'Checking local processing setup and starting model download...';
       settingsActionTarget = 'local';
       settingsActionKind = 'success';
     } finally {
@@ -792,7 +732,7 @@
     settingsActionStatus = '';
     try {
       localProfiles = await localModelProfileRetryDownload(profileId);
-      settingsActionStatus = 'Local model download restarted.';
+      settingsActionStatus = 'Checking local processing setup and retrying model download...';
     } finally {
       settingsActionBusy = false;
     }
@@ -842,8 +782,12 @@
     }
   }
 
-  async function deleteLocalModelProfile(profileId) {
+  async function deleteLocalModelProfile(profileId, label = 'this local model') {
     if (settingsActionBusy) {
+      return;
+    }
+    const confirmed = window.confirm(`Delete "${label}"? This removes the local model profile from the app.`);
+    if (!confirmed) {
       return;
     }
     settingsActionBusy = true;
@@ -851,6 +795,9 @@
     settingsActionKind = 'success';
     settingsActionStatus = '';
     try {
+      if (localModelDownload?.profileId === profileId) {
+        localModelDownload = null;
+      }
       localProfiles = await localModelProfileDelete(profileId);
       settingsActionStatus = 'Local model profile deleted.';
     } finally {
@@ -866,6 +813,22 @@
     if (normalized === 'queued') return 'Queued';
     if (normalized === 'failed') return 'Failed';
     return 'Not downloaded';
+  }
+
+  function localModelPhaseLabel(phase) {
+    const labels = {
+      checking: 'checking model',
+      checking_runtime: 'checking runtime',
+      downloading_runtime: 'downloading runtime',
+      installing_runtime: 'installing runtime',
+      installing_dependency: 'installing dependency',
+      validating_runtime: 'validating runtime',
+      downloading: 'downloading',
+      downloading_model: 'downloading model',
+      verifying: 'verifying',
+      validating_model: 'validating model'
+    };
+    return labels[phase] || phase || 'working';
   }
 
   function optionListWithCurrent(options, currentValue, currentLabel) {
@@ -1344,29 +1307,32 @@
     </aside>
 
     <section class="content">
-      {#if localModelDownload && (localModelDownload.active || localModelDownload.phase === 'failed' || localModelDownload.phase === 'ready')}
+      {#if localModelDownload && showLocalModelDownloadBanner}
         <section class="panel local-download-banner" aria-live="polite">
-          <div>
-            <p class="status-line">
+          <div class="local-download-stack">
+            <p class="status-line local-download-status-line">
               Local model: {localModelDownload.message}
+              {#if localModelDownload.active}
+                <span class="meta">({localModelDownloadPercent}% - {localModelPhaseLabel(localModelDownload.phase)})</span>
+              {/if}
               {#if localModelDownload.phase === 'failed' && localModelDownload.error}
                 <span class="error-text">{localModelDownload.error}</span>
               {/if}
             </p>
+            <div class="meter">
+              <span style={`width:${localModelDownloadPercent}%`}></span>
+            </div>
             {#if localModelDownload.phase === 'failed'}
-              <div class="row">
+              <div class="row local-download-actions">
                 <button type="button" on:click={() => retryLocalModelDownload(localModelDownload.profileId)} disabled={settingsActionBusy || !localModelDownload.profileId}>Try Again</button>
                 <button type="button" class="button-secondary" on:click={recheckLocalSetup}>Recheck Setup</button>
                 <button type="button" class="button-secondary" on:click={openLocalDownloadLog}>Open Logs</button>
                 <button type="button" class="button-secondary" on:click={copyLocalDownloadDetails}>Copy Error Details</button>
               </div>
               {#if localDownloadActionStatus}
-                <p class="meta">{localDownloadActionStatus}</p>
+                <p class="meta local-download-action-status">{localDownloadActionStatus}</p>
               {/if}
             {/if}
-            <div class="meter">
-              <span style={`width:${Math.max(0, Math.min(100, Math.round((localModelDownload.progress || 0) * 100)))}%`}></span>
-            </div>
           </div>
         </section>
       {/if}
@@ -1734,23 +1700,6 @@
             {#if localProfiles?.envOverride}
               <p class="meta warn-text">Environment variable override is active. Saved model profiles are available, but runtime will use the environment model/device.</p>
             {/if}
-            <div class="panel runtime-pack-panel">
-              <h4>Local Processing Runtime</h4>
-              <p class:ok={localRuntimePack?.status === 'ready'} class:warn={localRuntimePack?.status !== 'ready'}>
-                {localRuntimePack?.message || 'Runtime status unavailable.'}
-              </p>
-              {#if localRuntimePackProgress}
-                <p class="meta">Phase: {localRuntimePackProgress.phase} ({Math.round((localRuntimePackProgress.progress || 0) * 100)}%)</p>
-              {/if}
-              <div class="row">
-                <button type="button" on:click={prepareRuntimePack} disabled={settingsActionBusy || localRuntimePack?.status === 'ready'}>Download Runtime</button>
-                <button type="button" class="button-secondary" on:click={retryRuntimePack} disabled={settingsActionBusy}>Retry</button>
-                <button type="button" class="button-secondary" on:click={repairRuntimePack} disabled={settingsActionBusy}>Repair</button>
-              </div>
-              {#if localRuntimePack?.requiredSizeBytes}
-                <p class="meta">Required download: {Math.round(localRuntimePack.requiredSizeBytes / 1024 / 1024)} MB</p>
-              {/if}
-            </div>
             <form class="form config-form local-processing-form" novalidate on:submit|preventDefault={saveLocalProcessing}>
               <label>Profile name <input aria-label="Local model profile name" autocomplete="off" bind:value={localProfileLabel} placeholder="Balanced local model" /></label>
               <div class="select-field">
@@ -1774,7 +1723,7 @@
                 <ThemedSelect ariaLabel="Processing device" bind:value={whisperDeviceInput} options={whisperDeviceOptions} />
               </div>
               <div class="settings-actions">
-                <button type="submit" disabled={settingsActionBusy || !canSaveLocalProcessing}>Save and Download</button>
+                <button type="submit" disabled={settingsActionBusy || !canSaveLocalProcessing}>Download Model</button>
               </div>
             </form>
             <div class="api-profile-list local-model-list" aria-label="Local model profiles">
@@ -1793,13 +1742,14 @@
                         {#if profile.active && profile.downloadStatus === 'ready'}
                           <span class="profile-active-badge">Active</span>
                         {/if}
-                        <span
-                          class="profile-status-badge"
-                          class:badge-ready={profile.downloadStatus === 'ready'}
-                          class:badge-failed={profile.downloadStatus === 'failed'}
-                          class:badge-downloading={profile.downloadStatus === 'downloading' || profile.downloadStatus === 'queued'}
-                          class:badge-not-downloaded={profile.downloadStatus === 'not_downloaded' || !profile.downloadStatus}
-                        >{localModelStatusLabel(profile.downloadStatus)}</span>
+                        {#if profile.downloadStatus !== 'ready'}
+                          <span
+                            class="profile-status-badge"
+                            class:badge-failed={profile.downloadStatus === 'failed'}
+                            class:badge-downloading={profile.downloadStatus === 'downloading' || profile.downloadStatus === 'queued'}
+                            class:badge-not-downloaded={profile.downloadStatus === 'not_downloaded' || !profile.downloadStatus}
+                          >{localModelStatusLabel(profile.downloadStatus)}</span>
+                        {/if}
                       </div>
                       <div class="model-action-group">
                         {#if profile.downloadStatus === 'ready' && !profile.active}
@@ -1811,7 +1761,7 @@
                         {#if profile.downloadStatus === 'not_downloaded'}
                           <button type="button" on:click={() => retryLocalModelDownload(profile.id)} disabled={settingsActionBusy || Boolean(localModelDownload?.active && localModelDownload?.profileId === profile.id)}>Download</button>
                         {/if}
-                        <button class="button-danger" type="button" on:click={() => deleteLocalModelProfile(profile.id)} disabled={settingsActionBusy}>Delete</button>
+                        <button class="button-danger" type="button" on:click={() => deleteLocalModelProfile(profile.id, profile.label)} disabled={settingsActionBusy}>Delete</button>
                       </div>
                     </div>
                   </div>
@@ -2615,6 +2565,26 @@
     padding: var(--space-md);
   }
 
+  .local-download-stack {
+    display: grid;
+    gap: var(--space-sm);
+  }
+
+  .local-download-status-line {
+    display: grid;
+    gap: var(--space-xs);
+    margin: 0;
+  }
+
+  .local-download-actions {
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+  }
+
+  .local-download-action-status {
+    margin-top: var(--space-xs);
+  }
+
   .local-model-row .model-info {
     display: grid;
     gap: var(--space-xs);
@@ -2632,12 +2602,6 @@
     min-width: 88px;
     text-align: center;
     white-space: nowrap;
-  }
-
-  .badge-ready {
-    color: var(--color-state-success);
-    border-color: color-mix(in srgb, var(--color-state-success) 32%, transparent);
-    background: color-mix(in srgb, var(--color-state-success) 6%, transparent);
   }
 
   .badge-failed {
@@ -2675,6 +2639,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-sm);
+    flex-wrap: wrap;
   }
 
   .select-field {

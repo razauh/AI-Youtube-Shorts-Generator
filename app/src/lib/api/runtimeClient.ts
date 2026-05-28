@@ -49,7 +49,12 @@ export type RuntimePackStatusKind =
   | 'corrupted'
   | 'incompatible_platform'
   | 'missing_files'
-  | 'validation_failed';
+  | 'missing_dependency'
+  | 'native_import_failure'
+  | 'permission_error'
+  | 'network_error'
+  | 'validation_failed'
+  | 'unknown_error';
 
 export interface LocalRuntimePackStatus {
   status: RuntimePackStatusKind;
@@ -70,6 +75,21 @@ export interface RuntimePackProgressEvent {
   message: string;
   status: RuntimePackStatusKind;
 }
+
+export type LocalModelDownloadPhase =
+  | 'idle'
+  | 'checking'
+  | 'checking_runtime'
+  | 'downloading_runtime'
+  | 'installing_runtime'
+  | 'installing_dependency'
+  | 'validating_runtime'
+  | 'downloading'
+  | 'downloading_model'
+  | 'verifying'
+  | 'validating_model'
+  | 'ready'
+  | 'failed';
 
 export interface AppConfigSummary {
   licenseBackendMode: string;
@@ -125,7 +145,7 @@ export interface LocalModelDownloadStatus {
   profileId?: string | null;
   model?: string | null;
   device?: string | null;
-  phase: string;
+  phase: LocalModelDownloadPhase;
   progress: number;
   message: string;
   error?: string | null;

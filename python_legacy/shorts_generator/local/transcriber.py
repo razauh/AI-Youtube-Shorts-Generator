@@ -5,6 +5,7 @@ expects: {duration, segments[start, end, text]}.
 """
 import os
 from pathlib import Path
+import sys
 from typing import Dict, Optional
 
 from ..config import LOCAL_WHISPER_DEVICE, LOCAL_WHISPER_MODEL
@@ -51,7 +52,7 @@ def prefetch_local_model(model_name: str, device: str = "auto", cache_dir: Optio
     resolved_device = device if device in {"cpu", "cuda"} else _resolve_device()
     compute_type = "float16" if resolved_device == "cuda" else "int8"
     download_root = cache_dir or _model_cache_dir()
-    print(f"[transcribe/local] prefetch model={model_name} device={resolved_device}", flush=True)
+    print(f"[transcribe/local] prefetch model={model_name} device={resolved_device}", file=sys.stderr, flush=True)
     WhisperModel(model_name, device=resolved_device, compute_type=compute_type, download_root=download_root)
     return {"model": model_name, "device": resolved_device, "cached": True}
 
@@ -73,7 +74,7 @@ def transcribe_local(media_path: str, language: Optional[str] = None) -> Dict:
 
     device = _resolve_device()
     compute_type = "float16" if device == "cuda" else "int8"
-    print(f"[transcribe/local] faster-whisper model={LOCAL_WHISPER_MODEL} device={device}", flush=True)
+    print(f"[transcribe/local] faster-whisper model={LOCAL_WHISPER_MODEL} device={device}", file=sys.stderr, flush=True)
 
     model = WhisperModel(
         LOCAL_WHISPER_MODEL,
@@ -98,5 +99,5 @@ def transcribe_local(media_path: str, language: Optional[str] = None) -> Dict:
         })
 
     duration = float(getattr(info, "duration", 0.0)) or (segments[-1]["end"] if segments else 0.0)
-    print(f"[transcribe/local] {len(segments)} segments, {duration:.0f}s of audio", flush=True)
+    print(f"[transcribe/local] {len(segments)} segments, {duration:.0f}s of audio", file=sys.stderr, flush=True)
     return {"duration": duration, "segments": segments}
