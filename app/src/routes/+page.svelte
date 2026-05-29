@@ -2096,10 +2096,11 @@
       {#if settingsTab === 'policies'}
         <div id="settings-panel-policies" class="panel" role="tabpanel" aria-labelledby="settings-tab-policies">
           <h3>Policies</h3>
-          <p class="meta">Reference documents for use, privacy, third-party notices, refunds, and liability.</p>
+          <p class="meta">Reference documents for use, privacy, data compliance, third-party notices, refunds, and liability.</p>
           <div class="row">
             <button type="button" class:active-tab={policiesTab === 'terms'} on:click={() => (policiesTab = 'terms')}>Terms</button>
             <button type="button" class:active-tab={policiesTab === 'privacy'} on:click={() => (policiesTab = 'privacy')}>Privacy</button>
+            <button type="button" class:active-tab={policiesTab === 'compliance'} on:click={() => (policiesTab = 'compliance')}>Data Compliance</button>
             <button type="button" class:active-tab={policiesTab === 'notices'} on:click={() => (policiesTab = 'notices')}>Third-Party Notices</button>
             <button type="button" class:active-tab={policiesTab === 'refund'} on:click={() => (policiesTab = 'refund')}>Refund Policy</button>
           </div>

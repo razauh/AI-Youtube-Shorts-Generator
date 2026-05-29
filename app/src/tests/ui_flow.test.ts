@@ -527,9 +527,10 @@ describe('test_ui flow parity', () => {
     expect(screen.queryByRole('button', { name: 'Terms' })).toBeNull();
     await fireEvent.click(screen.getByRole('tab', { name: 'Policies' }));
     expect(screen.getByRole('tab', { name: 'Policies', selected: true })).toBeTruthy();
-    expect(screen.getByText('Reference documents for use, privacy, third-party notices, refunds, and liability.')).toBeTruthy();
+    expect(screen.getByText('Reference documents for use, privacy, data compliance, third-party notices, refunds, and liability.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Terms' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Privacy' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Data Compliance' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Third-Party Notices' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Refund Policy' })).toBeTruthy();
   });
@@ -783,9 +784,14 @@ describe('test_ui flow parity', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Privacy' }));
     expect(screen.getByText('Privacy Policy')).toBeTruthy();
 
+    await fireEvent.click(screen.getByRole('button', { name: 'Data Compliance' }));
+    expect(screen.getAllByText('Data Compliance').length).toBeGreaterThan(0);
+    expect(screen.getByText('1. Purpose and Scope')).toBeTruthy();
+
     await fireEvent.click(screen.getByRole('button', { name: 'Third-Party Notices' }));
     expect(screen.getAllByText('Third-Party Notices').length).toBeGreaterThan(0);
-    expect(screen.getByText('3. FFmpeg')).toBeTruthy();
+    expect(screen.getByText('6. Media Tools')).toBeTruthy();
+    expect(screen.getByText(/License metadata for Python packages and transitive dependencies/)).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Refund Policy' }));
 
