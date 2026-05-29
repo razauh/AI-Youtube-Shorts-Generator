@@ -328,6 +328,8 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       "heading": "10. Data Retention and Deletion",
       "paragraphs": [
         "Local data may remain on your device until you delete it, the application deletes it, or your operating system removes it.",
+        "User data deletion removes or anonymizes application-controlled licensing records. Historical idempotency records may not always be linkable to a deletion subject and are handled on a best-effort basis.",
+        "Cloudflare platform logs and provider-level infrastructure logs are governed by the relevant provider or account retention policy and are not directly deleted by the application.",
         "Server-side license, purchase, device binding, reset, audit, support, update, or crash-report data may be retained according to the relevant backend or provider configuration.",
         "[VERIFY: production retention and deletion policy for license records, purchaser email, device binding information, support requests, crash reports, and logs]"
       ]
