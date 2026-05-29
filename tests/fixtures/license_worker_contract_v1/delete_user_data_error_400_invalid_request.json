@@ -1,0 +1,9 @@
+{
+  "ok": false,
+  "error": {
+    "code": "invalid_deletion_request",
+    "message": "Invalid deletion request payload.",
+    "request_id": "req_123",
+    "retryable": false
+  }
+}

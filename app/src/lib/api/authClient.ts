@@ -4,6 +4,9 @@ import type {
   DeviceResetInput,
   DeviceResetView,
   SessionView,
+  UserDataDeletionInput,
+  UserDataDeletionStatusInput,
+  UserDataDeletionView,
 } from '../authContracts';
 
 interface TauriCore {
@@ -38,6 +41,14 @@ export function requestDeviceReset(input: DeviceResetInput): Promise<DeviceReset
 
 export function getDeviceResetStatus(requestId: string): Promise<DeviceResetView> {
   return invoke<DeviceResetView>('get_device_reset_status', { requestId });
+}
+
+export function requestUserDataDeletion(input: UserDataDeletionInput): Promise<UserDataDeletionView> {
+  return invoke<UserDataDeletionView>('request_user_data_deletion', { input });
+}
+
+export function getUserDataDeletionStatus(input: UserDataDeletionStatusInput): Promise<UserDataDeletionView> {
+  return invoke<UserDataDeletionView>('get_user_data_deletion_status', { input });
 }
 
 export function clearLocalSession(): Promise<void> {

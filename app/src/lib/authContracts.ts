@@ -61,6 +61,26 @@ export interface DeviceResetView {
   auth_state: AuthStateView;
 }
 
+export interface UserDataDeletionInput {
+  license_key: string;
+  purchaser_email?: string | null;
+  confirmation: string;
+}
+
+export interface UserDataDeletionStatusInput {
+  request_id: string;
+  lookup_token: string;
+}
+
+export interface UserDataDeletionView {
+  request_id: string;
+  lookup_token?: string | null;
+  status: string;
+  message?: string | null;
+  completed_at_ms?: number | null;
+  error_code?: string | null;
+}
+
 export interface AuthCommandError {
   code: string;
   message: string;

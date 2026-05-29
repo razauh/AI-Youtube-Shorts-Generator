@@ -7,6 +7,7 @@ class MockD1Database {
     this.idempotency = new Map();
     this.licenses = new Map();
     this.resetRequests = new Map();
+    this.deletionRequests = new Map();
     this.deviceBindings = new Map();
     this.auditEvents = [];
   }
@@ -37,6 +38,22 @@ class MockStatement {
   }
 
   async first() {
+    if (this.sql.includes('COUNT(*) AS count FROM licenses WHERE license_key_hash = ?')) {
+      const [licenseKeyHash] = this.args;
+      return { count: this.db.licenses.has(licenseKeyHash) ? 1 : 0 };
+    }
+    if (this.sql.includes('COUNT(*) AS count FROM device_bindings WHERE license_key_hash = ?')) {
+      const [licenseKeyHash] = this.args;
+      return {
+        count: Array.from(this.db.deviceBindings.values()).filter((row) => row.license_key_hash === licenseKeyHash).length,
+      };
+    }
+    if (this.sql.includes('COUNT(*) AS count FROM reset_requests WHERE license_key_hash = ?')) {
+      const [licenseKeyHash] = this.args;
+      return {
+        count: Array.from(this.db.resetRequests.values()).filter((row) => row.license_key_hash === licenseKeyHash).length,
+      };
+    }
     if (this.sql.includes('COUNT(*) AS count FROM licenses')) {
       return { count: this.db.licenses.size };
     }
@@ -59,10 +76,34 @@ class MockStatement {
       const [requestId] = this.args;
       return this.db.resetRequests.get(requestId) ?? null;
     }
+    if (this.sql.includes('FROM user_data_deletion_requests') && this.sql.includes('request_id = ?')) {
+      const [requestId] = this.args;
+      return this.db.deletionRequests.get(requestId) ?? null;
+    }
+    if (this.sql.includes('FROM user_data_deletion_requests') && this.sql.includes('license_key_hash = ?')) {
+      const [licenseKeyHash] = this.args;
+      return Array.from(this.db.deletionRequests.values()).find(
+        (row) => row.license_key_hash === licenseKeyHash && ['pending', 'approved', 'processing', 'failed'].includes(row.status),
+      ) ?? null;
+    }
     return null;
   }
 
   async all() {
+    if (this.sql.includes('FROM user_data_deletion_requests GROUP BY status')) {
+      const counts = new Map();
+      for (const row of this.db.deletionRequests.values()) {
+        const key = String(row.status || 'unknown').toLowerCase();
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+      return { results: Array.from(counts.entries()).map(([key, count]) => ({ key, count })) };
+    }
+    if (this.sql.includes('FROM user_data_deletion_requests')) {
+      const [status] = this.args;
+      return {
+        results: Array.from(this.db.deletionRequests.values()).filter((row) => row.status === status),
+      };
+    }
     if (this.sql.includes('WHERE LOWER(license_key_hash) LIKE ?')) {
       const [prefix, limit] = this.args;
       const normalized = String(prefix).replace('%', '').toLowerCase();
@@ -144,6 +185,51 @@ class MockStatement {
   }
 
   async run() {
+    if (this.sql.includes('DELETE FROM device_bindings')) {
+      const [licenseKeyHash] = this.args;
+      for (const [deviceId, binding] of this.db.deviceBindings.entries()) {
+        if (binding.license_key_hash === licenseKeyHash) {
+          this.db.deviceBindings.delete(deviceId);
+        }
+      }
+      return { success: true };
+    }
+
+    if (this.sql.includes('INSERT INTO user_data_deletion_requests')) {
+      const [
+        requestId,
+        lookupTokenHash,
+        licenseKeyHash,
+        maskedLicenseKey,
+        purchaserEmail,
+        purchaserEmailMasked,
+        status,
+        requestedScope,
+        requestMetadataJson,
+        createdAtMs,
+        updatedAtMs,
+      ] = this.args;
+      this.db.deletionRequests.set(requestId, {
+        request_id: requestId,
+        lookup_token_hash: lookupTokenHash,
+        license_key_hash: licenseKeyHash,
+        masked_license_key: maskedLicenseKey,
+        purchaser_email: purchaserEmail,
+        purchaser_email_masked: purchaserEmailMasked,
+        status,
+        requested_scope: requestedScope,
+        request_metadata_json: requestMetadataJson,
+        deletion_summary_json: null,
+        error_code: null,
+        error_message_safe: null,
+        created_at_ms: createdAtMs,
+        updated_at_ms: updatedAtMs,
+        decided_at_ms: null,
+        completed_at_ms: null,
+      });
+      return { success: true };
+    }
+
     if (this.sql.includes('INSERT INTO idempotency_records')) {
       const [op, key, payloadHash, responseStatus, responseBody] = this.args;
       this.db.idempotency.set(`${op}:${key}`, {
@@ -180,6 +266,54 @@ class MockStatement {
       return { success: true };
     }
 
+    if (this.sql.includes('UPDATE user_data_deletion_requests') && this.sql.includes('SET purchaser_email = NULL')) {
+      const [updatedAtMs, requestId] = this.args;
+      const existing = this.db.deletionRequests.get(requestId);
+      if (existing) {
+        this.db.deletionRequests.set(requestId, {
+          ...existing,
+          purchaser_email: null,
+          masked_license_key: null,
+          updated_at_ms: updatedAtMs,
+        });
+      }
+      return { success: true };
+    }
+
+    if (this.sql.includes('UPDATE user_data_deletion_requests')) {
+      const [status, updatedAtMs, decidedAtMs, completedAtMs, summaryJson, errorCode, errorMessageSafe, requestId] = this.args;
+      const existing = this.db.deletionRequests.get(requestId);
+      if (existing) {
+        this.db.deletionRequests.set(requestId, {
+          ...existing,
+          status,
+          updated_at_ms: updatedAtMs,
+          decided_at_ms: decidedAtMs ?? existing.decided_at_ms,
+          completed_at_ms: completedAtMs ?? existing.completed_at_ms,
+          deletion_summary_json: summaryJson ?? existing.deletion_summary_json,
+          error_code: errorCode,
+          error_message_safe: errorMessageSafe,
+        });
+      }
+      return { success: true };
+    }
+
+    if (this.sql.includes('UPDATE reset_requests') && this.sql.includes('license_key_hash = ?')) {
+      const [updatedAtMs, licenseKeyHash] = this.args;
+      for (const [requestId, reset] of this.db.resetRequests.entries()) {
+        if (reset.license_key_hash === licenseKeyHash) {
+          this.db.resetRequests.set(requestId, {
+            ...reset,
+            license_key_hash: null,
+            masked_license_key: null,
+            purchaser_email: null,
+            updated_at_ms: updatedAtMs,
+          });
+        }
+      }
+      return { success: true };
+    }
+
     if (this.sql.includes('UPDATE reset_requests')) {
       const [status, updatedAtMs, requestId] = this.args;
       const existing = this.db.resetRequests.get(requestId);
@@ -203,6 +337,21 @@ class MockStatement {
             updated_at_ms: updatedAtMs,
           });
         }
+      }
+      return { success: true };
+    }
+
+    if (this.sql.includes('UPDATE licenses') && this.sql.includes('privacy_deleted_at_ms')) {
+      const [updatedAtMs, privacyDeletedAtMs, licenseKeyHash] = this.args;
+      const existing = this.db.licenses.get(licenseKeyHash);
+      if (existing) {
+        this.db.licenses.set(licenseKeyHash, {
+          ...existing,
+          purchaser_email: null,
+          entitlement_status: 'disabled',
+          updated_at_ms: updatedAtMs,
+          privacy_deleted_at_ms: privacyDeletedAtMs,
+        });
       }
       return { success: true };
     }
@@ -527,6 +676,131 @@ test('admin overview returns aggregate counts', async () => {
   assert.equal(json.ok, true);
   assert.equal(json.data.total_licenses, 1);
   assert.equal(json.data.reset_request_counts.pending, 1);
+  assert.equal(json.data.deletion_request_counts.pending ?? 0, 0);
+});
+
+test('privacy deletion request requires confirmation', async () => {
+  const res = await call('/v1/privacy/delete/request', {
+    headers: { 'x-idempotency-key': 'delete-missing-confirmation' },
+    body: {
+      license_key: 'AAAA-BBBB-CCCC-DDDD',
+      confirmation: 'WRONG',
+      timestamp_ms: Date.now(),
+    },
+    env: { DB: new MockD1Database(), HASH_PEPPER: 'pepper_123' },
+  });
+  assert.equal(res.status, 400);
+  const json = await res.json();
+  assert.equal(json.error.code, 'invalid_deletion_request');
+});
+
+test('privacy deletion request creates pending request and status requires lookup token', async () => {
+  const db = new MockD1Database();
+  const env = { DB: db, HASH_PEPPER: 'pepper_123' };
+  const licenseKey = 'AAAA-BBBB-CCCC-DDDD';
+  const licenseHash = await sha256Hex(`${env.HASH_PEPPER}:${licenseKey}`);
+  db.licenses.set(licenseHash, {
+    license_key_hash: licenseHash,
+    purchaser_email: 'buyer@example.com',
+    entitlement_status: 'active',
+    provider: 'gumroad',
+    provider_sale_id: 'sale_1',
+    updated_at_ms: 1,
+  });
+
+  const req = await call('/v1/privacy/delete/request', {
+    headers: { 'x-idempotency-key': 'delete-request-1' },
+    body: {
+      license_key: licenseKey,
+      purchaser_email: 'buyer@example.com',
+      confirmation: 'DELETE',
+      app_version: '0.1.0',
+      timestamp_ms: Date.now(),
+    },
+    env,
+  });
+  assert.equal(req.status, 200);
+  const reqJson = await req.json();
+  assert.equal(reqJson.data.status, 'pending');
+  assert.ok(reqJson.data.lookup_token);
+  assert.equal(JSON.stringify(db.deletionRequests.get(reqJson.data.request_id)).includes(licenseKey), false);
+
+  const badStatus = await call('/v1/privacy/delete/status', {
+    body: { request_id: reqJson.data.request_id, lookup_token: 'wrong' },
+    env,
+  });
+  assert.equal(badStatus.status, 401);
+
+  const status = await call('/v1/privacy/delete/status', {
+    body: { request_id: reqJson.data.request_id, lookup_token: reqJson.data.lookup_token },
+    env,
+  });
+  assert.equal(status.status, 200);
+  const statusJson = await status.json();
+  assert.equal(statusJson.data.status, 'pending');
+});
+
+test('admin approve deletion deletes devices and anonymizes license/reset data', async () => {
+  const db = new MockD1Database();
+  const env = { DB: db, HASH_PEPPER: 'pepper_123', ADMIN_API_TOKEN: 'admin-secret' };
+  const licenseKey = 'AAAA-BBBB-CCCC-DDDD';
+  const licenseHash = await sha256Hex(`${env.HASH_PEPPER}:${licenseKey}`);
+  db.licenses.set(licenseHash, {
+    license_key_hash: licenseHash,
+    purchaser_email: 'buyer@example.com',
+    entitlement_status: 'active',
+    provider: 'gumroad',
+    provider_sale_id: 'sale_1',
+    updated_at_ms: 1,
+  });
+  db.deviceBindings.set('dev-1', {
+    device_id: 'dev-1',
+    license_key_hash: licenseHash,
+    public_key: 'pub',
+    fingerprint_json: '{}',
+    status: 'active',
+    updated_at_ms: 1,
+  });
+  db.resetRequests.set('reset-1', {
+    request_id: 'reset-1',
+    license_key_hash: licenseHash,
+    masked_license_key: '••••-DDDD',
+    purchaser_email: 'buyer@example.com',
+    status: 'approved',
+    created_at_ms: 1,
+    updated_at_ms: 1,
+  });
+
+  const req = await call('/v1/privacy/delete/request', {
+    headers: { 'x-idempotency-key': 'delete-request-2' },
+    body: {
+      license_key: licenseKey,
+      confirmation: 'DELETE',
+      timestamp_ms: Date.now(),
+    },
+    env,
+  });
+  const reqJson = await req.json();
+
+  const approve = await call('/v1/admin/privacy/delete/approve', {
+    headers: { authorization: 'Bearer admin-secret', 'x-idempotency-key': 'approve-delete-1' },
+    body: {
+      request_id: reqJson.data.request_id,
+      confirmation: 'DELETE USER DATA',
+      reason: 'privacy request',
+    },
+    env,
+  });
+  assert.equal(approve.status, 200);
+  const approveJson = await approve.json();
+  assert.equal(approveJson.data.status, 'completed');
+  assert.equal(db.deviceBindings.size, 0);
+  assert.equal(db.licenses.get(licenseHash).purchaser_email, null);
+  assert.equal(db.licenses.get(licenseHash).entitlement_status, 'disabled');
+  assert.equal(db.resetRequests.get('reset-1').purchaser_email, null);
+  assert.equal(db.resetRequests.get('reset-1').license_key_hash, null);
+  assert.equal(db.deletionRequests.get(reqJson.data.request_id).purchaser_email, null);
+  assert.equal(JSON.stringify(db.auditEvents).includes('buyer@example.com'), false);
 });
 
 test('admin licenses endpoint masks email and returns prefixes', async () => {

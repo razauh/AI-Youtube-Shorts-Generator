@@ -29,10 +29,12 @@ describe('adminClient', () => {
   it('sends status filter through the typed Tauri command', async () => {
     invoke.mockResolvedValue({ requests: [] });
 
-    const { listResetRequests } = await import('../../admin/lib/adminClient');
+    const { listResetRequests, listDeletionRequests } = await import('../../admin/lib/adminClient');
     await listResetRequests('approved');
+    await listDeletionRequests('failed');
 
-    expect(invoke).toHaveBeenCalledWith('admin_list_reset_requests', { status: 'approved' });
+    expect(invoke).toHaveBeenNthCalledWith(1, 'admin_list_reset_requests', { status: 'approved' });
+    expect(invoke).toHaveBeenNthCalledWith(2, 'admin_list_deletion_requests', { status: 'failed' });
   });
 
   it('uses approve and reject commands with optional reason input', async () => {
@@ -48,6 +50,24 @@ describe('adminClient', () => {
     });
     expect(invoke).toHaveBeenNthCalledWith(2, 'admin_reject_reset_request', {
       requestId: 'reset-2',
+      reason: null
+    });
+  });
+
+  it('uses deletion decision commands with required confirmation', async () => {
+    invoke.mockResolvedValue({ deletion_request_id: 'del-1', status: 'completed', deletion_summary: null });
+
+    const { approveDeletionRequest, rejectDeletionRequest } = await import('../../admin/lib/adminClient');
+    await approveDeletionRequest('del-1', ' DELETE USER DATA ', ' verified ');
+    await rejectDeletionRequest('del-2', '');
+
+    expect(invoke).toHaveBeenNthCalledWith(1, 'admin_approve_deletion_request', {
+      requestId: 'del-1',
+      confirmation: 'DELETE USER DATA',
+      reason: 'verified'
+    });
+    expect(invoke).toHaveBeenNthCalledWith(2, 'admin_reject_deletion_request', {
+      requestId: 'del-2',
       reason: null
     });
   });

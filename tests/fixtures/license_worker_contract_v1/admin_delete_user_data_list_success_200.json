@@ -1,0 +1,28 @@
+{
+  "ok": true,
+  "data": {
+    "requests": [
+      {
+        "deletion_request_id": "del_123456789abc",
+        "status": "pending",
+        "masked_license_key": "••••-DDDD",
+        "has_license_hash": true,
+        "license_hash_prefix": "abc123def456",
+        "purchaser_email": "b***@example.com",
+        "requested_scope": "backend_licensing_data",
+        "deletion_preview": {
+          "licenses": 1,
+          "device_bindings": 1,
+          "reset_requests": 1
+        },
+        "deletion_summary": null,
+        "error_code": null,
+        "error_message_safe": null,
+        "created_at_ms": 1736800000000,
+        "updated_at_ms": 1736800000000,
+        "decided_at_ms": null,
+        "completed_at_ms": null
+      }
+    ]
+  }
+}

@@ -38,6 +38,31 @@ describe('authClient', () => {
     expect(invoke).toHaveBeenNthCalledWith(2, 'get_device_reset_status', { requestId: 'reset-1' });
   });
 
+  it('calls user data deletion commands without browser persistence', async () => {
+    invoke.mockResolvedValue({ request_id: 'del-1', lookup_token: 'lookup-1', status: 'pending' });
+    localStorage.clear();
+
+    const { requestUserDataDeletion, getUserDataDeletionStatus } = await import('../lib/api/authClient');
+    await requestUserDataDeletion({
+      license_key: 'LICENSE-1234',
+      purchaser_email: 'buyer@example.com',
+      confirmation: 'DELETE',
+    });
+    await getUserDataDeletionStatus({ request_id: 'del-1', lookup_token: 'lookup-1' });
+
+    expect(invoke).toHaveBeenNthCalledWith(1, 'request_user_data_deletion', {
+      input: {
+        license_key: 'LICENSE-1234',
+        purchaser_email: 'buyer@example.com',
+        confirmation: 'DELETE',
+      },
+    });
+    expect(invoke).toHaveBeenNthCalledWith(2, 'get_user_data_deletion_status', {
+      input: { request_id: 'del-1', lookup_token: 'lookup-1' },
+    });
+    expect(JSON.stringify(localStorage)).not.toContain('LICENSE-1234');
+  });
+
   it('calls session commands without persisting license material', async () => {
     invoke.mockResolvedValue({ status: 'unauthenticated' });
     localStorage.clear();

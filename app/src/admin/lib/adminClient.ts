@@ -6,8 +6,11 @@ import type {
   AdminAuditEventListData,
   AdminIdempotencyRecordListData,
   AdminResetDecisionData,
+  AdminDeletionDecisionData,
+  AdminDeletionListData,
   AdminDisableLicenseData,
   AdminResetListData,
+  DeletionRequestStatus,
   ResetRequestStatus
 } from './contracts';
 
@@ -103,6 +106,10 @@ export function listResetRequests(status: ResetRequestStatus): Promise<AdminRese
   return invoke<AdminResetListData>('admin_list_reset_requests', { status });
 }
 
+export function listDeletionRequests(status: DeletionRequestStatus): Promise<AdminDeletionListData> {
+  return invoke<AdminDeletionListData>('admin_list_deletion_requests', { status });
+}
+
 export function approveResetRequest(requestId: string, reason?: string): Promise<AdminResetDecisionData> {
   return invoke<AdminResetDecisionData>('admin_approve_reset_request', {
     requestId,
@@ -112,6 +119,25 @@ export function approveResetRequest(requestId: string, reason?: string): Promise
 
 export function rejectResetRequest(requestId: string, reason?: string): Promise<AdminResetDecisionData> {
   return invoke<AdminResetDecisionData>('admin_reject_reset_request', {
+    requestId,
+    reason: reason?.trim() ? reason.trim() : null
+  });
+}
+
+export function approveDeletionRequest(
+  requestId: string,
+  confirmation: string,
+  reason?: string
+): Promise<AdminDeletionDecisionData> {
+  return invoke<AdminDeletionDecisionData>('admin_approve_deletion_request', {
+    requestId,
+    confirmation: confirmation.trim(),
+    reason: reason?.trim() ? reason.trim() : null
+  });
+}
+
+export function rejectDeletionRequest(requestId: string, reason?: string): Promise<AdminDeletionDecisionData> {
+  return invoke<AdminDeletionDecisionData>('admin_reject_deletion_request', {
     requestId,
     reason: reason?.trim() ? reason.trim() : null
   });

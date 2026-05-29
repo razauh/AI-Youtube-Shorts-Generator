@@ -1,4 +1,5 @@
 export type ResetRequestStatus = 'pending' | 'approved' | 'rejected' | 'expired';
+export type DeletionRequestStatus = 'pending' | 'approved' | 'processing' | 'rejected' | 'completed' | 'failed';
 export type LicenseState = 'BOUND_ACTIVE' | 'UNBOUND';
 
 export interface AdminConfigView {
@@ -29,11 +30,40 @@ export interface AdminResetDecisionData {
   license_state: LicenseState;
 }
 
+export interface AdminDeletionRequestItem {
+  deletion_request_id: string;
+  status: DeletionRequestStatus;
+  masked_license_key: string | null;
+  has_license_hash: boolean;
+  license_hash_prefix: string | null;
+  purchaser_email: string | null;
+  requested_scope: string;
+  deletion_preview: Record<string, unknown> | null;
+  deletion_summary: Record<string, unknown> | null;
+  error_code: string | null;
+  error_message_safe: string | null;
+  created_at_ms: number;
+  updated_at_ms: number;
+  decided_at_ms: number | null;
+  completed_at_ms: number | null;
+}
+
+export interface AdminDeletionListData {
+  requests: AdminDeletionRequestItem[];
+}
+
+export interface AdminDeletionDecisionData {
+  deletion_request_id: string;
+  status: DeletionRequestStatus;
+  deletion_summary: Record<string, unknown> | null;
+}
+
 export interface AdminOverviewData {
   total_licenses: number;
   entitlement_counts: Record<string, number>;
   device_binding_counts: Record<string, number>;
   reset_request_counts: Record<string, number>;
+  deletion_request_counts: Record<string, number>;
   recent_audit_events_24h: number;
 }
 

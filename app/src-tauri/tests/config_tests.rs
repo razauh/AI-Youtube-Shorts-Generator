@@ -1,37 +1,94 @@
 use shorts_tauri_app::commands::health::app_config_summary;
 use shorts_tauri_app::core::config::{load_env_files_from, Config};
-use std::sync::{Mutex, OnceLock};
+use std::path::PathBuf;
+use std::sync::{Mutex, MutexGuard, OnceLock};
+
+const CONFIG_ENV_KEYS: &[&str] = &[
+    "MUAPI_API_KEY",
+    "MUAPI_BASE_URL",
+    "MUAPI_POLL_INTERVAL",
+    "MUAPI_POLL_TIMEOUT",
+    "OPENAI_API_KEY",
+    "OPENAI_MODEL",
+    "LOCAL_WHISPER_MODEL",
+    "LOCAL_WHISPER_DEVICE",
+    "LOCAL_OUTPUT_DIR",
+    "LICENSE_WORKER_BASE_URL",
+    "LICENSE_STORAGE_NAMESPACE",
+    "LICENSE_KEYCHAIN_SERVICE",
+    "LICENSE_BACKEND_MODE",
+    "LICENSE_WORKER_TIMEOUT_MS",
+    "LICENSE_WORKER_RETRY_ATTEMPTS",
+    "LICENSE_WORKER_RETRY_BACKOFF_MS",
+    "LICENSE_WORKER_CIRCUIT_FAILURE_THRESHOLD",
+    "LICENSE_WORKER_CIRCUIT_COOLDOWN_MS",
+];
+
+const ISOLATED_ENV_KEYS: &[&str] = &["HOME", "PATH", "APPDATA"];
 
 fn env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+struct IsolatedConfigEnv {
+    _guard: MutexGuard<'static, ()>,
+    saved_env: Vec<(&'static str, Option<String>)>,
+    root: PathBuf,
+}
+
+impl IsolatedConfigEnv {
+    fn new(tag: &str) -> Self {
+        let guard = env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let root = std::env::temp_dir().join(format!(
+            "shorts-config-test-{tag}-{}",
+            std::process::id()
+        ));
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::create_dir_all(&root).expect("isolated config test root should be created");
+
+        let saved_env = CONFIG_ENV_KEYS
+            .iter()
+            .chain(ISOLATED_ENV_KEYS.iter())
+            .map(|key| (*key, std::env::var(key).ok()))
+            .collect();
+
+        unsafe {
+            for key in CONFIG_ENV_KEYS {
+                std::env::remove_var(key);
+            }
+            std::env::set_var("HOME", &root);
+            std::env::set_var("PATH", &root);
+            std::env::set_var("APPDATA", &root);
+        }
+
+        Self {
+            _guard: guard,
+            saved_env,
+            root,
+        }
+    }
+}
+
+impl Drop for IsolatedConfigEnv {
+    fn drop(&mut self) {
+        unsafe {
+            for (key, value) in &self.saved_env {
+                match value {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+        std::fs::remove_dir_all(&self.root).ok();
+    }
+}
+
 #[test]
 fn defaults_match_python_when_env_missing() {
-    let _guard = env_lock().lock().expect("env lock poisoned");
-    for key in [
-        "MUAPI_API_KEY",
-        "MUAPI_BASE_URL",
-        "MUAPI_POLL_INTERVAL",
-        "MUAPI_POLL_TIMEOUT",
-        "OPENAI_API_KEY",
-        "OPENAI_MODEL",
-        "LOCAL_WHISPER_MODEL",
-        "LOCAL_WHISPER_DEVICE",
-        "LOCAL_OUTPUT_DIR",
-        "LICENSE_WORKER_BASE_URL",
-        "LICENSE_STORAGE_NAMESPACE",
-        "LICENSE_KEYCHAIN_SERVICE",
-        "LICENSE_BACKEND_MODE",
-        "LICENSE_WORKER_TIMEOUT_MS",
-        "LICENSE_WORKER_RETRY_ATTEMPTS",
-        "LICENSE_WORKER_RETRY_BACKOFF_MS",
-        "LICENSE_WORKER_CIRCUIT_FAILURE_THRESHOLD",
-        "LICENSE_WORKER_CIRCUIT_COOLDOWN_MS",
-    ] {
-        unsafe { std::env::remove_var(key) };
-    }
+    let _env = IsolatedConfigEnv::new("defaults");
 
     let cfg = Config::from_env().expect("config should load from defaults");
     assert_eq!(cfg.muapi_api_key, "");
@@ -59,7 +116,7 @@ fn defaults_match_python_when_env_missing() {
 
 #[test]
 fn app_config_summary_reports_status_without_secret_values() {
-    let _guard = env_lock().lock().expect("env lock poisoned");
+    let _env = IsolatedConfigEnv::new("summary");
     unsafe {
         std::env::set_var("MUAPI_API_KEY", "muapi-secret-value");
         std::env::set_var("OPENAI_API_KEY", "openai-secret-value");
@@ -94,7 +151,7 @@ fn app_config_summary_reports_status_without_secret_values() {
 
 #[test]
 fn dotenv_loader_walks_parent_dirs_without_overriding_existing_env() {
-    let _guard = env_lock().lock().expect("env lock poisoned");
+    let _env = IsolatedConfigEnv::new("dotenv");
     let root = std::env::temp_dir().join(format!("shorts-dotenv-test-{}", std::process::id()));
     let app_dir = root.join("app");
     std::fs::create_dir_all(&app_dir).expect("test app dir should be created");
@@ -144,7 +201,7 @@ fn dotenv_loader_walks_parent_dirs_without_overriding_existing_env() {
 
 #[test]
 fn license_config_env_overrides_are_trimmed_and_normalized() {
-    let _guard = env_lock().lock().expect("env lock poisoned");
+    let _env = IsolatedConfigEnv::new("overrides");
     unsafe {
         std::env::set_var(
             "LICENSE_WORKER_BASE_URL",
@@ -189,11 +246,7 @@ fn license_config_env_overrides_are_trimmed_and_normalized() {
 
 #[test]
 fn missing_required_keys_return_deterministic_prefixes() {
-    let _guard = env_lock().lock().expect("env lock poisoned");
-    unsafe {
-        std::env::remove_var("MUAPI_API_KEY");
-        std::env::remove_var("OPENAI_API_KEY");
-    }
+    let _env = IsolatedConfigEnv::new("missing-keys");
 
     let cfg = Config::from_env().expect("config should still load");
     let api_err = cfg
@@ -211,7 +264,7 @@ fn missing_required_keys_return_deterministic_prefixes() {
 
 #[test]
 fn invalid_float_env_returns_parse_error_with_var_name() {
-    let _guard = env_lock().lock().expect("env lock poisoned");
+    let _env = IsolatedConfigEnv::new("invalid-float");
     unsafe {
         std::env::set_var("MUAPI_POLL_INTERVAL", "abc");
     }
@@ -228,7 +281,7 @@ fn invalid_float_env_returns_parse_error_with_var_name() {
 
 #[test]
 fn invalid_license_backend_mode_is_rejected() {
-    let _guard = env_lock().lock().expect("env lock poisoned");
+    let _env = IsolatedConfigEnv::new("invalid-backend");
     unsafe {
         std::env::set_var("LICENSE_BACKEND_MODE", "cloudflare");
     }
@@ -243,7 +296,7 @@ fn invalid_license_backend_mode_is_rejected() {
 
 #[test]
 fn invalid_license_worker_integer_is_rejected() {
-    let _guard = env_lock().lock().expect("env lock poisoned");
+    let _env = IsolatedConfigEnv::new("invalid-integer");
     unsafe {
         std::env::set_var("LICENSE_WORKER_TIMEOUT_MS", "soon");
     }

@@ -3,6 +3,9 @@ export const ERROR_CODES = new Set([
   "invalid_purchase_email",
   "invalid_device_identity",
   "invalid_reset_request",
+  "invalid_deletion_request",
+  "deletion_request_not_found",
+  "invalid_deletion_lookup_token",
   "device_already_bound",
   "reauth_required",
   "worker_unreachable",
@@ -18,6 +21,7 @@ export const ERROR_CODES = new Set([
 ]);
 
 export const RESET_STATUS = new Set(["pending", "approved", "rejected", "expired"]);
+export const DELETION_STATUS = new Set(["pending", "approved", "processing", "rejected", "completed", "failed"]);
 
 export function ok(data, init = {}) {
   return json({ ok: true, data }, init);

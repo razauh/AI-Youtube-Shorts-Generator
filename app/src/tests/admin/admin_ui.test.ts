@@ -4,8 +4,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 
 const loadAdminConfig = vi.fn();
 const listResetRequests = vi.fn();
+const listDeletionRequests = vi.fn();
 const approveResetRequest = vi.fn();
 const rejectResetRequest = vi.fn();
+const approveDeletionRequest = vi.fn();
+const rejectDeletionRequest = vi.fn();
 const saveAdminConfig = vi.fn();
 const clearAdminConfig = vi.fn();
 const testAdminConnection = vi.fn();
@@ -19,8 +22,11 @@ const listIdempotencyRecords = vi.fn();
 vi.mock('../../admin/lib/adminClient', () => ({
   loadAdminConfig: (...args: unknown[]) => loadAdminConfig(...args),
   listResetRequests: (...args: unknown[]) => listResetRequests(...args),
+  listDeletionRequests: (...args: unknown[]) => listDeletionRequests(...args),
   approveResetRequest: (...args: unknown[]) => approveResetRequest(...args),
   rejectResetRequest: (...args: unknown[]) => rejectResetRequest(...args),
+  approveDeletionRequest: (...args: unknown[]) => approveDeletionRequest(...args),
+  rejectDeletionRequest: (...args: unknown[]) => rejectDeletionRequest(...args),
   saveAdminConfig: (...args: unknown[]) => saveAdminConfig(...args),
   clearAdminConfig: (...args: unknown[]) => clearAdminConfig(...args),
   testAdminConnection: (...args: unknown[]) => testAdminConnection(...args),
@@ -51,6 +57,24 @@ const approvedRequest = {
   license_state: 'UNBOUND'
 };
 
+const pendingDeletionRequest = {
+  deletion_request_id: 'del-pending',
+  status: 'pending',
+  masked_license_key: '••••-1234',
+  has_license_hash: true,
+  license_hash_prefix: 'hash-1',
+  purchaser_email: 'b***@example.com',
+  requested_scope: 'backend_licensing_data',
+  deletion_preview: { licenses: 1, device_bindings: 1, reset_requests: 1 },
+  deletion_summary: null,
+  error_code: null,
+  error_message_safe: null,
+  created_at_ms: 1,
+  updated_at_ms: 2,
+  decided_at_ms: null,
+  completed_at_ms: null
+};
+
 describe('AdminApp', () => {
   let AdminApp: Awaited<typeof import('../../admin/AdminApp.svelte')>['default'];
 
@@ -58,8 +82,11 @@ describe('AdminApp', () => {
     vi.resetModules();
     loadAdminConfig.mockReset();
     listResetRequests.mockReset();
+    listDeletionRequests.mockReset();
     approveResetRequest.mockReset();
     rejectResetRequest.mockReset();
+    approveDeletionRequest.mockReset();
+    rejectDeletionRequest.mockReset();
     saveAdminConfig.mockReset();
     clearAdminConfig.mockReset();
     testAdminConnection.mockReset();
@@ -86,7 +113,7 @@ describe('AdminApp', () => {
 
   it('shows approve and reject only for pending requests', async () => {
     loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
-    loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, recent_audit_events_24h: 0 });
+    loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, deletion_request_counts: {}, recent_audit_events_24h: 0 });
     listResetRequests.mockResolvedValue({ requests: [pendingRequest, approvedRequest] });
 
     render(AdminApp);
@@ -101,7 +128,7 @@ describe('AdminApp', () => {
 
   it('confirms approve actions and sends the optional reason', async () => {
     loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
-    loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, recent_audit_events_24h: 0 });
+    loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, deletion_request_counts: {}, recent_audit_events_24h: 0 });
     listResetRequests.mockResolvedValue({ requests: [pendingRequest] });
     approveResetRequest.mockResolvedValue({ reset_request_id: 'reset-pending', status: 'approved', license_state: 'UNBOUND' });
 
@@ -117,13 +144,13 @@ describe('AdminApp', () => {
 
   it('loads overview by default and allows section switching', async () => {
     loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
-    loadOverview.mockResolvedValue({ total_licenses: 8, entitlement_counts: {}, device_binding_counts: { active: 2 }, reset_request_counts: { pending: 1 }, recent_audit_events_24h: 3 });
+    loadOverview.mockResolvedValue({ total_licenses: 8, entitlement_counts: {}, device_binding_counts: { active: 2 }, reset_request_counts: { pending: 1 }, deletion_request_counts: { pending: 1 }, recent_audit_events_24h: 3 });
     listLicenses.mockResolvedValue({ licenses: [] });
 
     render(AdminApp);
 
     expect(await screen.findByText('Total licenses')).toBeInTheDocument();
-    expect(screen.getByText('8')).toBeInTheDocument();
+    expect(await screen.findByText('8')).toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole('button', { name: 'licenses' }));
     await waitFor(() => expect(listLicenses).toHaveBeenCalled());
@@ -131,8 +158,9 @@ describe('AdminApp', () => {
 
   it('renders table headers across admin tabs', async () => {
     loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
-    loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, recent_audit_events_24h: 0 });
+    loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, deletion_request_counts: {}, recent_audit_events_24h: 0 });
     listResetRequests.mockResolvedValue({ requests: [pendingRequest] });
+    listDeletionRequests.mockResolvedValue({ requests: [pendingDeletionRequest] });
     listLicenses.mockResolvedValue({ licenses: [{ license_hash_prefix: 'hash-1', purchaser_email_masked: 'b***@example.com', entitlement_status: 'active', provider: 'gumroad', provider_sale_id: 'sale-1', updated_at_ms: 1, active_device_count: 1, inactive_device_count: 0 }] });
     listDeviceBindings.mockResolvedValue({ bindings: [{ device_id: 'dev-1', status: 'active', license_hash_prefix: 'hash-1', updated_at_ms: 1, purchaser_email_masked: 'b***@example.com', public_key_prefix: 'abc', fingerprint_summary: { os_name: 'linux', platform_family: 'linux', arch: 'x64', app_version: '1.0.0' } }] });
     listAuditEvents.mockResolvedValue({ events: [{ event_type: 'license_disabled', actor: 'admin', created_at_ms: 1, metadata_summary: {} }] });
@@ -141,6 +169,9 @@ describe('AdminApp', () => {
     render(AdminApp);
     await fireEvent.click(await screen.findByRole('button', { name: 'reset requests' }));
     expect(await screen.findByText('Request ID')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'delete requests' }));
+    expect(await screen.findByText('del-pending')).toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole('button', { name: 'licenses' }));
     expect(await screen.findByText('Entitlement Status')).toBeInTheDocument();
@@ -157,7 +188,7 @@ describe('AdminApp', () => {
 
   it('opens disable modal, requires reason, and sends toggle value', async () => {
     loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
-    loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, recent_audit_events_24h: 0 });
+    loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, deletion_request_counts: {}, recent_audit_events_24h: 0 });
     listLicenses.mockResolvedValue({ licenses: [{ license_hash_prefix: 'hash-1', purchaser_email_masked: 'b***@example.com', entitlement_status: 'active', provider: 'gumroad', provider_sale_id: 'sale-1', updated_at_ms: 1, active_device_count: 1, inactive_device_count: 0 }] });
     disableLicense.mockResolvedValue({ license_hash_prefix: 'hash-1', entitlement_status: 'disabled', deactivate_bindings: false });
 
@@ -172,5 +203,24 @@ describe('AdminApp', () => {
     await fireEvent.click(disableButtons[disableButtons.length - 1]);
 
     await waitFor(() => expect(disableLicense).toHaveBeenCalledWith('hash-1', 'fraud', false));
+  });
+
+  it('requires typed confirmation before approving deletion requests', async () => {
+    loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
+    loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, deletion_request_counts: {}, recent_audit_events_24h: 0 });
+    listDeletionRequests.mockResolvedValue({ requests: [pendingDeletionRequest] });
+    approveDeletionRequest.mockResolvedValue({ deletion_request_id: 'del-pending', status: 'completed', deletion_summary: {} });
+
+    render(AdminApp);
+    await fireEvent.click(await screen.findByRole('button', { name: 'delete requests' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Approve and Delete' }));
+
+    let approveButtons = screen.getAllByRole('button', { name: 'Approve and Delete' });
+    expect(approveButtons[approveButtons.length - 1]).toBeDisabled();
+    await fireEvent.input(screen.getByLabelText('Confirmation'), { target: { value: 'DELETE USER DATA' } });
+    approveButtons = screen.getAllByRole('button', { name: 'Approve and Delete' });
+    await fireEvent.click(approveButtons[approveButtons.length - 1]);
+
+    await waitFor(() => expect(approveDeletionRequest).toHaveBeenCalledWith('del-pending', 'DELETE USER DATA', ''));
   });
 });

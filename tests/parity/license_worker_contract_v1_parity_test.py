@@ -12,6 +12,9 @@ FROZEN_ERROR_CODES = {
     "invalid_purchase_email",
     "invalid_device_identity",
     "invalid_reset_request",
+    "invalid_deletion_request",
+    "deletion_request_not_found",
+    "invalid_deletion_lookup_token",
     "device_already_bound",
     "reauth_required",
     "worker_unreachable",
@@ -24,6 +27,7 @@ FROZEN_ERROR_CODES = {
 }
 
 RESET_STATUS_VALUES = {"pending", "approved", "rejected", "expired"}
+DELETION_STATUS_VALUES = {"pending", "approved", "processing", "rejected", "completed", "failed"}
 
 
 def _load(name: str):
@@ -124,6 +128,52 @@ def test_reset_status_contract_shapes():
     assert approved["data"].get("status") == "approved"
 
     _assert_error_envelope(_load("reset_status_error_404_not_found.json"))
+
+
+def test_delete_user_data_contract_shapes():
+    req = _load("delete_user_data_request.json")
+    assert isinstance(req.get("license_key"), str) and req["license_key"]
+    assert req.get("confirmation") == "DELETE"
+    assert isinstance(req.get("timestamp_ms"), int) and req["timestamp_ms"] > 0
+
+    ok = _load("delete_user_data_success_200_pending.json")
+    _assert_success_envelope(ok)
+    data = ok["data"]
+    assert isinstance(data.get("request_id"), str) and data["request_id"]
+    assert isinstance(data.get("lookup_token"), str) and data["lookup_token"]
+    assert data.get("status") in DELETION_STATUS_VALUES
+
+    _assert_error_envelope(_load("delete_user_data_error_400_invalid_request.json"))
+
+
+def test_delete_user_data_status_contract_shapes():
+    req = _load("delete_user_data_status_request.json")
+    assert isinstance(req.get("request_id"), str) and req["request_id"]
+    assert isinstance(req.get("lookup_token"), str) and req["lookup_token"]
+
+    ok = _load("delete_user_data_status_success_200_completed.json")
+    _assert_success_envelope(ok)
+    data = ok["data"]
+    assert data.get("status") == "completed"
+    assert isinstance(data.get("completed_at_ms"), int) and data["completed_at_ms"] > 0
+
+    _assert_error_envelope(_load("delete_user_data_status_error_401_invalid_lookup_token.json"))
+
+
+def test_admin_delete_user_data_contract_shapes():
+    listing = _load("admin_delete_user_data_list_success_200.json")
+    _assert_success_envelope(listing)
+    requests = listing["data"].get("requests")
+    assert isinstance(requests, list) and requests
+    item = requests[0]
+    assert item.get("status") in DELETION_STATUS_VALUES
+    assert item.get("purchaser_email") == "b***@example.com"
+    assert isinstance(item.get("deletion_preview"), dict)
+
+    decision = _load("admin_delete_user_data_decision_success_200_completed.json")
+    _assert_success_envelope(decision)
+    assert decision["data"].get("status") == "completed"
+    assert isinstance(decision["data"].get("deletion_summary"), dict)
 
 
 def test_webhook_contract_shapes():

@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "data": {
+    "request_id": "del_123456789abc",
+    "status": "completed",
+    "message": "Deletion request completed.",
+    "completed_at_ms": 1736800300000,
+    "error_code": null
+  }
+}

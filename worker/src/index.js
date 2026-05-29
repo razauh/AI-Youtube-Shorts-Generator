@@ -1,6 +1,12 @@
-import { err, json, ok, readForm, readJson, requestId, RESET_STATUS } from "./contracts.js";
+import { DELETION_STATUS, err, json, ok, readForm, readJson, requestId, RESET_STATUS } from "./contracts.js";
 import {
+  anonymizeLicenseForPrivacyDeletion,
+  anonymizeResetRequestsByLicenseHash,
+  createDeletionRequest,
+  deleteDeviceBindingsByLicenseHash,
   getD1Idempotent,
+  getDeletionPreviewByLicenseHash,
+  getDeletionRequest,
   putD1Idempotent,
   stableHash,
   writeVerifiedGumroadSale,
@@ -11,7 +17,10 @@ import {
   upsertResetRequest,
   getResetRequest,
   listResetRequestsByStatus,
+  listDeletionRequestsByStatus,
   updateResetRequestStatus,
+  updateDeletionRequestStatus,
+  sanitizeCompletedDeletionRequest,
   deactivateDeviceBindingsByLicenseHash,
   getAdminOverviewCounts,
   listAdminLicenses,
@@ -20,6 +29,7 @@ import {
   listAdminIdempotencyRecords,
   listLicensesByHashPrefix,
   updateLicenseEntitlementStatus,
+  getOpenDeletionRequestByLicenseHash,
 } from "./store.js";
 
 export default {
@@ -53,6 +63,12 @@ export default {
     if (method === "POST" && path === "/v1/license/reset/status") {
       return handleResetStatus(request, env);
     }
+    if (method === "POST" && path === "/v1/privacy/delete/request") {
+      return handleDeletionRequest(request, env);
+    }
+    if (method === "POST" && path === "/v1/privacy/delete/status") {
+      return handleDeletionStatus(request, env);
+    }
     if (method === "GET" && path === "/v1/admin/reset/requests") {
       return handleAdminListResetRequests(request, env);
     }
@@ -76,6 +92,15 @@ export default {
     }
     if (method === "POST" && path === "/v1/admin/reset/reject") {
       return handleAdminResetDecision(request, env, "rejected");
+    }
+    if (method === "GET" && path === "/v1/admin/privacy/delete-requests") {
+      return handleAdminListDeletionRequests(request, env);
+    }
+    if (method === "POST" && path === "/v1/admin/privacy/delete/approve") {
+      return handleAdminDeletionApprove(request, env);
+    }
+    if (method === "POST" && path === "/v1/admin/privacy/delete/reject") {
+      return handleAdminDeletionReject(request, env);
     }
     if (method === "POST" && path === "/v1/admin/licenses/disable") {
       return handleAdminDisableLicense(request, env);
@@ -484,6 +509,153 @@ async function handleResetStatus(request, env) {
   return ok({ request_id: reqId, status });
 }
 
+async function handleDeletionRequest(request, env) {
+  const rid = requestId();
+  const idem = request.headers.get("x-idempotency-key");
+  if (!idem) {
+    return err("bad_request", "Missing required header: X-Idempotency-Key", rid, false, 400);
+  }
+  if (!env?.DB) {
+    return err("storage", "D1 database binding is not configured.", rid, false, 503);
+  }
+
+  const body = await readJson(request);
+  if (!body || !body.license_key || body.confirmation !== "DELETE" || !body.timestamp_ms) {
+    return err("invalid_deletion_request", "Invalid deletion request payload.", rid, false, 400);
+  }
+  if (body.purchaser_email && !String(body.purchaser_email).includes("@")) {
+    return err("invalid_purchase_email", "Purchaser email format is invalid.", rid, false, 400);
+  }
+
+  const normalizedLicenseKey = normalizeLicenseKey(body.license_key);
+  const licenseKeyHash = await sha256Hex(`${env?.HASH_PEPPER || ""}:${normalizedLicenseKey}`);
+  const lookupToken = `dlk_${(await sha256Hex(`${env?.HASH_PEPPER || ""}:${idem}:${licenseKeyHash}`)).slice(0, 32)}`;
+  const lookupTokenHash = await sha256Hex(lookupToken);
+  const payloadHash = stableHash({
+    license_key: normalizeLicenseKey(body.license_key),
+    purchaser_email: body.purchaser_email ? String(body.purchaser_email).trim().toLowerCase() : null,
+    confirmation: body.confirmation,
+    app_version: body.app_version || null,
+    timestamp_ms: body.timestamp_ms,
+  });
+  const replay = await getD1Idempotent(env.DB, "privacy_delete_request", idem);
+  if (replay) {
+    if (replay.payload_hash !== payloadHash) {
+      return err(
+        "invalid_transition",
+        "Idempotency key reuse does not match original request payload.",
+        rid,
+        false,
+        409,
+      );
+    }
+    const replayBody = withDeletionLookupToken(replay.response_body, lookupToken);
+    return new Response(replayBody, {
+      status: replay.response_status,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  }
+
+  const now = Date.now();
+  const license = await getLicenseByHash(env.DB, licenseKeyHash);
+  const suppliedEmail = body.purchaser_email ? String(body.purchaser_email).trim() : null;
+  const storedEmail = license?.purchaser_email ? String(license.purchaser_email) : null;
+  if (suppliedEmail && storedEmail && suppliedEmail.toLowerCase() !== storedEmail.toLowerCase()) {
+    return err("invalid_purchase_email", "Purchaser email does not match this license.", rid, false, 400);
+  }
+
+  const open = await getOpenDeletionRequestByLicenseHash(env.DB, licenseKeyHash);
+  if (open) {
+    return err("invalid_transition", "A deletion request is already open for this license.", rid, false, 409);
+  }
+
+  const requestIdValue = `del_${crypto.randomUUID().slice(0, 12)}`;
+  const purchaserEmail = storedEmail || suppliedEmail;
+  const response = ok({
+    request_id: requestIdValue,
+    lookup_token: lookupToken,
+    status: "pending",
+    message: "Deletion request submitted for admin review.",
+  });
+  const idempotentResponse = ok({
+    request_id: requestIdValue,
+    status: "pending",
+    message: "Deletion request submitted for admin review.",
+  });
+  const idempotentResponseBody = await idempotentResponse.clone().text();
+
+  try {
+    await createDeletionRequest(env.DB, {
+      requestId: requestIdValue,
+      lookupTokenHash,
+      licenseKeyHash,
+      maskedLicenseKey: maskLicenseKey(normalizedLicenseKey),
+      purchaserEmail,
+      purchaserEmailMasked: maskEmail(purchaserEmail),
+      status: "pending",
+      requestedScope: "backend_licensing_data",
+      requestMetadataJson: JSON.stringify({
+        app_version: asOptionalString(body.app_version),
+        has_purchase_email: Boolean(purchaserEmail),
+        license_match: Boolean(license),
+      }),
+      createdAtMs: now,
+      updatedAtMs: now,
+    });
+    await writeAuditEvent(
+      env.DB,
+      "user_data_deletion_requested",
+      "desktop_client",
+      JSON.stringify({
+        request_id: requestIdValue,
+        has_license_hash: true,
+        has_purchase_email: Boolean(purchaserEmail),
+        license_match: Boolean(license),
+      }),
+      now,
+    );
+    await putD1Idempotent(
+      env.DB,
+      "privacy_delete_request",
+      idem,
+      payloadHash,
+      { status: response.status, body: idempotentResponseBody },
+      now,
+    );
+  } catch {
+    return err("storage", "Failed to persist deletion request state.", rid, true, 503);
+  }
+
+  return response;
+}
+
+async function handleDeletionStatus(request, env) {
+  const rid = requestId();
+  if (!env?.DB) {
+    return err("storage", "D1 database binding is not configured.", rid, false, 503);
+  }
+  const body = await readJson(request);
+  const reqId = body?.request_id;
+  const lookupToken = body?.lookup_token;
+  if (!reqId || !lookupToken) {
+    return err("bad_request", "Invalid deletion status payload.", rid, false, 400);
+  }
+
+  const deletion = await getDeletionRequest(env.DB, reqId);
+  if (!deletion) {
+    return err("deletion_request_not_found", "Deletion request was not found.", rid, false, 404);
+  }
+  const tokenHash = await sha256Hex(String(lookupToken));
+  if (tokenHash !== deletion.lookup_token_hash) {
+    return err("invalid_deletion_lookup_token", "Deletion status token is invalid.", rid, false, 401);
+  }
+  if (!DELETION_STATUS.has(deletion.status)) {
+    return err("serialization", "Stored deletion status is invalid.", rid, false, 503);
+  }
+
+  return ok(deletionStatusView(deletion));
+}
+
 async function handleAdminListResetRequests(request, env) {
   const rid = requestId();
   const auth = requireAdminAuth(request, env, rid);
@@ -586,6 +758,237 @@ async function handleAdminResetDecision(request, env, decision) {
   await putD1Idempotent(
     env.DB,
     `admin_reset_${decision}`,
+    idem,
+    payloadHash,
+    { status: response.status, body: responseBody },
+    now,
+  );
+  return response;
+}
+
+async function handleAdminListDeletionRequests(request, env) {
+  const rid = requestId();
+  const auth = requireAdminAuth(request, env, rid);
+  if (auth) return auth;
+  if (!env?.DB) {
+    return err("storage", "D1 database binding is not configured.", rid, false, 503);
+  }
+
+  const url = new URL(request.url);
+  const status = url.searchParams.get("status") || "pending";
+  if (!DELETION_STATUS.has(status)) {
+    return err("bad_request", "Invalid deletion request status filter.", rid, false, 400);
+  }
+
+  try {
+    const rows = normalizeD1Results(await listDeletionRequestsByStatus(env.DB, status));
+    const requests = [];
+    for (const row of rows) {
+      const preview = row.license_key_hash
+        ? await getDeletionPreviewByLicenseHash(env.DB, row.license_key_hash)
+        : { licenses: 0, device_bindings: 0, reset_requests: 0 };
+      requests.push(adminDeletionView(row, preview));
+    }
+    return ok({ requests });
+  } catch {
+    return err("storage", "Failed to load deletion requests.", rid, true, 503);
+  }
+}
+
+async function handleAdminDeletionReject(request, env) {
+  const rid = requestId();
+  const auth = requireAdminAuth(request, env, rid);
+  if (auth) return auth;
+  if (!env?.DB) {
+    return err("storage", "D1 database binding is not configured.", rid, false, 503);
+  }
+
+  const idem = request.headers.get("x-idempotency-key");
+  if (!idem) {
+    return err("bad_request", "Missing required header: X-Idempotency-Key", rid, false, 400);
+  }
+  const body = await readJson(request);
+  const requestIdValue = body?.request_id;
+  if (!requestIdValue) {
+    return err("bad_request", "Invalid admin deletion decision payload.", rid, false, 400);
+  }
+
+  const payloadHash = stableHash({ decision: "rejected", request_id: requestIdValue, reason: body.reason || null });
+  const replay = await getD1Idempotent(env.DB, "admin_privacy_delete_reject", idem);
+  if (replay) {
+    if (replay.payload_hash !== payloadHash) {
+      return err("invalid_transition", "Idempotency key reuse does not match original request payload.", rid, false, 409);
+    }
+    return new Response(replay.response_body, {
+      status: replay.response_status,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  }
+
+  const deletion = await getDeletionRequest(env.DB, requestIdValue);
+  if (!deletion) {
+    return err("deletion_request_not_found", "Deletion request was not found.", rid, false, 404);
+  }
+  if (deletion.status !== "pending") {
+    return err("invalid_transition", "Deletion request cannot be rejected from its current state.", rid, false, 409);
+  }
+
+  const now = Date.now();
+  try {
+    await updateDeletionRequestStatus(env.DB, {
+      requestId: deletion.request_id,
+      status: "rejected",
+      updatedAtMs: now,
+      decidedAtMs: now,
+      errorCode: null,
+      errorMessageSafe: null,
+    });
+    await writeAuditEvent(
+      env.DB,
+      "user_data_deletion_rejected",
+      "admin",
+      JSON.stringify({
+        request_id: deletion.request_id,
+        has_license_hash: Boolean(deletion.license_key_hash),
+        reason_present: Boolean(body.reason),
+      }),
+      now,
+    );
+  } catch {
+    return err("storage", "Failed to persist deletion rejection.", rid, true, 503);
+  }
+
+  const response = ok({
+    deletion_request_id: deletion.request_id,
+    status: "rejected",
+    deletion_summary: null,
+  });
+  const responseBody = await response.clone().text();
+  await putD1Idempotent(
+    env.DB,
+    "admin_privacy_delete_reject",
+    idem,
+    payloadHash,
+    { status: response.status, body: responseBody },
+    now,
+  );
+  return response;
+}
+
+async function handleAdminDeletionApprove(request, env) {
+  const rid = requestId();
+  const auth = requireAdminAuth(request, env, rid);
+  if (auth) return auth;
+  if (!env?.DB) {
+    return err("storage", "D1 database binding is not configured.", rid, false, 503);
+  }
+
+  const idem = request.headers.get("x-idempotency-key");
+  if (!idem) {
+    return err("bad_request", "Missing required header: X-Idempotency-Key", rid, false, 400);
+  }
+  const body = await readJson(request);
+  const requestIdValue = body?.request_id;
+  if (!requestIdValue || body.confirmation !== "DELETE USER DATA") {
+    return err("bad_request", "Deletion approval requires request_id and confirmation.", rid, false, 400);
+  }
+
+  const payloadHash = stableHash({
+    decision: "approved",
+    request_id: requestIdValue,
+    confirmation: body.confirmation,
+    reason: body.reason || null,
+  });
+  const replay = await getD1Idempotent(env.DB, "admin_privacy_delete_approve", idem);
+  if (replay) {
+    if (replay.payload_hash !== payloadHash) {
+      return err("invalid_transition", "Idempotency key reuse does not match original request payload.", rid, false, 409);
+    }
+    return new Response(replay.response_body, {
+      status: replay.response_status,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  }
+
+  const deletion = await getDeletionRequest(env.DB, requestIdValue);
+  if (!deletion) {
+    return err("deletion_request_not_found", "Deletion request was not found.", rid, false, 404);
+  }
+  if (!["pending", "failed"].includes(deletion.status)) {
+    return err("invalid_transition", "Deletion request cannot be approved from its current state.", rid, false, 409);
+  }
+  if (!deletion.license_key_hash) {
+    return err("invalid_transition", "Deletion request cannot be approved without license context.", rid, false, 409);
+  }
+
+  const now = Date.now();
+  let summary;
+  try {
+    summary = await getDeletionPreviewByLicenseHash(env.DB, deletion.license_key_hash);
+    await updateDeletionRequestStatus(env.DB, {
+      requestId: deletion.request_id,
+      status: "approved",
+      updatedAtMs: now,
+      decidedAtMs: now,
+      errorCode: null,
+      errorMessageSafe: null,
+    });
+    await updateDeletionRequestStatus(env.DB, {
+      requestId: deletion.request_id,
+      status: "processing",
+      updatedAtMs: now,
+      errorCode: null,
+      errorMessageSafe: null,
+    });
+    await deleteDeviceBindingsByLicenseHash(env.DB, deletion.license_key_hash);
+    await anonymizeResetRequestsByLicenseHash(env.DB, deletion.license_key_hash, now);
+    await anonymizeLicenseForPrivacyDeletion(env.DB, deletion.license_key_hash, now);
+    const completedSummary = {
+      ...summary,
+      action: "backend_licensing_data_deleted_or_anonymized",
+    };
+    await updateDeletionRequestStatus(env.DB, {
+      requestId: deletion.request_id,
+      status: "completed",
+      updatedAtMs: now,
+      completedAtMs: now,
+      summaryJson: JSON.stringify(completedSummary),
+      errorCode: null,
+      errorMessageSafe: null,
+    });
+    await sanitizeCompletedDeletionRequest(env.DB, deletion.request_id, now);
+    await writeAuditEvent(
+      env.DB,
+      "user_data_deletion_completed",
+      "admin",
+      JSON.stringify({
+        request_id: deletion.request_id,
+        reason_present: Boolean(body.reason),
+        summary: completedSummary,
+      }),
+      now,
+    );
+    summary = completedSummary;
+  } catch {
+    await updateDeletionRequestStatus(env.DB, {
+      requestId: deletion.request_id,
+      status: "failed",
+      updatedAtMs: Date.now(),
+      errorCode: "storage",
+      errorMessageSafe: "Deletion execution failed. Retry after checking Worker storage.",
+    });
+    return err("storage", "Failed to execute deletion request.", rid, true, 503);
+  }
+
+  const response = ok({
+    deletion_request_id: deletion.request_id,
+    status: "completed",
+    deletion_summary: summary,
+  });
+  const responseBody = await response.clone().text();
+  await putD1Idempotent(
+    env.DB,
+    "admin_privacy_delete_approve",
     idem,
     payloadHash,
     { status: response.status, body: responseBody },
@@ -1190,6 +1593,84 @@ function adminResetView(row) {
     created_at_ms: row.created_at_ms,
     updated_at_ms: row.updated_at_ms,
   };
+}
+
+function deletionStatusView(row) {
+  return {
+    request_id: row.request_id,
+    status: row.status,
+    message: deletionStatusMessage(row.status),
+    completed_at_ms: row.completed_at_ms || null,
+    error_code: row.error_code || null,
+  };
+}
+
+function adminDeletionView(row, preview) {
+  return {
+    deletion_request_id: row.request_id,
+    status: row.status,
+    masked_license_key: row.masked_license_key || null,
+    has_license_hash: Boolean(row.license_key_hash),
+    license_hash_prefix: hashPrefix(row.license_key_hash),
+    purchaser_email: row.purchaser_email_masked || maskEmail(row.purchaser_email),
+    requested_scope: row.requested_scope || "backend_licensing_data",
+    deletion_preview: preview || parseJsonObject(row.deletion_summary_json),
+    deletion_summary: parseJsonObject(row.deletion_summary_json),
+    error_code: row.error_code || null,
+    error_message_safe: row.error_message_safe || null,
+    created_at_ms: row.created_at_ms,
+    updated_at_ms: row.updated_at_ms,
+    decided_at_ms: row.decided_at_ms || null,
+    completed_at_ms: row.completed_at_ms || null,
+  };
+}
+
+function deletionStatusMessage(status) {
+  switch (status) {
+    case "pending":
+      return "Deletion request is pending admin review.";
+    case "approved":
+    case "processing":
+      return "Deletion request is being processed.";
+    case "completed":
+      return "Deletion request completed.";
+    case "rejected":
+      return "Deletion request was rejected after review.";
+    case "failed":
+      return "Deletion request failed and needs admin review.";
+    default:
+      return "Deletion request status is unavailable.";
+  }
+}
+
+function parseJsonObject(value) {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function withDeletionLookupToken(responseBody, lookupToken) {
+  try {
+    const parsed = JSON.parse(String(responseBody || "{}"));
+    if (parsed?.ok && parsed.data && typeof parsed.data === "object") {
+      parsed.data.lookup_token = lookupToken;
+      return JSON.stringify(parsed);
+    }
+  } catch {
+    // Fall through to a safe generic response below.
+  }
+  return JSON.stringify({
+    ok: true,
+    data: {
+      lookup_token: lookupToken,
+      status: "pending",
+      message: "Deletion request submitted for admin review.",
+    },
+  });
 }
 
 function base64UrlEncode(value) {

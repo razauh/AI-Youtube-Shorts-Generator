@@ -12,6 +12,11 @@ This worker implements the hosted licensing contract exercised by:
 - `POST /v1/license/validate`
 - `POST /v1/license/reset/request`
 - `POST /v1/license/reset/status`
+- `POST /v1/privacy/delete/request`
+- `POST /v1/privacy/delete/status`
+- `GET /v1/admin/privacy/delete-requests`
+- `POST /v1/admin/privacy/delete/approve`
+- `POST /v1/admin/privacy/delete/reject`
 - `POST /v1/license/webhooks/gumroad`
 - `GET /updates/:target/:arch/:current_version`
 
@@ -53,6 +58,7 @@ wrangler secret put HASH_PEPPER
   - validate
   - reset request
   - reset status
+  - user data deletion request/status/admin review
   - Gumroad webhook idempotency/audit/license upsert
 - Gumroad webhook verification now uses server-to-server sale verification with `GUMROAD_ACCESS_TOKEN`.
 - Gumroad webhook verification expects Gumroad `sale.id` as `sale_id`. Do not use Gumroad `order_id`.

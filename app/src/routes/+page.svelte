@@ -4,6 +4,7 @@
   import ThemedSelect from '../lib/components/ThemedSelect.svelte';
   import { runState } from '../lib/stores/runState';
   import { authState } from '../lib/stores/authState';
+  import { getUserDataDeletionStatus, requestUserDataDeletion } from '../lib/api/authClient';
   import { openInFileManager, pickLocalVideoFile, pickOutputJsonPath, runGenerateAndStream } from '../lib/api/tauriClient';
   import {
     apiKeyProfileActivate,
@@ -19,6 +20,8 @@
     localModelProfileRetryDownload,
     localRuntimePackStatus,
     localModelProfiles,
+    secureStoreLoad,
+    secureStoreSave,
     runtimeContext,
     validateRuntime
   } from '../lib/api/runtimeClient';
@@ -31,6 +34,7 @@
   };
   const APP_VERSION = import.meta.env?.VITE_APP_VERSION ?? '0.1.0';
   const CRASH_REPORT_ENDPOINT = import.meta.env?.VITE_CRASH_REPORT_ENDPOINT ?? '';
+  const USER_DATA_DELETION_LOOKUP_TOKEN_KEY = 'USER_DATA_DELETION_LOOKUP_TOKEN';
   const WHISPER_MODEL_OPTIONS = [
     { value: 'tiny', label: 'Tiny - fastest, lowest accuracy' },
     { value: 'base', label: 'Base - default lightweight model' },
@@ -123,6 +127,15 @@
   let settingsActionBusy = false;
   let localDownloadActionStatus = '';
   let settingsResetLicenseKey = '';
+  let deletionLicenseKey = '';
+  let deletionPurchaserEmail = '';
+  let deletionConfirmation = '';
+  let deletionRequestId = '';
+  let deletionLookupToken = '';
+  let deletionStatus = '';
+  let deletionMessage = '';
+  let deletionError = '';
+  let deletionBusy = false;
   let authResetActionStatus = '';
   let authResetActionKind = 'success';
   let licenseFormStatus = '';
@@ -216,6 +229,7 @@
     let unlistenLocalModel = null;
     try {
       loadState();
+      loadDeletionStatusCache();
       loadCrashDraftFromLocalStorage();
       authState.bootstrap();
       loadLocalModelStatus();
@@ -567,6 +581,113 @@
       settingsActionKind = 'error';
     } finally {
       settingsActionBusy = false;
+    }
+  }
+
+  function deletionSafeMessage(error) {
+    const code = error?.code || 'unknown';
+    switch (code) {
+      case 'invalid_deletion_request':
+        return 'Enter your license key and type DELETE before submitting.';
+      case 'invalid_purchase_email':
+        return 'Purchaser email could not be matched for this license.';
+      case 'invalid_transition':
+        return 'A deletion request is already open for this license.';
+      case 'deletion_request_not_found':
+        return 'Deletion request not found.';
+      case 'invalid_deletion_lookup_token':
+        return 'Deletion status token is invalid.';
+      case 'worker_unreachable':
+        return 'Unable to reach the license service right now.';
+      default:
+        return 'Unable to submit or refresh the deletion request.';
+    }
+  }
+
+  async function persistDeletionStatus(view) {
+    deletionRequestId = view.request_id;
+    if (view.lookup_token) {
+      deletionLookupToken = view.lookup_token;
+      try {
+        await secureStoreSave(USER_DATA_DELETION_LOOKUP_TOKEN_KEY, view.lookup_token);
+      } catch (_e) {
+        // Keep the in-memory token for this session if secure storage is unavailable.
+      }
+    }
+    deletionStatus = view.status;
+    deletionMessage = view.message || '';
+    deletionError = '';
+    try {
+      localStorage.setItem(
+        'auth.user_data_deletion_request.v1',
+        JSON.stringify({
+          requestId: deletionRequestId,
+          status: deletionStatus,
+          message: deletionMessage,
+        }),
+      );
+    } catch (_e) {
+      // ignore local status cache errors
+    }
+  }
+
+  async function loadDeletionStatusCache() {
+    try {
+      const raw = localStorage.getItem('auth.user_data_deletion_request.v1');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.requestId !== 'string') return;
+      deletionRequestId = parsed.requestId;
+      deletionStatus = typeof parsed.status === 'string' ? parsed.status : '';
+      deletionMessage = typeof parsed.message === 'string' ? parsed.message : '';
+      deletionLookupToken = (await secureStoreLoad(USER_DATA_DELETION_LOOKUP_TOKEN_KEY)) || '';
+    } catch (_e) {
+      // ignore local status cache errors
+    }
+  }
+
+  async function submitUserDataDeletionRequest() {
+    if (deletionBusy) return;
+    const licenseKey = deletionLicenseKey.trim();
+    const confirmation = deletionConfirmation.trim();
+    const purchaserEmail = deletionPurchaserEmail.trim();
+    if (!licenseKey || confirmation !== 'DELETE') {
+      deletionError = 'Enter your license key and type DELETE before submitting.';
+      return;
+    }
+    deletionBusy = true;
+    deletionError = '';
+    try {
+      const view = await requestUserDataDeletion({
+        license_key: licenseKey,
+        purchaser_email: purchaserEmail || null,
+        confirmation,
+      });
+      deletionLicenseKey = '';
+      deletionPurchaserEmail = '';
+      deletionConfirmation = '';
+      await persistDeletionStatus(view);
+    } catch (error) {
+      deletionError = deletionSafeMessage(error);
+    } finally {
+      deletionBusy = false;
+    }
+  }
+
+  async function refreshUserDataDeletionStatus() {
+    if (!deletionRequestId || !deletionLookupToken || deletionBusy) return;
+    deletionBusy = true;
+    deletionError = '';
+    try {
+      const view = await getUserDataDeletionStatus({
+        request_id: deletionRequestId,
+        lookup_token: deletionLookupToken,
+      });
+      await persistDeletionStatus(view);
+    } catch (error) {
+      deletionError = deletionSafeMessage(error);
+    } finally {
+      deletionBusy = false;
     }
   }
 
@@ -1982,6 +2103,60 @@
             <button type="button" class:active-tab={policiesTab === 'notices'} on:click={() => (policiesTab = 'notices')}>Third-Party Notices</button>
             <button type="button" class:active-tab={policiesTab === 'refund'} on:click={() => (policiesTab = 'refund')}>Refund Policy</button>
           </div>
+          <article class="panel config-card config-card-caution privacy-delete-card">
+            <div class="config-card-head">
+              <div>
+                <p class="eyebrow">Privacy request</p>
+                <h3>Delete User Data</h3>
+              </div>
+            </div>
+            <p class="meta">Submit a deletion request for backend licensing data. An admin reviews the request before deletion is processed.</p>
+            <form class="form reset-form" novalidate on:submit|preventDefault={submitUserDataDeletionRequest}>
+              <label>
+                License key
+                <input
+                  aria-label="Deletion request license key"
+                  type="password"
+                  bind:value={deletionLicenseKey}
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+              </label>
+              <label>
+                Purchaser email optional
+                <input
+                  aria-label="Deletion request purchaser email"
+                  type="email"
+                  bind:value={deletionPurchaserEmail}
+                  autocomplete="email"
+                  spellcheck="false"
+                />
+              </label>
+              <label>
+                Type DELETE to submit
+                <input
+                  aria-label="Deletion request confirmation"
+                  bind:value={deletionConfirmation}
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+              </label>
+              <button class="button-danger" type="submit" disabled={deletionBusy || deletionConfirmation.trim() !== 'DELETE'}>
+                {deletionBusy ? 'Submitting...' : 'Request Data Deletion'}
+              </button>
+            </form>
+            {#if deletionRequestId}
+              <p class="meta">Request: {deletionRequestId}</p>
+              <p class="meta">Status: {deletionStatus || 'pending'}</p>
+              {#if deletionMessage}<p class="meta">{deletionMessage}</p>{/if}
+              <button class="button-secondary" type="button" on:click={refreshUserDataDeletionStatus} disabled={deletionBusy}>
+                {deletionBusy ? 'Refreshing...' : 'Refresh Deletion Status'}
+              </button>
+            {/if}
+            {#if deletionError}
+              <p class="error-text">{deletionError}</p>
+            {/if}
+          </article>
         </div>
         <div class="panel legal-copy" role="tabpanel">
           {#each POLICY_SECTIONS[policiesTab] as section}
@@ -2775,6 +2950,11 @@
   .orb-b { bottom: -70px; right: -60px; background: var(--color-secondary); }
 
   .legal-copy h3 { margin-top: .8rem; }
+
+  .privacy-delete-card {
+    margin-top: 1rem;
+    max-width: 720px;
+  }
 
   @media (max-width: 900px) {
     .app-shell {

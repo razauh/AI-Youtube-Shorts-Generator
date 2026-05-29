@@ -19,6 +19,30 @@ pub enum ResetRequestStatus {
     Expired,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DeletionRequestStatus {
+    Pending,
+    Approved,
+    Processing,
+    Rejected,
+    Completed,
+    Failed,
+}
+
+impl DeletionRequestStatus {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Approved => "approved",
+            Self::Processing => "processing",
+            Self::Rejected => "rejected",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+        }
+    }
+}
+
 impl ResetRequestStatus {
     fn as_str(&self) -> &'static str {
         match self {
@@ -67,6 +91,40 @@ pub struct AdminResetDecisionData {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub struct AdminDeletionRequestItem {
+    pub deletion_request_id: String,
+    pub status: DeletionRequestStatus,
+    pub masked_license_key: Option<String>,
+    pub has_license_hash: bool,
+    pub license_hash_prefix: Option<String>,
+    pub purchaser_email: Option<String>,
+    pub requested_scope: String,
+    pub deletion_preview: Option<serde_json::Value>,
+    pub deletion_summary: Option<serde_json::Value>,
+    pub error_code: Option<String>,
+    pub error_message_safe: Option<String>,
+    pub created_at_ms: u64,
+    pub updated_at_ms: u64,
+    pub decided_at_ms: Option<u64>,
+    pub completed_at_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AdminDeletionListData {
+    pub requests: Vec<AdminDeletionRequestItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AdminDeletionDecisionData {
+    pub deletion_request_id: String,
+    pub status: DeletionRequestStatus,
+    pub deletion_summary: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct AdminDisableLicenseData {
     pub license_hash_prefix: String,
     pub entitlement_status: String,
@@ -80,6 +138,8 @@ pub struct AdminOverviewData {
     pub entitlement_counts: std::collections::BTreeMap<String, u64>,
     pub device_binding_counts: std::collections::BTreeMap<String, u64>,
     pub reset_request_counts: std::collections::BTreeMap<String, u64>,
+    #[serde(default)]
+    pub deletion_request_counts: std::collections::BTreeMap<String, u64>,
     pub recent_audit_events_24h: u64,
 }
 
@@ -201,6 +261,14 @@ struct AdminDecisionRequest<'a> {
 }
 
 #[derive(Debug, Serialize)]
+struct AdminDeletionApproveRequest<'a> {
+    request_id: &'a str,
+    confirmation: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<&'a str>,
+}
+
+#[derive(Debug, Serialize)]
 struct AdminDisableLicenseRequest<'a> {
     license_hash_prefix: &'a str,
     reason: &'a str,
@@ -225,6 +293,9 @@ enum AdminAction {
     Approve,
     Reject,
     DisableLicense,
+    ListDeletionRequests,
+    ApproveDeletionRequest,
+    RejectDeletionRequest,
 }
 
 impl AdminAction {
@@ -240,6 +311,9 @@ impl AdminAction {
             Self::Approve => "approve_reset_request",
             Self::Reject => "reject_reset_request",
             Self::DisableLicense => "disable_license",
+            Self::ListDeletionRequests => "list_deletion_requests",
+            Self::ApproveDeletionRequest => "approve_deletion_request",
+            Self::RejectDeletionRequest => "reject_deletion_request",
         }
     }
 }
@@ -722,6 +796,21 @@ pub async fn admin_list_reset_requests(
 }
 
 #[tauri::command]
+pub async fn admin_list_deletion_requests(
+    status: DeletionRequestStatus,
+) -> Result<AdminDeletionListData, AdminCommandError> {
+    let path = format!("/v1/admin/privacy/delete-requests?status={}", status.as_str());
+    send_admin_request::<AdminDeletionListData, ()>(
+        AdminAction::ListDeletionRequests,
+        HttpMethod::Get,
+        &path,
+        None,
+        None,
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn admin_approve_reset_request(
     request_id: String,
     reason: Option<String>,
@@ -739,6 +828,65 @@ pub async fn admin_approve_reset_request(
         AdminAction::Approve,
         HttpMethod::Post,
         "/v1/admin/reset/approve",
+        Some(&body),
+        Some(&idempotency_key),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn admin_approve_deletion_request(
+    request_id: String,
+    confirmation: String,
+    reason: Option<String>,
+) -> Result<AdminDeletionDecisionData, AdminCommandError> {
+    let normalized_confirmation = confirmation.trim();
+    if normalized_confirmation != "DELETE USER DATA" {
+        return Err(command_error(
+            "bad_request",
+            "Deletion approval requires DELETE USER DATA confirmation.",
+            None,
+            false,
+        ));
+    }
+    let idempotency_key = generate_admin_idempotency_key("approve_deletion", &request_id);
+    let reason = reason
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let body = AdminDeletionApproveRequest {
+        request_id: request_id.as_str(),
+        confirmation: normalized_confirmation,
+        reason,
+    };
+    send_admin_request(
+        AdminAction::ApproveDeletionRequest,
+        HttpMethod::Post,
+        "/v1/admin/privacy/delete/approve",
+        Some(&body),
+        Some(&idempotency_key),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn admin_reject_deletion_request(
+    request_id: String,
+    reason: Option<String>,
+) -> Result<AdminDeletionDecisionData, AdminCommandError> {
+    let idempotency_key = generate_admin_idempotency_key("reject_deletion", &request_id);
+    let reason = reason
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let body = AdminDecisionRequest {
+        request_id: request_id.as_str(),
+        reason,
+    };
+    send_admin_request(
+        AdminAction::RejectDeletionRequest,
+        HttpMethod::Post,
+        "/v1/admin/privacy/delete/reject",
         Some(&body),
         Some(&idempotency_key),
     )

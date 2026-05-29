@@ -1,0 +1,9 @@
+{
+  "ok": false,
+  "error": {
+    "code": "invalid_deletion_lookup_token",
+    "message": "Deletion status token is invalid.",
+    "request_id": "req_124",
+    "retryable": false
+  }
+}

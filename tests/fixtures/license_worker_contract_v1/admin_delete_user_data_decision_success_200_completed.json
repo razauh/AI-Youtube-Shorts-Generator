@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "data": {
+    "deletion_request_id": "del_123456789abc",
+    "status": "completed",
+    "deletion_summary": {
+      "licenses": 1,
+      "device_bindings": 1,
+      "reset_requests": 1,
+      "action": "backend_licensing_data_deleted_or_anonymized"
+    }
+  }
+}

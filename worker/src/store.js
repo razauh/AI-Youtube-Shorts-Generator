@@ -180,6 +180,21 @@ export async function listResetRequestsByStatus(db, status) {
     .all();
 }
 
+export async function listDeletionRequestsByStatus(db, status) {
+  return db
+    .prepare(
+      `SELECT request_id, lookup_token_hash, license_key_hash, masked_license_key, purchaser_email,
+              purchaser_email_masked, status, requested_scope, request_metadata_json,
+              deletion_summary_json, error_code, error_message_safe, created_at_ms, updated_at_ms,
+              decided_at_ms, completed_at_ms
+       FROM user_data_deletion_requests
+       WHERE status = ?
+       ORDER BY created_at_ms ASC`,
+    )
+    .bind(status)
+    .all();
+}
+
 export async function writeAuditEvent(db, eventType, actor, metadataJson, createdAtMs) {
   return db
     .prepare(
@@ -191,6 +206,118 @@ export async function writeAuditEvent(db, eventType, actor, metadataJson, create
        ) VALUES (?, ?, ?, ?)`,
     )
     .bind(eventType, actor, metadataJson, createdAtMs)
+    .run();
+}
+
+export async function createDeletionRequest(
+  db,
+  {
+    requestId,
+    lookupTokenHash,
+    licenseKeyHash,
+    maskedLicenseKey,
+    purchaserEmail,
+    purchaserEmailMasked,
+    status,
+    requestedScope,
+    requestMetadataJson,
+    createdAtMs,
+    updatedAtMs,
+  },
+) {
+  return db
+    .prepare(
+      `INSERT INTO user_data_deletion_requests (
+         request_id,
+         lookup_token_hash,
+         license_key_hash,
+         masked_license_key,
+         purchaser_email,
+         purchaser_email_masked,
+         status,
+         requested_scope,
+         request_metadata_json,
+         created_at_ms,
+         updated_at_ms
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      requestId,
+      lookupTokenHash,
+      licenseKeyHash,
+      maskedLicenseKey,
+      purchaserEmail,
+      purchaserEmailMasked,
+      status,
+      requestedScope,
+      requestMetadataJson,
+      createdAtMs,
+      updatedAtMs,
+    )
+    .run();
+}
+
+export async function getDeletionRequest(db, requestId) {
+  return db
+    .prepare(
+      `SELECT request_id, lookup_token_hash, license_key_hash, masked_license_key, purchaser_email,
+              purchaser_email_masked, status, requested_scope, request_metadata_json,
+              deletion_summary_json, error_code, error_message_safe, created_at_ms, updated_at_ms,
+              decided_at_ms, completed_at_ms
+       FROM user_data_deletion_requests
+       WHERE request_id = ?`,
+    )
+    .bind(requestId)
+    .first();
+}
+
+export async function getOpenDeletionRequestByLicenseHash(db, licenseKeyHash) {
+  return db
+    .prepare(
+      `SELECT request_id, lookup_token_hash, license_key_hash, masked_license_key, purchaser_email,
+              purchaser_email_masked, status, requested_scope, request_metadata_json,
+              deletion_summary_json, error_code, error_message_safe, created_at_ms, updated_at_ms,
+              decided_at_ms, completed_at_ms
+       FROM user_data_deletion_requests
+       WHERE license_key_hash = ?
+         AND status IN ('pending', 'approved', 'processing', 'failed')
+       ORDER BY created_at_ms ASC
+       LIMIT 1`,
+    )
+    .bind(licenseKeyHash)
+    .first();
+}
+
+export async function updateDeletionRequestStatus(
+  db,
+  { requestId, status, updatedAtMs, decidedAtMs = null, completedAtMs = null, summaryJson = null, errorCode = null, errorMessageSafe = null },
+) {
+  return db
+    .prepare(
+      `UPDATE user_data_deletion_requests
+       SET status = ?,
+           updated_at_ms = ?,
+           decided_at_ms = COALESCE(?, decided_at_ms),
+           completed_at_ms = COALESCE(?, completed_at_ms),
+           deletion_summary_json = COALESCE(?, deletion_summary_json),
+           error_code = ?,
+           error_message_safe = ?
+       WHERE request_id = ?`,
+    )
+    .bind(status, updatedAtMs, decidedAtMs, completedAtMs, summaryJson, errorCode, errorMessageSafe, requestId)
+    .run();
+}
+
+export async function sanitizeCompletedDeletionRequest(db, requestId, updatedAtMs) {
+  return db
+    .prepare(
+      `UPDATE user_data_deletion_requests
+       SET purchaser_email = NULL,
+           masked_license_key = NULL,
+           updated_at_ms = ?
+       WHERE request_id = ?`,
+    )
+    .bind(updatedAtMs, requestId)
     .run();
 }
 
@@ -261,20 +388,70 @@ export async function deactivateDeviceBindingsByLicenseHash(db, licenseKeyHash, 
     .run();
 }
 
+export async function getDeletionPreviewByLicenseHash(db, licenseKeyHash) {
+  const [licenseCount, deviceCount, resetCount] = await Promise.all([
+    db.prepare("SELECT COUNT(*) AS count FROM licenses WHERE license_key_hash = ?").bind(licenseKeyHash).first(),
+    db.prepare("SELECT COUNT(*) AS count FROM device_bindings WHERE license_key_hash = ?").bind(licenseKeyHash).first(),
+    db.prepare("SELECT COUNT(*) AS count FROM reset_requests WHERE license_key_hash = ?").bind(licenseKeyHash).first(),
+  ]);
+  return {
+    licenses: Number(licenseCount?.count || 0),
+    device_bindings: Number(deviceCount?.count || 0),
+    reset_requests: Number(resetCount?.count || 0),
+  };
+}
+
+export async function deleteDeviceBindingsByLicenseHash(db, licenseKeyHash) {
+  return db
+    .prepare("DELETE FROM device_bindings WHERE license_key_hash = ?")
+    .bind(licenseKeyHash)
+    .run();
+}
+
+export async function anonymizeResetRequestsByLicenseHash(db, licenseKeyHash, updatedAtMs) {
+  return db
+    .prepare(
+      `UPDATE reset_requests
+       SET license_key_hash = NULL,
+           masked_license_key = NULL,
+           purchaser_email = NULL,
+           updated_at_ms = ?
+       WHERE license_key_hash = ?`,
+    )
+    .bind(updatedAtMs, licenseKeyHash)
+    .run();
+}
+
+export async function anonymizeLicenseForPrivacyDeletion(db, licenseKeyHash, updatedAtMs) {
+  return db
+    .prepare(
+      `UPDATE licenses
+       SET purchaser_email = NULL,
+           entitlement_status = 'disabled',
+           updated_at_ms = ?,
+           privacy_deleted_at_ms = ?
+       WHERE license_key_hash = ?`,
+    )
+    .bind(updatedAtMs, updatedAtMs, licenseKeyHash)
+    .run();
+}
+
 export async function getAdminOverviewCounts(db) {
   const queries = [
     db.prepare("SELECT COUNT(*) AS count FROM licenses").first(),
     db.prepare("SELECT entitlement_status AS key, COUNT(*) AS count FROM licenses GROUP BY entitlement_status").all(),
     db.prepare("SELECT status AS key, COUNT(*) AS count FROM device_bindings GROUP BY status").all(),
     db.prepare("SELECT status AS key, COUNT(*) AS count FROM reset_requests GROUP BY status").all(),
+    db.prepare("SELECT status AS key, COUNT(*) AS count FROM user_data_deletion_requests GROUP BY status").all(),
     db.prepare("SELECT COUNT(*) AS count FROM audit_events WHERE created_at_ms >= ?").bind(Date.now() - 86_400_000).first(),
   ];
-  const [licensesTotal, entitlementRows, deviceRows, resetRows, recentAuditCount] = await Promise.all(queries);
+  const [licensesTotal, entitlementRows, deviceRows, resetRows, deletionRows, recentAuditCount] = await Promise.all(queries);
   return {
     total_licenses: Number(licensesTotal?.count || 0),
     entitlement_counts: normalizeCountRows(entitlementRows),
     device_binding_counts: normalizeCountRows(deviceRows),
     reset_request_counts: normalizeCountRows(resetRows),
+    deletion_request_counts: normalizeCountRows(deletionRows),
     recent_audit_events_24h: Number(recentAuditCount?.count || 0),
   };
 }

@@ -20,6 +20,8 @@ fn main() {
             shorts_tauri_app::commands::auth::get_device_reset_status,
             shorts_tauri_app::commands::auth::clear_local_session,
             shorts_tauri_app::commands::auth::get_auth_state,
+            shorts_tauri_app::commands::privacy::request_user_data_deletion,
+            shorts_tauri_app::commands::privacy::get_user_data_deletion_status,
             shorts_tauri_app::commands::files::pick_local_video_file,
             shorts_tauri_app::commands::files::pick_output_json_path,
             shorts_tauri_app::commands::files::open_in_file_manager,
