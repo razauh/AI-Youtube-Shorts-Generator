@@ -306,12 +306,16 @@ AI-Youtube-Shorts-Generator/
 ```
 
 Root task runners:
-- `npm run dev`
-- `npm run test`
-- `npm run bundle` (customer app)
-- `npm run bundle:customer`
-- `npm run bundle:admin`
-- `npm run bundle:all`
+- `pnpm run dev`
+- `pnpm run test`
+- `pnpm run bundle` (customer app)
+- `pnpm run bundle:customer`
+- `pnpm run bundle:admin`
+- `pnpm run bundle:all`
+
+Local dependency setup:
+- `pnpm run deps:secure-install`
+- `pnpm run deps:sandbox-install` for an optional Linux bubblewrap sandbox around `pnpm install`
 
 ## Release Automation
 

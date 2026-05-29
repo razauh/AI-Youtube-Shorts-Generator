@@ -1,0 +1,12 @@
+packages:
+  - app
+  - worker
+
+minimumReleaseAge: 43200
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false
+ignoreScripts: true
+strictDepBuilds: true
+dangerouslyAllowAllBuilds: false
+engineStrict: true
+savePrefix: ''

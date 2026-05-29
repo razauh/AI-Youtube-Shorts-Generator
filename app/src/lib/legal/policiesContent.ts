@@ -165,7 +165,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       "heading": "15. Third-Party Licenses",
       "paragraphs": [
         "Third-party libraries, APIs, services, tools, AI models, datasets, and other components remain governed by their own licenses and terms.",
-        "These may include FFmpeg, Python packages, Rust crates, Node/npm packages, Tauri components, Svelte/Vite tooling, OpenCV, yt-dlp, faster-whisper, Whisper-style model files, OpenAI, MuAPI, Gumroad, Cloudflare, and other dependencies or services.",
+        "These may include FFmpeg, Python packages, Rust crates, Node/pnpm packages, Tauri components, Svelte/Vite tooling, OpenCV, yt-dlp, faster-whisper, Whisper-style model files, OpenAI, MuAPI, Gumroad, Cloudflare, and other dependencies or services.",
         "You are responsible for complying with applicable third-party terms where relevant, especially if you redistribute the application, bundle dependencies, distribute model files, use outputs commercially, or process third-party content.",
         "[VERIFY: complete third-party notices, open-source notices, FFmpeg notices, and model license notices before release]"
       ]
@@ -414,7 +414,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       "paragraphs": [
         "The repository includes frontend, Rust/Tauri, Python, Worker, and test dependencies. These dependencies are governed by their own open-source or commercial licenses.",
         "Before public release or redistribution, generate and review a complete dependency license report for:",
-        "- Node/npm dependencies.",
+        "- Node/pnpm dependencies.",
         "- Rust crates.",
         "- Python packages.",
         "- Tauri plugins.",

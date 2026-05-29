@@ -5,6 +5,7 @@ compatibility_date = "2026-05-17"
 [vars]
 LICENSE_CONTRACT_VERSION = "v1"
 GUMROAD_APPLICATION_ID = "50DBfeWSBnw3YzfnYYq-N18A-HxKcWLFLNnu2Vw01k0"
+UPDATE_MANIFEST_URL = "https://github.com/razauh/AI-Youtube-Shorts-Generator/releases/latest/download/customer-latest.json"
 
 [[d1_databases]]
 binding = "DB"

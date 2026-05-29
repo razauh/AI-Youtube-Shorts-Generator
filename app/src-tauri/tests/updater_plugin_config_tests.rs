@@ -46,6 +46,38 @@ fn updater_config_creates_tauri_updater_artifacts() {
 }
 
 #[test]
+fn customer_updater_endpoint_uses_worker_updates_route() {
+    let config = fs::read_to_string("tauri.conf.json").expect("tauri config should be readable");
+    let parsed: Value = serde_json::from_str(&config).expect("tauri config should be valid json");
+    let endpoints = parsed
+        .pointer("/plugins/updater/endpoints")
+        .and_then(Value::as_array)
+        .expect("updater endpoints should be an array");
+    let endpoint = endpoints
+        .first()
+        .and_then(Value::as_str)
+        .expect("customer updater endpoint should be configured");
+
+    assert!(!endpoint.contains("updates.example.com"));
+    assert!(!endpoint.contains("YOUR_CLOUDFLARE_SUBDOMAIN"));
+    assert!(endpoint.starts_with("https://"));
+    assert!(endpoint.ends_with("/updates/{{target}}/{{arch}}/{{current_version}}"));
+}
+
+#[test]
+fn customer_updater_public_key_is_configured() {
+    let config = fs::read_to_string("tauri.conf.json").expect("tauri config should be readable");
+    let parsed: Value = serde_json::from_str(&config).expect("tauri config should be valid json");
+    let pubkey = parsed
+        .pointer("/plugins/updater/pubkey")
+        .and_then(Value::as_str)
+        .expect("updater pubkey should be configured");
+
+    assert!(!pubkey.trim().is_empty());
+    assert_ne!(pubkey.trim(), "REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY");
+}
+
+#[test]
 fn custom_updater_engine_is_not_present() {
     assert!(!std::path::Path::new("src/core/updater").exists());
     assert!(!std::path::Path::new("src/commands/updater.rs").exists());

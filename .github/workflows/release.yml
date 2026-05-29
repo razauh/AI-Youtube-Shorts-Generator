@@ -38,8 +38,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: app/package-lock.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -55,11 +58,19 @@ jobs:
             patchelf
 
       - name: Install desktop app dependencies
-        run: npm ci
-        working-directory: app
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify customer updater signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: test -n "$TAURI_SIGNING_PRIVATE_KEY"
 
       - name: Build customer Tauri bundles
-        run: npm run bundle:customer
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm run bundle:customer
 
       - name: Upload customer bundles
         uses: actions/upload-artifact@v4
@@ -89,8 +100,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: app/package-lock.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -106,11 +120,10 @@ jobs:
             patchelf
 
       - name: Install desktop app dependencies
-        run: npm ci
-        working-directory: app
+        run: pnpm install --frozen-lockfile
 
       - name: Build admin Tauri bundles
-        run: npm run bundle:admin
+        run: pnpm run bundle:admin
 
       - name: Upload admin bundles
         uses: actions/upload-artifact@v4
@@ -160,10 +173,27 @@ jobs:
       startsWith(github.ref, 'refs/tags/v') ||
       (github.event_name == 'workflow_dispatch' && inputs.publish_release == 'true' && inputs.tag_name != '')
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: release-assets
+
+      - name: Generate customer updater manifest
+        env:
+          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || inputs.tag_name }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          node .scripts/generate-customer-updater-manifest.mjs \
+            --input release-assets \
+            --assets-dir release-upload \
+            --out release-upload/customer-latest.json \
+            --repo "${GITHUB_REPOSITORY}" \
+            --tag "${RELEASE_TAG}" \
+            --version "${VERSION}" \
+            --notes "Customer app update ${VERSION}" \
+            --pub-date "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
       - name: Publish GitHub Release with all artifacts
         uses: softprops/action-gh-release@v2
@@ -173,6 +203,7 @@ jobs:
           draft: false
           prerelease: false
           files: |
+            release-upload/**
             release-assets/customer-linux-x64/**
             release-assets/customer-windows-x64/**
             release-assets/customer-macos-x64/**

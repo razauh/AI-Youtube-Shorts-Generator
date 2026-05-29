@@ -13,6 +13,6 @@ run_and_log() {
   "$@" 2>&1 | tee -a "$LOG_FILE"
 }
 
-run_and_log npm --prefix app run build
+run_and_log pnpm --dir app run build
 
 echo "Svelte warning validation completed. Log: $LOG_FILE" | tee -a "$LOG_FILE"

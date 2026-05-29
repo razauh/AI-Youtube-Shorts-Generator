@@ -16,6 +16,7 @@ architecture-local-vs-cloud-simple.png
 # Node / frontend
 /node_modules/
 app/node_modules/
+.pnpm-store/
 app/dist/
 app/.svelte-kit/
 app/coverage/
@@ -75,8 +76,12 @@ scripts/graphify_split_merge.py
 /.scripts/
 !/.scripts/
 /.scripts/*
+!/.scripts/generate-customer-updater-manifest.mjs
+!/.scripts/generate-customer-updater-manifest.test.mjs
 !/.scripts/run-admin-desktop-validation.sh
 !/.scripts/run-svelte-warning-validation.sh
+!/.scripts/run-updater-endpoint-validation.sh
+!/.scripts/run-pnpm-migration-validation.sh
 app/.scripts/
 .opencode/
 app/.opencode/

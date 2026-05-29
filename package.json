@@ -1,19 +1,21 @@
 {
   "name": "ai-youtube-shorts-generator-root",
   "private": true,
+  "packageManager": "pnpm@11.3.0",
   "scripts": {
-    "deps:secure-install": "bash scripts/secure-npm-install.sh",
-    "dev": "npm --prefix app run dev",
-    "worker:dev": "npm --prefix worker run dev",
-    "worker:test": "npm --prefix worker run test",
+    "deps:secure-install": "bash scripts/secure-pnpm-install.sh",
+    "deps:sandbox-install": "bash scripts/secure-pnpm-install-bwrap.sh",
+    "dev": "pnpm --dir app run dev",
+    "worker:dev": "pnpm --dir worker run dev",
+    "worker:test": "pnpm --dir worker run test",
     "test:config": "cargo test --manifest-path app/src-tauri/Cargo.toml --test config_tests -- --test-threads=1",
-    "test": "npm run test:config && npm --prefix app run test",
-    "tauri:dev:customer": "npm --prefix app run tauri:dev:customer",
-    "tauri:dev:admin": "npm --prefix app run tauri:dev:admin",
-    "bundle:customer": "npm --prefix app run tauri:build:customer",
-    "bundle:admin": "npm --prefix app run tauri:build:admin",
-    "bundle:all": "npm run bundle:customer && npm run bundle:admin",
-    "bundle": "npm run bundle:customer",
-    "build": "npm --prefix app run build"
+    "test": "pnpm run test:config && pnpm --dir app run test",
+    "tauri:dev:customer": "pnpm --dir app run tauri:dev:customer",
+    "tauri:dev:admin": "pnpm --dir app run tauri:dev:admin",
+    "bundle:customer": "pnpm --dir app run tauri:build:customer",
+    "bundle:admin": "pnpm --dir app run tauri:build:admin",
+    "bundle:all": "pnpm run bundle:customer && pnpm run bundle:admin",
+    "bundle": "pnpm run bundle:customer",
+    "build": "pnpm --dir app run build"
   }
 }

@@ -284,6 +284,126 @@ test('unknown routes return route_not_found', async () => {
   assert.equal(json.error.code, 'route_not_found');
 });
 
+test('updater endpoint returns raw tauri update json when newer customer version exists', async () => {
+  const originalFetch = global.fetch;
+  const manifest = {
+    version: '0.1.1',
+    notes: 'Bug fixes.',
+    pub_date: '2026-05-28T00:00:00Z',
+    platforms: {
+      'windows-x86_64': {
+        url: 'https://github.com/razauh/AI-Youtube-Shorts-Generator/releases/download/v0.1.1/customer-windows-x86_64-setup.exe',
+        signature: 'signed-update-fixture',
+      },
+    },
+  };
+  global.fetch = async () =>
+    new Response(JSON.stringify(manifest), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  try {
+    const res = await call('/updates/windows/x86_64/0.1.0', {
+      method: 'GET',
+      env: { UPDATE_MANIFEST_URL: 'https://updates.example.test/customer-latest.json' },
+    });
+    assert.equal(res.status, 200);
+    const json = await res.json();
+    assert.equal(json.version, '0.1.1');
+    assert.equal(json.signature, 'signed-update-fixture');
+    assert.equal(json.notes, 'Bug fixes.');
+    assert.equal(Object.hasOwn(json, 'ok'), false);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('updater endpoint returns no content when not configured or no newer version exists', async () => {
+  const missingConfig = await call('/updates/windows/x86_64/0.1.0', { method: 'GET' });
+  assert.equal(missingConfig.status, 204);
+
+  const originalFetch = global.fetch;
+  global.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        version: '0.1.1',
+        platforms: {
+          'windows-x86_64': {
+            url: 'https://github.com/razauh/AI-Youtube-Shorts-Generator/releases/download/v0.1.1/customer-windows-x86_64-setup.exe',
+            signature: 'signed-update-fixture',
+          },
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  try {
+    const current = await call('/updates/windows/x86_64/0.1.1', {
+      method: 'GET',
+      env: { UPDATE_MANIFEST_URL: 'https://updates.example.test/customer-latest.json' },
+    });
+    assert.equal(current.status, 204);
+
+    const newerInstalled = await call('/updates/windows/x86_64/0.1.2', {
+      method: 'GET',
+      env: { UPDATE_MANIFEST_URL: 'https://updates.example.test/customer-latest.json' },
+    });
+    assert.equal(newerInstalled.status, 204);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('updater endpoint returns no content for unsupported platform or invalid current version', async () => {
+  const unsupportedTarget = await call('/updates/freebsd/x86_64/0.1.0', {
+    method: 'GET',
+    env: { UPDATE_MANIFEST_URL: 'https://updates.example.test/customer-latest.json' },
+  });
+  assert.equal(unsupportedTarget.status, 204);
+
+  const unsupportedArch = await call('/updates/windows/mips/0.1.0', {
+    method: 'GET',
+    env: { UPDATE_MANIFEST_URL: 'https://updates.example.test/customer-latest.json' },
+  });
+  assert.equal(unsupportedArch.status, 204);
+
+  const invalidVersion = await call('/updates/windows/x86_64/not-a-version', {
+    method: 'GET',
+    env: { UPDATE_MANIFEST_URL: 'https://updates.example.test/customer-latest.json' },
+  });
+  assert.equal(invalidVersion.status, 204);
+});
+
+test('updater endpoint returns storage error for failed or invalid manifest', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => new Response('missing', { status: 404 });
+  try {
+    const failedFetch = await call('/updates/windows/x86_64/0.1.0', {
+      method: 'GET',
+      env: { UPDATE_MANIFEST_URL: 'https://updates.example.test/customer-latest.json' },
+    });
+    assert.equal(failedFetch.status, 503);
+    assert.equal((await failedFetch.json()).error.code, 'storage');
+  } finally {
+    global.fetch = originalFetch;
+  }
+
+  global.fetch = async () =>
+    new Response(JSON.stringify({ version: '0.1.1', platforms: { 'windows-x86_64': { url: 'https://example.test/app.exe' } } }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  try {
+    const invalidManifest = await call('/updates/windows/x86_64/0.1.0', {
+      method: 'GET',
+      env: { UPDATE_MANIFEST_URL: 'https://updates.example.test/customer-latest.json' },
+    });
+    assert.equal(invalidManifest.status, 503);
+    assert.equal((await invalidManifest.json()).error.code, 'storage');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('activate requires idempotency key', async () => {
   const res = await call('/v1/license/activate', {
     body: {

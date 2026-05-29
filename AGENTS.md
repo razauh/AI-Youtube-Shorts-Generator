@@ -4,6 +4,12 @@ Security and operating rules for AI coding agents working in this repository.
 
 This project contains a Tauri desktop app, a Rust backend, a Cloudflare Worker licensing service, Python legacy pipeline code, local media processing, and purchase/license flows. Treat it as security-sensitive software. When instructions conflict, choose the safer path and ask before taking actions that could weaken security, modify dependencies, expose secrets, or change licensing behavior.
 
+## Decision Ambiguity
+
+- When there is confusion or uncertainty in decision making, do not assume the intended path on your own.
+- Present the user with clear, practical options in plain English and ask them to choose before proceeding.
+- Each option should briefly explain what will happen if that option is selected.
+
 ## Non-Negotiable Rules
 
 - Do not run destructive commands such as `rm -rf`, `git reset --hard`, `git checkout --`, or mass file rewrites unless the user explicitly requests them.
@@ -17,15 +23,34 @@ This project contains a Tauri desktop app, a Rust backend, a Cloudflare Worker l
 
 Normal development uses the existing dependency tree. Dependency changes must be separate, deliberate work.
 
-- Never run `npm install`, `npm update`, `npm add`, `npx`, `npm exec`, `pnpm add`, `yarn add`, `cargo add`, `cargo update`, `pip install` for new packages, or similar dependency-changing commands without explicit user approval.
-- For the Svelte/Tauri frontend in `app/`, normal setup is `npm --prefix app ci` only.
-- `app/.npmrc` is intentionally strict: `package-lock=true`, `save-exact=true`, `ignore-scripts=true`, `audit=true`, `fund=false`, and `engine-strict=true`. Do not relax these defaults without explicit approval.
-- Do not run npm lifecycle scripts during install. If a package genuinely requires install scripts, stop and ask for approval with the exact package, version, script, and reason.
-- Do not use `npx` or `npm exec` to fetch transient tooling. Use checked-in scripts or already-installed local binaries.
-- Do not modify `package.json`, `package-lock.json`, `.npmrc`, `Cargo.toml`, `Cargo.lock`, `requirements.txt`, or `requirements-local.txt` unless dependency change is the task.
-- Any dependency change must show the exact command used, manifest diffs, lockfile diff summary, `npm audit` or equivalent result, and registry signature/audit result where applicable.
-- The `worker/` directory currently has `package.json` without a committed lockfile. Do not create or update worker lockfiles as a side effect of unrelated work.
-- Prefer existing project scripts: `scripts/secure-npm-install.sh`, `scripts/audit-installed-npm.sh`, and `scripts/secure-cargo-check.sh`.
+- If the JavaScript project has just been initiated or no package-manager policy exists yet, do not default to npm. Propose a secure pnpm setup first and ask the user to approve before creating manifests or running install commands.
+- A new JavaScript workspace should use pnpm with a pinned `packageManager`, a committed `pnpm-workspace.yaml`, a committed `pnpm-lock.yaml`, and no npm lockfiles.
+- The initial pnpm policy should include: `minimumReleaseAge=43200` minutes, `minimumReleaseAgeStrict=true`, `minimumReleaseAgeIgnoreMissingTime=false`, `ignoreScripts=true`, `strictDepBuilds=true`, `dangerouslyAllowAllBuilds=false`, `engineStrict=true`, and `savePrefix=''`.
+- For new projects, add safe package scripts for normal locked install, optional local Linux bubblewrap sandbox install, installed-tree audit, and project validation before suggesting dependency changes.
+- For new projects, create `.gitignore` entries for `node_modules`, build output, logs, env files, local caches, and package-manager debug logs before running any dependency setup.
+- For new projects, document the exact manual setup commands for the user: `corepack enable`, `pnpm install`, optional `pnpm run deps:sandbox-install`, and the project validation script.
+- Do not create `package-lock.json`, `npm-shrinkwrap.json`, npm-only `.npmrc` policy, or npm-based CI for a new project unless the user explicitly chooses npm after being shown the safer pnpm option.
+- If an npm-based project already exists, do not silently migrate it. Present clear options in plain English: keep npm and harden it, migrate to pnpm, or pause for a dependency/security review.
+- Never run `npm install`, `npm update`, `npm add`, `npx`, `npm exec`, `pnpm install`, `pnpm update`, `pnpm add`, `pnpm dlx`, `pnpm exec`, `yarn add`, `cargo add`, `cargo update`, `pip install` for new packages, or similar dependency-changing commands without explicit user approval.
+- For JavaScript workspaces, normal setup is `pnpm install --frozen-lockfile` from the repository root only.
+- `pnpm-workspace.yaml` is intentionally strict: `minimumReleaseAge=43200` minutes, `minimumReleaseAgeStrict=true`, `minimumReleaseAgeIgnoreMissingTime=false`, `ignoreScripts=true`, `strictDepBuilds=true`, `dangerouslyAllowAllBuilds=false`, `engineStrict=true`, and `savePrefix=''`. Do not relax these defaults without explicit approval.
+- Do not run package lifecycle scripts during install. If a package genuinely requires install scripts, stop and ask for approval with the exact package, version, script, and reason.
+- Do not use `npx`, `npm exec`, `pnpm dlx`, or `pnpm exec` to fetch transient tooling. Use checked-in scripts or already-installed local binaries.
+- Do not modify `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.npmrc`, Cargo manifests, `Cargo.lock`, `requirements.txt`, or `requirements-local.txt` unless dependency change is the task.
+- Any dependency change must show the exact command used, manifest diffs, lockfile diff summary, `pnpm audit` or equivalent result, and registry signature/audit result where applicable.
+- Prefer existing project scripts: `scripts/secure-pnpm-install.sh`, `scripts/secure-pnpm-install-bwrap.sh` for local Linux sandboxed installs, `scripts/audit-installed-pnpm.sh`, and `scripts/secure-cargo-check.sh`.
+- Bubblewrap sandboxing is local/manual only. Do not add `bwrap` or `bubblewrap` to GitHub release workflows, updater publication, Tauri signing, Worker deployment, or release manifest generation unless explicitly requested.
+
+## npm Guardrails
+
+- Treat npm as blocked-by-default for this repository. Do not introduce npm commands, npm lockfiles, npm CI steps, npm audit scripts, npm lifecycle-script policy, or npm install documentation unless the task explicitly requires npm.
+- Do not run `npm install`, `npm ci`, `npm update`, `npm audit fix`, `npm fund`, `npm publish`, `npm pack`, `npm init`, `npm create`, `npm exec`, or `npx` from agent sessions.
+- Do not replace pnpm commands with npm commands to work around pnpm failures. Report the blocker and the exact pnpm command the user should run or approve.
+- Do not commit or generate `package-lock.json` or `npm-shrinkwrap.json`. If either appears after a tool run, stop and ask before removing it unless the user explicitly requested npm.
+- Do not use npm lifecycle scripts as an escape hatch. Dependency install scripts must stay disabled unless the user approves the specific package, version, script name, script contents, and reason.
+- Do not use `npx` for one-off tools, scaffolding, code generation, formatters, test runners, or framework CLIs. Use checked-in scripts, local dependencies already in the lockfile, or ask the user to choose a safe option.
+- CI must use `corepack enable`, pinned pnpm, `pnpm install --frozen-lockfile`, and pnpm audit/list commands. Do not add `actions/setup-node` npm cache settings or `npm ci` steps.
+- If a third-party guide says to use npm, translate the command to the project’s pnpm equivalent when safe. If the translation is uncertain, ask with clear plain-English options.
 
 ## Command Execution Guardrails
 

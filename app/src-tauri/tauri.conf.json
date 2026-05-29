@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "com.aiyoutubeshorts.app",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "pnpm run dev",
+    "beforeBuildCommand": "pnpm run build",
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173"
   },
@@ -31,9 +31,9 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI3MTczQTBFMTBCOUQ0RDkKUldUWjFMa1FEam9YdC9jblZCRHlWb25XSXptL3hBSU53TWZhRW9WaEdvdENhZTRGalUvNG80YVMK",
       "endpoints": [
-        "https://updates.example.com/{{target}}/{{arch}}/{{current_version}}"
+        "https://license-worker.demandscout.workers.dev/updates/{{target}}/{{arch}}/{{current_version}}"
       ]
     }
   }

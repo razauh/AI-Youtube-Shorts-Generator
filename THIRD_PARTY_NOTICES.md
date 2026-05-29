@@ -84,7 +84,7 @@ Development and test dependencies identified:
 - `@testing-library/svelte`
 - `@testing-library/jest-dom`
 
-License metadata for these packages was not included in the inspected repomix file. Generate and review a final npm license report before release, including transitive dependencies from `app/package-lock.json` if present in the release repository.
+License metadata for these packages was not included in the inspected repomix file. Generate and review a final pnpm license report before release, including transitive dependencies from `pnpm-lock.yaml` if present in the release repository.
 
 ## 4. Rust, Tauri, and Native Dependencies
 
@@ -190,7 +190,7 @@ The repository contains tests and scripts that reference:
 - jsdom.
 - Cargo tests and Rust test utilities.
 - Python characterization/parity tests.
-- Shell scripts for secure npm install, Cargo checks, bundled runtime preparation, and supply-chain triage.
+- Shell scripts for secure pnpm install, Cargo checks, bundled runtime preparation, and supply-chain triage.
 
 These tools may not be distributed with production builds, but their licenses should be reviewed if included in source releases, binary bundles, CI artifacts, or developer distributions.
 
@@ -214,4 +214,3 @@ Before release, complete all of the following:
 Users must comply with applicable third-party terms when using APIs, downloading content, processing platform media, publishing clips, or using generated outputs commercially.
 
 Distributors must verify and satisfy all third-party license obligations before shipping source code, binaries, installers, runtime packs, model files, or bundled media tools.
-

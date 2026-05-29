@@ -13,13 +13,14 @@ This worker implements the hosted licensing contract exercised by:
 - `POST /v1/license/reset/request`
 - `POST /v1/license/reset/status`
 - `POST /v1/license/webhooks/gumroad`
+- `GET /updates/:target/:arch/:current_version`
 
 ## Run tests
 
 From repo root:
 
 ```bash
-npm run worker:test
+pnpm run worker:test
 ```
 
 Or directly:
@@ -33,8 +34,8 @@ node --test worker/test/contract.test.js
 Install Wrangler in `worker/` and run:
 
 ```bash
-npm --prefix worker install
-npm run worker:dev
+pnpm install --frozen-lockfile
+pnpm run worker:dev
 ```
 
 Set required secret first:
@@ -57,3 +58,4 @@ wrangler secret put HASH_PEPPER
 - Gumroad webhook verification expects Gumroad `sale.id` as `sale_id`. Do not use Gumroad `order_id`.
 - Access tokens are signed/verified with `TOKEN_SIGNING_SECRET`.
 - License key hashing uses `HASH_PEPPER` and is independent of token signing.
+- Customer updater checks use `UPDATE_MANIFEST_URL` and return Tauri updater JSON directly, not the license API envelope.

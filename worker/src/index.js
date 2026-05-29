@@ -1,4 +1,4 @@
-import { err, ok, readForm, readJson, requestId, RESET_STATUS } from "./contracts.js";
+import { err, json, ok, readForm, readJson, requestId, RESET_STATUS } from "./contracts.js";
 import {
   getD1Idempotent,
   putD1Idempotent,
@@ -30,6 +30,15 @@ export default {
 
     if (method === "GET" && path === "/health") {
       return ok({ status: "ok", contract: "v1" });
+    }
+
+    const updateMatch = path.match(/^\/updates\/([^/]+)\/([^/]+)\/([^/]+)$/);
+    if (method === "GET" && updateMatch) {
+      return handleUpdateCheck(env, {
+        target: updateMatch[1],
+        arch: updateMatch[2],
+        currentVersion: decodeURIComponent(updateMatch[3]),
+      });
     }
 
     if (method === "POST" && path === "/v1/license/activate") {
@@ -78,6 +87,132 @@ export default {
     return err("route_not_found", "Route not found", requestId(), false, 404);
   },
 };
+
+async function handleUpdateCheck(env, request) {
+  const manifestUrl = String(env?.UPDATE_MANIFEST_URL || "").trim();
+  if (!manifestUrl) {
+    return new Response(null, { status: 204 });
+  }
+
+  const current = parseSemver(request.currentVersion);
+  if (!current) {
+    return new Response(null, { status: 204 });
+  }
+
+  const platformKey = platformManifestKey(request.target, request.arch);
+  if (!platformKey) {
+    return new Response(null, { status: 204 });
+  }
+
+  let manifest;
+  try {
+    const response = await fetch(manifestUrl, {
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) {
+      return err("storage", "Update manifest could not be loaded.", requestId(), true, 503);
+    }
+    manifest = await response.json();
+  } catch {
+    return err("storage", "Update manifest could not be loaded.", requestId(), true, 503);
+  }
+
+  const latest = parseSemver(manifest?.version);
+  if (!latest) {
+    return err("storage", "Update manifest has an invalid version.", requestId(), true, 503);
+  }
+
+  if (compareSemver(latest, current) <= 0) {
+    return new Response(null, { status: 204 });
+  }
+
+  const platform = manifest?.platforms?.[platformKey];
+  if (!platform) {
+    return new Response(null, { status: 204 });
+  }
+
+  if (!isHttpsUrl(platform.url) || !isNonEmptyString(platform.signature)) {
+    return err("storage", "Update manifest is missing a valid URL or signature.", requestId(), true, 503);
+  }
+
+  const body = {
+    version: String(manifest.version),
+    url: String(platform.url),
+    signature: String(platform.signature),
+  };
+  if (isNonEmptyString(manifest.notes)) {
+    body.notes = String(manifest.notes);
+  }
+  if (isNonEmptyString(manifest.pub_date)) {
+    body.pub_date = String(manifest.pub_date);
+  }
+
+  return json(body, {
+    headers: {
+      "cache-control": "public, max-age=300",
+    },
+  });
+}
+
+function platformManifestKey(target, arch) {
+  const normalizedTarget = normalizeTarget(target);
+  const normalizedArch = normalizeArch(arch);
+  if (!normalizedTarget || !normalizedArch) {
+    return null;
+  }
+  return `${normalizedTarget}-${normalizedArch}`;
+}
+
+function normalizeTarget(target) {
+  const value = String(target || "").toLowerCase();
+  if (["windows", "linux", "darwin"].includes(value)) {
+    return value;
+  }
+  if (value === "macos") {
+    return "darwin";
+  }
+  return null;
+}
+
+function normalizeArch(arch) {
+  const value = String(arch || "").toLowerCase();
+  if (value === "x64" || value === "amd64") {
+    return "x86_64";
+  }
+  if (["x86_64", "aarch64", "i686", "armv7"].includes(value)) {
+    return value;
+  }
+  return null;
+}
+
+function parseSemver(version) {
+  const value = String(version || "").trim().replace(/^v/i, "");
+  const match = value.match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  if (!match) {
+    return null;
+  }
+  return match.slice(1, 4).map((part) => Number.parseInt(part, 10));
+}
+
+function compareSemver(left, right) {
+  for (let i = 0; i < 3; i += 1) {
+    if (left[i] > right[i]) return 1;
+    if (left[i] < right[i]) return -1;
+  }
+  return 0;
+}
+
+function isHttpsUrl(value) {
+  try {
+    return new URL(String(value)).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isNonEmptyString(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
 
 async function handleActivate(request, env) {
   const rid = requestId();
