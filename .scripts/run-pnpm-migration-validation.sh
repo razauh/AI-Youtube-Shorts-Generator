@@ -23,6 +23,12 @@ const releaseWorkflow = fs.readFileSync(".github/workflows/release.yml", "utf8")
 const buildWorkflow = fs.readFileSync(".github/workflows/build.yml", "utf8");
 const gitignore = fs.readFileSync(".gitignore", "utf8");
 const bwrapScript = fs.readFileSync("scripts/secure-pnpm-install-bwrap.sh", "utf8");
+if (!fs.existsSync("LICENSE")) {
+  throw new Error("root LICENSE file is required because README declares MIT");
+}
+if (fs.existsSync("package-lock.json") || fs.existsSync("npm-shrinkwrap.json")) {
+  throw new Error("npm lockfiles must not be present in this pnpm workspace");
+}
 if (!String(rootPkg.packageManager || "").startsWith("pnpm@")) {
   throw new Error("packageManager must pin pnpm");
 }

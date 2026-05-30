@@ -1,5 +1,4 @@
-// In-memory stub store for contract scaffolding only.
-// Replace with Durable Objects / D1 / KV in implementation phases.
+// MemoryStore is retained for contract tests; production routes use the D1 helpers below.
 export class MemoryStore {
   constructor() {
     this.idempotency = new Map();

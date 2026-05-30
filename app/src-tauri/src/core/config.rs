@@ -3,6 +3,9 @@ use crate::core::errors::ConfigError;
 use std::collections::HashSet;
 use std::path::Path;
 
+pub const PRODUCTION_LICENSE_WORKER_BASE_URL: &str =
+    "https://license-worker.demandscout.workers.dev";
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     pub muapi_api_key: String,
@@ -80,7 +83,7 @@ impl Config {
         let local_whisper_device = read_env_or_secure("LOCAL_WHISPER_DEVICE", "auto");
         let local_output_dir = read_env_trimmed("LOCAL_OUTPUT_DIR", "output");
         let license_worker_base_url =
-            read_env_trimmed("LICENSE_WORKER_BASE_URL", "http://127.0.0.1:8787")
+            read_env_trimmed("LICENSE_WORKER_BASE_URL", PRODUCTION_LICENSE_WORKER_BASE_URL)
                 .trim_end_matches('/')
                 .to_string();
         let license_storage_namespace =

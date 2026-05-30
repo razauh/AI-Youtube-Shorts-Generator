@@ -7,7 +7,7 @@ This repo uses the Cloudflare Worker as the public Tauri updater endpoint for th
 Customer app config:
 
 ```text
-https://license-worker.YOUR_CLOUDFLARE_SUBDOMAIN.workers.dev/updates/{{target}}/{{arch}}/{{current_version}}
+https://license-worker.demandscout.workers.dev/updates/{{target}}/{{arch}}/{{current_version}}
 ```
 
 Worker route:
@@ -91,12 +91,7 @@ Production auto-updates require a Tauri updater keypair.
 
 Never commit the private key. Only the public key belongs in the app config.
 
-Before shipping, replace these placeholders in `app/src-tauri/tauri.conf.json`:
-
-```text
-REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY
-YOUR_CLOUDFLARE_SUBDOMAIN
-```
+The customer `app/src-tauri/tauri.conf.json` already contains the public updater key and Worker endpoint used by the release validation script. Rotate the key only as a deliberate release-signing task and keep the matching private key in GitHub Actions secrets.
 
 ## Release Flow
 
@@ -127,7 +122,7 @@ bash .scripts/run-updater-endpoint-validation.sh
 
 The script writes logs to `.logs/` and exits non-zero on failure.
 
-The validation script intentionally fails while `YOUR_CLOUDFLARE_SUBDOMAIN` or `REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY` remains in `app/src-tauri/tauri.conf.json`.
+The validation script fails if placeholder updater text returns, if the release workflow no longer publishes `customer-latest.json`, or if production release configuration points at localhost.
 
 ## Rollback Notes
 

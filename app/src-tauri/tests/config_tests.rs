@@ -1,5 +1,7 @@
 use shorts_tauri_app::commands::health::app_config_summary;
-use shorts_tauri_app::core::config::{load_env_files_from, Config};
+use shorts_tauri_app::core::config::{
+    load_env_files_from, Config, PRODUCTION_LICENSE_WORKER_BASE_URL,
+};
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
@@ -100,7 +102,7 @@ fn defaults_match_python_when_env_missing() {
     assert_eq!(cfg.local_whisper_model, "base");
     assert_eq!(cfg.local_whisper_device, "auto");
     assert_eq!(cfg.local_output_dir, "output");
-    assert_eq!(cfg.license_worker_base_url, "http://127.0.0.1:8787");
+    assert_eq!(cfg.license_worker_base_url, PRODUCTION_LICENSE_WORKER_BASE_URL);
     assert_eq!(cfg.license_storage_namespace, "desktop-client");
     assert_eq!(cfg.license_keychain_service, "ai-youtube-shorts-generator");
     assert_eq!(

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, screen, cleanup } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { createRunState } from '../lib/stores/runState';
+import { POLICY_SECTIONS } from '../lib/legal/policiesContent';
 
 const runGenerateAndStream = vi.fn();
 const pickLocalVideoFile = vi.fn();
@@ -379,6 +380,14 @@ describe('test_ui flow parity', () => {
     expect(screen.getAllByText('Terms and Conditions').length).toBeGreaterThan(0);
     expect(screen.getByText('16. Prohibited Uses')).toBeTruthy();
     expect(screen.getByText('18. Limitation of Liability')).toBeTruthy();
+  });
+
+  it('test_policy_content_has_no_release_placeholders_or_stale_product_names', () => {
+    const encoded = JSON.stringify(POLICY_SECTIONS);
+    expect(encoded).toContain('AI YouTube Shorts Generator');
+    expect(encoded).not.toMatch(/VERIFY|\[(APP NAME|DEVELOPER NAME|LEGAL COMPANY|CONTACT EMAIL|SUPPORT EMAIL|PRIVACY EMAIL|JURISDICTION|RETENTION PERIOD)\]/);
+    expect(encoded).not.toContain('Signal Forge');
+    expect(encoded).not.toContain('AI Shorts App');
   });
 
   it('test_global_theme_switch_toggles_checked_state', async () => {

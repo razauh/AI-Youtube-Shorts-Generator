@@ -1080,7 +1080,7 @@
       updateVersion = result.available ? result.update.version : '';
       updaterStatus = result.available
         ? `Update ${result.update.version} is available.`
-        : 'Signal Forge is up to date.';
+        : 'AI YouTube Shorts Generator is up to date.';
     } catch (err) {
       updateAvailable = false;
       updateVersion = '';
@@ -1286,7 +1286,7 @@
 
     <section class="panel license-card" class:checking-state={$authState.lifecycle === 'checking'} aria-labelledby="license-title">
       <div class="license-brand">
-        <p class="brand-mark">Signal Forge</p>
+        <p class="brand-mark">AI YouTube Shorts Generator</p>
       </div>
 
       <div class="license-copy">
@@ -1409,7 +1409,7 @@
 
     <aside class="sidebar panel">
       <div class="sidebar-head">
-        <h1>Signal Forge</h1>
+        <h1>AI YouTube Shorts Generator</h1>
         <button
           type="button"
           class="menu-toggle"

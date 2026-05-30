@@ -1,5 +1,5 @@
 use crate::runtime::python_runtime::{
-    invoke_python, resolve_python_bridge_paths, with_python_runtime_env, PythonInvokeRequest,
+    resolve_python_bridge_paths, with_python_runtime_env, PythonInvokeRequest,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -16,6 +16,8 @@ use tauri::Emitter;
 
 const APP_DIR_NAME: &str = "ai-youtube-shorts-generator";
 const KEYCHAIN_SERVICE: &str = "ai-youtube-shorts-generator";
+pub const DEFAULT_LOCAL_RUNTIME_PACK_MANIFEST_URL: &str =
+    "https://license-worker.demandscout.workers.dev/runtime-pack/manifest.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -364,6 +366,10 @@ fn local_runtime_pack_manifest_url() -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+pub fn default_local_runtime_pack_manifest_url() -> &'static str {
+    DEFAULT_LOCAL_RUNTIME_PACK_MANIFEST_URL
+}
+
 fn local_runtime_pack_manifest_local_path() -> Result<PathBuf, String> {
     Ok(local_runtime_pack_root()?.join("manifest.json"))
 }
@@ -592,7 +598,7 @@ fn read_runtime_pack_status() -> Result<LocalRuntimePackStatus, String> {
     let store = load_runtime_pack_state_store()?;
     let install_dir = local_runtime_pack_current_dir()?;
     let manifest_url = local_runtime_pack_manifest_url()
-        .unwrap_or_else(|| "local://runtime-pack/manifest.json".to_string());
+        .unwrap_or_else(|| DEFAULT_LOCAL_RUNTIME_PACK_MANIFEST_URL.to_string());
 
     let bridge = resolve_python_bridge_paths();
     if let Some(dir) = bridge.bundled_runtime_dir {
@@ -2476,7 +2482,9 @@ pub fn local_runtime_pack_status() -> Result<LocalRuntimePackStatus, String> {
 
 #[tauri::command]
 pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRuntimePackStatus, String> {
-    let manifest_url = local_runtime_pack_manifest_url();
+    let configured_manifest_url = local_runtime_pack_manifest_url();
+    let manifest_path = local_runtime_pack_manifest_local_path()?;
+    let should_use_local_manifest = configured_manifest_url.is_none() && manifest_path.exists();
     log_runtime_setup("checking_runtime", "start", "Starting local runtime status check.");
     emit_runtime_pack_progress(
         &app,
@@ -2485,7 +2493,9 @@ pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRu
         "Checking runtime-pack manifest...",
         RuntimePackStatusKind::Downloading,
     );
-    let (manifest_source, manifest_url_label, status, content_type, body) = if let Some(url) = manifest_url {
+    let (manifest_source, manifest_url_label, status, content_type, body) = if !should_use_local_manifest {
+        let url = configured_manifest_url
+            .unwrap_or_else(|| DEFAULT_LOCAL_RUNTIME_PACK_MANIFEST_URL.to_string());
         log_runtime_setup_manifest(
             "runtime_manifest_load",
             "start",
@@ -2533,7 +2543,6 @@ pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRu
         })?;
         ("remote".to_string(), url, status, content_type, body)
     } else {
-        let manifest_path = local_runtime_pack_manifest_local_path()?;
         let manifest_label = "local://runtime-pack/manifest.json".to_string();
         log_runtime_setup_manifest(
             "runtime_manifest_load",
@@ -2546,20 +2555,6 @@ pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRu
             None,
             None,
         );
-        if !manifest_path.exists() {
-            log_runtime_setup_manifest(
-                "runtime_manifest_load",
-                "runtime_manifest_missing",
-                "local",
-                &manifest_label,
-                None,
-                Some("application/json"),
-                None,
-                None,
-                Some("set LOCAL_RUNTIME_PACK_MANIFEST_URL or place manifest at runtime-pack/manifest.json"),
-            );
-            return Err("runtime pack manifest url not configured".to_string());
-        }
         let body = fs::read_to_string(&manifest_path).map_err(|err| {
             log_runtime_setup_manifest(
                 "runtime_manifest_load",

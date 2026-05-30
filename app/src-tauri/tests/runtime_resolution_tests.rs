@@ -2,6 +2,7 @@ use serde_json::json;
 use shorts_tauri_app::commands::generate::{
     run_generate, GenerateCommandArgs, GenerateEnvelope, GenerateShortsCommand,
 };
+use shorts_tauri_app::commands::runtime::default_local_runtime_pack_manifest_url;
 use shorts_tauri_app::runtime::fs_output::{write_result_json_atomic, FsOutputErrorCode};
 use shorts_tauri_app::runtime::tool_resolver::{
     resolve_tool, validate_runtime_tools, ResolveConfig, ToolKind,
@@ -129,4 +130,14 @@ fn output_json_matches_direct_pipeline_result_structure() {
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(out).expect("read")).expect("valid json");
     assert_eq!(parsed, result_value);
+}
+
+#[test]
+fn default_runtime_pack_manifest_url_is_production_https() {
+    let url = default_local_runtime_pack_manifest_url();
+
+    assert!(url.starts_with("https://license-worker.demandscout.workers.dev/"));
+    assert!(url.ends_with("/runtime-pack/manifest.json"));
+    assert!(!url.contains("localhost"));
+    assert!(!url.contains("127.0.0.1"));
 }

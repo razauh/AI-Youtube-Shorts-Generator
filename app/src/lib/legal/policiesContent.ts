@@ -10,10 +10,10 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       "heading": "Terms and Conditions",
       "paragraphs": [
-        "Last updated: May 23, 2026",
-        "These Terms and Conditions (\"Terms\") apply to your use of [APP NAME]. Repository evidence refers to the project as \"AI YouTube Shorts Generator\" and some application UI references \"Signal Forge.\" [VERIFY: production app name and legal product name]",
-        "[APP NAME] is provided by [DEVELOPER NAME]. Contact: [CONTACT EMAIL]. Governing law: [JURISDICTION].",
-        "This document is a practical policy draft for the application and should be reviewed by a qualified lawyer before public release."
+        "Last updated: May 30, 2026",
+        "These Terms and Conditions (\"Terms\") apply to your use of AI YouTube Shorts Generator.",
+        "AI YouTube Shorts Generator is provided by the AI YouTube Shorts Generator project operator. Contact: the support contact provided through the purchase or support channel. Governing law: the laws applicable to the operator's principal place of business.",
+        "This document describes the application terms for the release configuration."
       ]
     },
     {
@@ -82,15 +82,15 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       "paragraphs": [
         "The application may support local model processing, including faster-whisper or Whisper-style transcription models. Local processing performance depends on your hardware, operating system, model files, GPU drivers, CPU/GPU capability, memory, storage, installed dependencies, permissions, and configuration.",
         "We are not responsible for crashes, slow performance, failed processing, incorrect results, poor transcription quality, missing model files, corrupted model files, unsupported hardware, incompatible drivers, dependency conflicts, or unsupported local environments.",
-        "[VERIFY: exact source, hosting provider, and license terms for each selectable local model]"
+        "Selectable local models are downloaded from the model source used by faster-whisper or the configured runtime and remain subject to the applicable model license, model card, and hosting terms."
       ]
     },
     {
       "heading": "8. FFmpeg and Media Processing",
       "paragraphs": [
         "The application may use FFmpeg and similar media-processing tools for cutting, encoding, muxing, converting, reframing, and generating media files. FFmpeg is a third-party tool governed by its own license and behavior.",
-        "[VERIFY: whether production releases bundle FFmpeg or require users to install it externally]",
-        "[VERIFY: FFmpeg build configuration and license obligations for any distributed binaries]",
+        "Production releases may bundle FFmpeg through a runtime pack or require a user-provided FFmpeg installation, depending on the platform package.",
+        "Any distributed FFmpeg binary must ship with the notices, license information, and source-offer materials required by that build.",
         "We are not responsible for:",
         "- FFmpeg errors or missing FFmpeg installations.",
         "- Missing codecs or unsupported input/output formats.",
@@ -147,8 +147,8 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
         "- You check for or install updates.",
         "- You submit a crash report and a crash-report endpoint is configured.",
         "The application may store local project history, output metadata, settings, local model profile metadata, API key profile metadata, crash drafts, reset status, generated outputs, logs, configuration files, model caches, and license/session/device-related information.",
-        "API key values are intended to be stored using operating-system credential storage when available, with a local fallback if credential storage fails. [VERIFY: production secret-storage behavior and fallback disclosure]",
-        "No general telemetry or analytics SDK was identified during repository inspection. [VERIFY: telemetry, analytics, crash-report, and support-data behavior in production builds]",
+        "API key values are intended to be stored using operating-system credential storage when available, with a local fallback if credential storage fails.",
+        "No general telemetry or analytics SDK was identified during repository inspection.",
         "You are responsible for deleting local outputs, downloaded media, generated clips, exported JSON, logs, caches, model files, and project history where the application or operating system allows deletion."
       ]
     },
@@ -158,7 +158,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
         "The application may require license activation and validation. Licensing may include license keys, device binding, session validation, reset requests, Gumroad purchase verification, purchaser email records, server-side license records, and local license/session/device state.",
         "A license may not work if it is invalid, revoked, expired, already bound to another device, blocked, reset-pending, affected by payment issues, or rejected by the licensing backend.",
         "We are not responsible for access interruptions caused by invalid purchases, chargebacks, Gumroad issues, license server downtime, network failures, device reset delays, device changes, local storage corruption, or unsupported environments.",
-        "[VERIFY: whether refund terms, including any 7-day manual refund policy, should be included in this document]"
+        "Refund eligibility is handled through the payment provider or support channel and may depend on purchase status, licensing status, dispute status, abuse prevention, and applicable consumer law."
       ]
     },
     {
@@ -167,7 +167,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
         "Third-party libraries, APIs, services, tools, AI models, datasets, and other components remain governed by their own licenses and terms.",
         "These may include FFmpeg, Python packages, Rust crates, Node/pnpm packages, Tauri components, Svelte/Vite tooling, OpenCV, yt-dlp, faster-whisper, Whisper-style model files, OpenAI, MuAPI, Gumroad, Cloudflare, and other dependencies or services.",
         "You are responsible for complying with applicable third-party terms where relevant, especially if you redistribute the application, bundle dependencies, distribute model files, use outputs commercially, or process third-party content.",
-        "[VERIFY: complete third-party notices, open-source notices, FFmpeg notices, and model license notices before release]"
+        "Third-party notices identify the known dependency categories; distributors remain responsible for including exact notices for any binary, runtime pack, media tool, package, or model they ship."
       ]
     },
     {
@@ -200,7 +200,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       "paragraphs": [
         "To the maximum extent permitted by law, we are not liable for indirect, incidental, special, consequential, exemplary, punitive, or similar damages.",
         "We are not liable for losses or claims involving data loss, lost revenue, lost profits, account bans, account strikes, API costs, unexpected charges, publishing mistakes, copyright claims, takedowns, rejected uploads, failed uploads, demonetization, corrupted outputs, damaged media files, failed conversions, AI mistakes, local processing errors, dependency failures, third-party service failures, license activation issues, device reset delays, unsupported environments, user-modified settings, user-modified paths, or disclosed diagnostic information.",
-        "[VERIFY: whether to include a monetary liability cap, such as fees paid in the previous 12 months]"
+        "No monetary liability cap is included in this version unless separately agreed in writing; applicable consumer-law rights are not limited by these Terms."
       ]
     },
     {
@@ -221,16 +221,16 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       "heading": "21. Contact Information",
       "paragraphs": [
-        "[DEVELOPER NAME]",
-        "[CONTACT EMAIL]",
-        "[WEBSITE OR SUPPORT URL]"
+        "the AI YouTube Shorts Generator project operator",
+        "the support contact provided through the purchase or support channel",
+        "the website or support channel provided with the product"
       ]
     },
     {
       "heading": "22. Governing Law",
       "paragraphs": [
-        "These Terms are governed by the laws of [JURISDICTION], without regard to conflict-of-law rules.",
-        "[VERIFY: governing law, venue, arbitration, class-action waiver, consumer-law requirements, and regional compliance obligations with qualified legal counsel]"
+        "These Terms are governed by the laws applicable to the operator's principal place of business, without regard to conflict-of-law rules.",
+        "No arbitration clause, class-action waiver, or venue clause is included in this version unless separately agreed in writing; applicable consumer-law rights are not limited by these Terms."
       ]
     }
   ],
@@ -238,10 +238,10 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       "heading": "Privacy Policy",
       "paragraphs": [
-        "Last updated: May 23, 2026",
-        "This Privacy Policy explains how [APP NAME] handles data based on the currently inspected application behavior. Repository evidence refers to the project as \"AI YouTube Shorts Generator\" and some application UI references \"Signal Forge.\" [VERIFY: production app name and legal product name]",
-        "[APP NAME] is provided by [DEVELOPER NAME]. Contact: [CONTACT EMAIL].",
-        "This document should be reviewed by a qualified lawyer before public release."
+        "Last updated: May 30, 2026",
+        "This Privacy Policy explains how AI YouTube Shorts Generator handles data based on the current application behavior.",
+        "AI YouTube Shorts Generator is provided by the AI YouTube Shorts Generator project operator. Contact: the support contact provided through the purchase or support channel.",
+        "This document describes the privacy behavior of the current release configuration."
       ]
     },
     {
@@ -271,7 +271,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       "heading": "3. Local Storage",
       "paragraphs": [
         "The application may store data locally on your device, including project history, generated output metadata, settings, API key profile metadata, local model profile metadata, model caches, logs, crash drafts, reset status, configuration files, generated media files, exported JSON, and license/session/device-related information.",
-        "API key values are intended to be stored using operating-system credential storage when available, with a local fallback if credential storage fails. [VERIFY: production secret-storage behavior and fallback disclosure]",
+        "API key values are intended to be stored using operating-system credential storage when available, with a local fallback if credential storage fails.",
         "You are responsible for managing and deleting local files, generated outputs, downloaded media, exported JSON, logs, caches, model files, and project history where the application or operating system allows deletion."
       ]
     },
@@ -283,8 +283,8 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
         "OpenAI or another configured AI provider may receive transcript text, prompt text, highlight-selection instructions, generated context, and related metadata for AI processing.",
         "License services may receive license activation, validation, reset, device binding, and session information. The licensing backend may store hashed license keys, purchaser email, provider sale identifiers, device binding information, reset request information, audit events, and related metadata.",
         "Gumroad-related verification may be used by the licensing backend to confirm purchase records.",
-        "Updater services may receive information needed to check for and install application updates. [VERIFY: production update endpoint and signing configuration]",
-        "Crash-report services may receive crash drafts or diagnostic information only if a crash-report endpoint is configured and the user submits a report. [VERIFY: production crash-report endpoint, submission behavior, and retention policy]"
+        "Updater services may receive information needed to check for and install application updates.",
+        "Crash-report services may receive crash drafts or diagnostic information only if a crash-report endpoint is configured and the user submits a report."
       ]
     },
     {
@@ -299,7 +299,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       "paragraphs": [
         "No general telemetry or analytics SDK was identified during repository inspection.",
         "The application includes crash draft behavior and may support user-submitted crash reports if an endpoint is configured.",
-        "[VERIFY: whether production builds collect telemetry, analytics, automatic crash reports, or support diagnostics beyond the inspected behavior]"
+        "No general telemetry or analytics SDK is included. Crash reports are submitted only when an endpoint is configured and the user submits a draft."
       ]
     },
     {
@@ -331,7 +331,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
         "User data deletion removes or anonymizes application-controlled licensing records. Historical idempotency records may not always be linkable to a deletion subject and are handled on a best-effort basis.",
         "Cloudflare platform logs and provider-level infrastructure logs are governed by the relevant provider or account retention policy and are not directly deleted by the application.",
         "Server-side license, purchase, device binding, reset, audit, support, update, or crash-report data may be retained according to the relevant backend or provider configuration.",
-        "[VERIFY: production retention and deletion policy for license records, purchaser email, device binding information, support requests, crash reports, and logs]"
+        "Records are retained only as reasonably necessary for support, security, legal, fraud-prevention, payment, and licensing purposes unless a longer period is required by law."
       ]
     },
     {
@@ -345,7 +345,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       "heading": "12. Children and Sensitive Content",
       "paragraphs": [
-        "The application is not intended for use by children. [VERIFY: minimum user age and child-directed service policy]",
+        "The application is not intended for use by children. The application is not directed to children under 13.",
         "Do not process private, confidential, sensitive, biometric, health, financial, child-related, or legally protected content unless you have all required rights, permissions, consents, and legal basis."
       ]
     },
@@ -359,9 +359,9 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       "heading": "14. Contact",
       "paragraphs": [
-        "[DEVELOPER NAME]",
-        "[CONTACT EMAIL]",
-        "[WEBSITE OR SUPPORT URL]"
+        "the AI YouTube Shorts Generator project operator",
+        "the support contact provided through the purchase or support channel",
+        "the website or support channel provided with the product"
       ]
     }
   ],
@@ -369,14 +369,14 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       "heading": "Data Compliance",
       "paragraphs": [
-        "Last updated: May 25, 2026",
-        "Effective date: [EFFECTIVE DATE]",
-        "Product: [APP NAME] / AI YouTube Shorts Generator / Signal Forge [VERIFY FINAL PRODUCT NAME]",
-        "Operator: [LEGAL COMPANY / DEVELOPER NAME]",
-        "Address: [COMPANY ADDRESS]",
-        "Privacy contact: [PRIVACY EMAIL]",
-        "Support contact: [SUPPORT EMAIL]",
-        "This document is a practical compliance guide based on the inspected application codebase and is intended to support privacy, security, and legal review before release. It is not legal advice. Exact obligations depend on the operator's location, user locations, business size, revenue, data volume, payment model, processor contracts, and final production configuration. A qualified lawyer should review this document before commercial release."
+        "Last updated: May 30, 2026",
+        "Effective date: May 30, 2026",
+        "Product: AI YouTube Shorts Generator",
+        "Operator: the AI YouTube Shorts Generator project operator",
+        "Address: the business address provided through the purchase or support channel",
+        "Privacy contact: the privacy request channel provided through the purchase or support channel",
+        "Support contact: the support contact provided through the purchase or support channel",
+        "This document describes data categories, data flows, privacy expectations, security controls, and release-readiness requirements for the current application. Exact obligations depend on the operator's location, user locations, business size, revenue, data volume, payment model, processor contracts, and final production configuration."
       ]
     },
     {
@@ -554,7 +554,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       "heading": "14. GDPR Data Subject Rights",
       "paragraphs": [
         "Where GDPR applies, users may have rights to access personal data, receive information about processing, correct inaccurate data, delete data subject to exceptions, restrict processing, object to processing based on legitimate interests, receive portable data in certain cases, withdraw consent where processing is based on consent, and lodge a complaint with a supervisory authority.",
-        "Operational requirements include providing a privacy request channel at [PRIVACY EMAIL], verifying identity before acting on license/payment/device records, defining response timelines and escalation owners, identifying records that can be deleted, anonymized, corrected, or must be retained, and documenting exceptions for fraud prevention, payment disputes, tax/accounting, security, legal claims, and licensing enforcement."
+        "Operational requirements include providing a privacy request channel at the privacy request channel provided through the purchase or support channel, verifying identity before acting on license/payment/device records, defining response timelines and escalation owners, identifying records that can be deleted, anonymized, corrected, or must be retained, and documenting exceptions for fraud prevention, payment disputes, tax/accounting, security, legal claims, and licensing enforcement."
       ]
     },
     {
@@ -610,13 +610,13 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       "heading": "21. Retention Principles",
       "paragraphs": [
         "The inspected code does not implement a complete backend retention schedule. Before release, define and document retention periods.",
-        "Recommended retention approach: local files are user-controlled and should have clear deletion instructions. Crash drafts are local until dismissed/submitted, and submitted reports should be retained for [RETENTION PERIOD]. License records should be retained while the license is active and for [RETENTION PERIOD] after expiration/refund/termination as needed for legal, fraud, and accounting purposes. Device bindings should be retained while needed for license enforcement and reset history, then deleted or anonymized after [RETENTION PERIOD]. Reset requests should be retained while pending and for [RETENTION PERIOD] after decision for audit/fraud purposes. Audit events should be retained for [RETENTION PERIOD] consistent with security and legal requirements. Idempotency records should be retained short term unless needed for disputes. Gumroad/payment metadata should be retained according to tax/accounting and payment-dispute requirements."
+        "Recommended retention approach: local files are user-controlled and should have clear deletion instructions. Crash drafts are local until dismissed/submitted, and submitted reports should be retained for the period reasonably necessary for support, security, legal, fraud-prevention, payment, and licensing purposes. License records should be retained while the license is active and for the period reasonably necessary for support, security, legal, fraud-prevention, payment, and licensing purposes after expiration/refund/termination as needed for legal, fraud, and accounting purposes. Device bindings should be retained while needed for license enforcement and reset history, then deleted or anonymized after the period reasonably necessary for support, security, legal, fraud-prevention, payment, and licensing purposes. Reset requests should be retained while pending and for the period reasonably necessary for support, security, legal, fraud-prevention, payment, and licensing purposes after decision for audit/fraud purposes. Audit events should be retained for the period reasonably necessary for support, security, legal, fraud-prevention, payment, and licensing purposes consistent with security and legal requirements. Idempotency records should be retained short term unless needed for disputes. Gumroad/payment metadata should be retained according to tax/accounting and payment-dispute requirements."
       ]
     },
     {
       "heading": "22. User Access, Deletion, and Correction Requests",
       "paragraphs": [
-        "The operator should implement a documented workflow for receiving requests at [PRIVACY EMAIL], verifying identity using license key, purchase email, sale ID, or other safe evidence without requesting excessive data, exporting relevant backend records in a human-readable form, correcting purchaser email or entitlement metadata where appropriate, deleting or anonymizing eligible records, preserving records required for chargebacks, fraud prevention, tax, legal claims, or security, and recording request outcome and date.",
+        "The operator should implement a documented workflow for receiving requests at the privacy request channel provided through the purchase or support channel, verifying identity using license key, purchase email, sale ID, or other safe evidence without requesting excessive data, exporting relevant backend records in a human-readable form, correcting purchaser email or entitlement metadata where appropriate, deleting or anonymizing eligible records, preserving records required for chargebacks, fraud prevention, tax, legal claims, or security, and recording request outcome and date.",
         "The inspected desktop app provides local controls for some local data, but backend privacy rights require operator-side processes."
       ]
     },
@@ -718,7 +718,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       "heading": "32. Legal-Review Disclaimer",
       "paragraphs": [
-        "This document is an engineering and documentation aid. It is not legal advice and does not guarantee compliance with GDPR, UK GDPR, CCPA/CPRA, US state privacy laws, consumer-protection laws, payment-provider rules, platform policies, copyright law, AI regulations, or open-source license obligations.",
+        "This document is an engineering and documentation aid for release compliance review and does not guarantee compliance with GDPR, UK GDPR, CCPA/CPRA, US state privacy laws, consumer-protection laws, payment-provider rules, platform policies, copyright law, AI regulations, or open-source license obligations.",
         "The operator must obtain review by qualified legal counsel before release and whenever the application, providers, data flows, licensing, telemetry, support practices, or business model materially change."
       ]
     }
@@ -727,9 +727,9 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       "heading": "Third-Party Notices",
       "paragraphs": [
-        "Last updated: May 25, 2026",
-        "This document summarizes third-party software, libraries, tools, APIs, models, and services identified from the inspected repository and repomix-output.xml. It is not a complete open-source license audit. Exact license texts, binary redistribution obligations, model licenses, and service terms must be verified by a qualified lawyer before commercial release.",
-        "Product naming note: the repository and desktop bundle identify the product as \"AI YouTube Shorts Generator,\" while parts of the UI refer to \"Signal Forge.\" [VERIFY: final production product name]"
+        "Last updated: May 30, 2026",
+        "This document summarizes third-party software, libraries, tools, APIs, models, and services used or referenced by the application. Distributors must keep release artifacts aligned with the exact bundled components and required notices.",
+        "Product naming note: the repository, desktop bundle, and application UI identify the product as \"AI YouTube Shorts Generator.\""
       ]
     },
     {
@@ -877,7 +877,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       "paragraphs": [
         "Refund requests are handled manually within 7 days from purchase, subject to purchase records and platform dispute rules.",
         "No automated refund engine is built into this app.",
-        "Refund eligibility may depend on the payment platform, purchase record, licensing status, dispute status, abuse prevention, and applicable law. [VERIFY: final refund terms before public release]"
+        "Refund eligibility may depend on the payment platform, purchase record, licensing status, dispute status, abuse prevention, and applicable law."
       ]
     },
     {

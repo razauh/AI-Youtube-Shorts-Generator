@@ -1,6 +1,6 @@
 # Tauri Updater Key Setup
 
-Generate a Tauri updater keypair from the repo root:
+The customer app already has a public updater key in `app/src-tauri/tauri.conf.json`. Generate a replacement keypair only when intentionally rotating release signing keys.
 
 ```bash
 pnpm --dir app run tauri signer generate -- -w app/src-tauri/tauri-updater.key
@@ -17,23 +17,13 @@ Read the public key:
 cat app/src-tauri/tauri-updater.key.pub
 ```
 
-Put that public key into:
+Put the replacement public key into:
 
 ```text
 app/src-tauri/tauri.conf.json
 ```
 
-Replace:
-
-```json
-"pubkey": "REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY"
-```
-
-with:
-
-```json
-"pubkey": "PASTE_PUBLIC_KEY_HERE"
-```
+Replace the existing `plugins.updater.pubkey` value with the new public key. Keep the existing updater endpoint unless the production Worker origin is deliberately changed.
 
 Then add the private key content to this GitHub Actions secret:
 
@@ -43,7 +33,7 @@ TAURI_SIGNING_PRIVATE_KEY
 
 Do not commit `app/src-tauri/tauri-updater.key`. It is private.
 
-After adding the public key, run validation manually:
+After rotating the public key, run validation manually:
 
 ```bash
 bash .scripts/run-updater-endpoint-validation.sh

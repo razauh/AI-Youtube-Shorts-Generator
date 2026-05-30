@@ -5,6 +5,8 @@ This worker implements the hosted licensing contract exercised by:
 - `worker/test/contract.test.js`
 - `tests/fixtures/license_worker_contract_v1/`
 
+Production release configuration is centralized in [`docs/release-production-config.md`](../docs/release-production-config.md).
+
 ## Routes
 
 - `GET /health`
@@ -53,6 +55,8 @@ wrangler secret put HASH_PEPPER
 
 ## Notes
 
+- Production desktop licensing defaults to `https://license-worker.demandscout.workers.dev`.
+- Production runtime-pack setup defaults to `https://license-worker.demandscout.workers.dev/runtime-pack/manifest.json`.
 - Worker routes are D1-backed for:
   - activate
   - validate
