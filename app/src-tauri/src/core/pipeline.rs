@@ -511,13 +511,8 @@ pub fn generate_shorts_with_progress_live(
     cancel_cb: Option<&dyn Fn() -> bool>,
 ) -> Result<PipelineSuccess, ErrorEnvelope> {
     if request.mode.to_lowercase() == "local" {
-        return run_local_pipeline_bridge(
-            request.youtube_url.clone(),
-            request.num_clips,
-            request.aspect_ratio.clone(),
-            request.download_format.clone(),
-            request.language.clone(),
-        );
+        let mut stages = MockPipelineStages::default();
+        return generate_shorts_with_progress(request, &mut stages, progress_cb, cancel_cb);
     }
 
     let config = Config::from_env().map_err(|e| ErrorEnvelope {

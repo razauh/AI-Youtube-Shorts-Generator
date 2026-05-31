@@ -1,4 +1,0 @@
-python_bin=/usr/bin/python3
-site_packages=/usr/local/lib/python3.12/dist-packages
-ffmpeg=/usr/bin/ffmpeg
-yt_dlp=/usr/bin/yt-dlp

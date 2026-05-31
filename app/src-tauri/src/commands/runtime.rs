@@ -443,7 +443,7 @@ fn validate_runtime_pack_install(root: &Path, required_modules: &[String]) -> Re
 }
 
 fn best_effort_preflight_file_allocation(path: &Path, required_bytes: u64) -> Result<(), String> {
-    let mut file = fs::File::create(path).map_err(|_| "permission_error".to_string())?;
+    let file = fs::File::create(path).map_err(|_| "permission_error".to_string())?;
     if required_bytes > 0 {
         file.set_len(required_bytes)
             .map_err(|_| "disk_space".to_string())?;

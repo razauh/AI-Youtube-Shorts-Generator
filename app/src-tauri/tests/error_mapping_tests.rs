@@ -6,6 +6,7 @@ use shorts_tauri_app::core::observability::events::status_change_payload;
 
 fn base_req() -> GenerateShortsCommand {
     GenerateShortsCommand {
+        run_id: None,
         youtube_url: "https://youtube.com/watch?v=abc".into(),
         num_clips: 1,
         aspect_ratio: "9:16".into(),

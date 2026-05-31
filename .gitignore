@@ -27,6 +27,8 @@ app/*.tsbuildinfo
 # Tauri / Rust build outputs
 app/src-tauri/target/
 target/
+bundled-runtime-input/
+.tmp-runtime-build/
 
 # Env files (all variants)
 .env.*

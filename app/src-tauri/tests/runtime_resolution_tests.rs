@@ -108,6 +108,7 @@ fn runtime_validator_reports_missing_python_package_when_python_unavailable() {
 fn output_json_matches_direct_pipeline_result_structure() {
     let (envelope, _) = run_generate(GenerateCommandArgs {
         request: GenerateShortsCommand {
+            run_id: None,
             youtube_url: "https://youtube.com/watch?v=abc".to_string(),
             num_clips: 1,
             aspect_ratio: "9:16".to_string(),

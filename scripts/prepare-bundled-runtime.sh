@@ -31,8 +31,14 @@ if [[ -e "$DEST_DIR" ]]; then
   if [[ "$FORCE_REPLACE" == "1" ]]; then
     rm -rf "$DEST_DIR"
   else
-    # Allow replacing the scaffold README-only directory without requiring manual cleanup.
-    if [[ -f "$DEST_DIR/README.md" ]] && [[ "$(find "$DEST_DIR" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ]]; then
+    # Allow replacing the source-control placeholder without requiring manual cleanup.
+    if [[ -f "$DEST_DIR/README.md" ]] \
+      && [[ ! -e "$DEST_DIR/python3" ]] \
+      && [[ ! -e "$DEST_DIR/python.exe" ]] \
+      && [[ ! -e "$DEST_DIR/ffmpeg" ]] \
+      && [[ ! -e "$DEST_DIR/ffmpeg.exe" ]] \
+      && [[ ! -e "$DEST_DIR/yt-dlp" ]] \
+      && [[ ! -e "$DEST_DIR/yt-dlp.exe" ]]; then
       rm -rf "$DEST_DIR"
     else
       echo "Destination already exists: $DEST_DIR"

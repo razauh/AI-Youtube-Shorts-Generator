@@ -28,10 +28,16 @@ jobs:
         platform:
           - os_name: linux-x64
             runner: ubuntu-latest
+            runtime_target: linux-x86_64
           - os_name: windows-x64
             runner: windows-latest
+            runtime_target: windows-x86_64
           - os_name: macos-x64
             runner: macos-13
+            runtime_target: macos-x86_64
+          - os_name: macos-aarch64
+            runner: macos-14
+            runtime_target: macos-aarch64
     steps:
       - uses: actions/checkout@v4
 
@@ -59,6 +65,21 @@ jobs:
 
       - name: Install desktop app dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build bundled runtime input
+        if: runner.os != 'Windows'
+        run: bash scripts/build-bundled-runtime-unix.sh "${{ matrix.platform.runtime_target }}"
+
+      - name: Build bundled runtime input
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\scripts\build-bundled-runtime-windows.ps1 -Target "${{ matrix.platform.runtime_target }}"
+
+      - name: Stage bundled runtime
+        shell: bash
+        run: |
+          FORCE_REPLACE=1 bash scripts/prepare-bundled-runtime.sh "${{ matrix.platform.runtime_target }}"
+          bash .scripts/scan-bundled-runtime.sh
 
       - name: Verify customer updater signing key
         shell: bash
@@ -90,10 +111,16 @@ jobs:
         platform:
           - os_name: linux-x64
             runner: ubuntu-latest
+            runtime_target: linux-x86_64
           - os_name: windows-x64
             runner: windows-latest
+            runtime_target: windows-x86_64
           - os_name: macos-x64
             runner: macos-13
+            runtime_target: macos-x86_64
+          - os_name: macos-aarch64
+            runner: macos-14
+            runtime_target: macos-aarch64
     steps:
       - uses: actions/checkout@v4
 
@@ -121,6 +148,21 @@ jobs:
 
       - name: Install desktop app dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build bundled runtime input
+        if: runner.os != 'Windows'
+        run: bash scripts/build-bundled-runtime-unix.sh "${{ matrix.platform.runtime_target }}"
+
+      - name: Build bundled runtime input
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\scripts\build-bundled-runtime-windows.ps1 -Target "${{ matrix.platform.runtime_target }}"
+
+      - name: Stage bundled runtime
+        shell: bash
+        run: |
+          FORCE_REPLACE=1 bash scripts/prepare-bundled-runtime.sh "${{ matrix.platform.runtime_target }}"
+          bash .scripts/scan-bundled-runtime.sh
 
       - name: Build admin Tauri bundles
         run: pnpm run bundle:admin
@@ -207,7 +249,9 @@ jobs:
             release-assets/customer-linux-x64/**
             release-assets/customer-windows-x64/**
             release-assets/customer-macos-x64/**
+            release-assets/customer-macos-aarch64/**
             release-assets/admin-linux-x64/**
             release-assets/admin-windows-x64/**
             release-assets/admin-macos-x64/**
+            release-assets/admin-macos-aarch64/**
             release-assets/source-archive/**

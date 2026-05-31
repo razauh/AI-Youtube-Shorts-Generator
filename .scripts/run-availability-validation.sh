@@ -13,6 +13,14 @@ echo "[info] availability validation started: ${TS}"
 
 cd "${ROOT_DIR}"
 
+contains() {
+  if command -v rg >/dev/null 2>&1; then
+    rg -n "$1" "$2" >/dev/null
+  else
+    grep -En "$1" "$2" >/dev/null
+  fi
+}
+
 echo "[check] worker contract tests (includes /readyz + runtime-pack manifest route)"
 node --test worker/test/contract.test.js
 
@@ -20,35 +28,35 @@ echo "[check] bundled runtime scan"
 bash .scripts/scan-bundled-runtime.sh
 
 echo "[check] d1 migration chain sanity (masked_license_key added only once)"
-if rg -n "masked_license_key" worker/migrations/0001_init.sql >/dev/null; then
+if contains "masked_license_key" worker/migrations/0001_init.sql; then
   echo "[fail] masked_license_key must not appear in worker/migrations/0001_init.sql"
   exit 1
 fi
-if ! rg -n "ALTER TABLE reset_requests ADD COLUMN masked_license_key" worker/migrations/0002_add_masked_license_key_to_reset_requests.sql >/dev/null; then
+if ! contains "ALTER TABLE reset_requests ADD COLUMN masked_license_key" worker/migrations/0002_add_masked_license_key_to_reset_requests.sql; then
   echo "[fail] expected masked_license_key migration missing in 0002"
   exit 1
 fi
 
 echo "[check] runtime-pack download is streaming (no full-body bytes load)"
-if rg -n "runtime pack download body read failed" app/src-tauri/src/commands/runtime.rs >/dev/null && rg -n "\\.bytes\\(\\)\\s*\\.await" app/src-tauri/src/commands/runtime.rs >/dev/null; then
+if contains "runtime pack download body read failed" app/src-tauri/src/commands/runtime.rs && contains "\\.bytes\\(\\)\\s*\\.await" app/src-tauri/src/commands/runtime.rs; then
   echo "[fail] runtime-pack download appears to use full-body bytes() loading"
   exit 1
 fi
 
 echo "[check] generation recovery wiring (run_id + cancel command)"
-if ! rg -n "pub run_id: Option<String>" app/src-tauri/src/commands/generate.rs >/dev/null; then
+if ! contains "pub run_id: Option<String>" app/src-tauri/src/commands/generate.rs; then
   echo "[fail] expected generate run_id support missing"
   exit 1
 fi
-if ! rg -n "pub struct ProgressEvent" app/src-tauri/src/core/contracts.rs >/dev/null || ! rg -n "pub run_id: Option<String>" app/src-tauri/src/core/contracts.rs >/dev/null; then
+if ! contains "pub struct ProgressEvent" app/src-tauri/src/core/contracts.rs || ! contains "pub run_id: Option<String>" app/src-tauri/src/core/contracts.rs; then
   echo "[fail] expected ProgressEvent.run_id missing"
   exit 1
 fi
-if ! rg -n "export interface ProgressEvent" app/src/lib/contracts.ts >/dev/null || ! rg -n "run_id\\?: string" app/src/lib/contracts.ts >/dev/null; then
+if ! contains "export interface ProgressEvent" app/src/lib/contracts.ts || ! contains "run_id\\?: string" app/src/lib/contracts.ts; then
   echo "[fail] expected frontend ProgressEvent.run_id missing"
   exit 1
 fi
-if ! rg -n "cancel_generate_run" app/src-tauri/src/main.rs >/dev/null; then
+if ! contains "cancel_generate_run" app/src-tauri/src/main.rs; then
   echo "[fail] expected cancel_generate_run command not registered"
   exit 1
 fi

@@ -9,10 +9,11 @@ use license_control_suite::core::SessionState;
 use license_control_suite::desktop::tauri::AuthAppState;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::path::Path;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use tauri::Emitter;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -323,23 +324,21 @@ pub async fn generate_shorts_stream(
     }
     let run_id = normalize_run_id(args.request.run_id.as_deref());
     let cancelled = register_run(&run_id);
-
-    let sink_handle = app_handle.clone();
-    let mut sink = |event: &ProgressEvent| {
-        if event.run_id.as_deref() != Some(run_id.as_str()) {
-            return;
-        }
-        let _ = sink_handle.emit("generate-progress", event);
-    };
-
     let timeout_secs = std::env::var("GENERATE_RUN_TIMEOUT_SECS")
         .ok()
         .and_then(|v| v.trim().parse::<u64>().ok())
         .unwrap_or(1800);
-    let args_for_task = args.clone();
-    let run_id_for_task = run_id.clone();
-    let cancelled_for_task = cancelled.clone();
-    let app_for_task = app_handle.clone();
+    let timed_out = Arc::new(AtomicBool::new(false));
+    let timer_cancelled = cancelled.clone();
+    let timer_timed_out = timed_out.clone();
+    if timeout_secs > 0 {
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(timeout_secs));
+            timer_timed_out.store(true, Ordering::Relaxed);
+            timer_cancelled.store(true, Ordering::Relaxed);
+        });
+    }
+
     let _ = app_handle.emit(
         "generate-progress",
         ProgressEvent {
@@ -354,52 +353,45 @@ pub async fn generate_shorts_stream(
         },
     );
 
-    let task = tokio::task::spawn_blocking(move || {
-        let mut sink_inner = |event: &ProgressEvent| {
-            if cancelled_for_task.load(Ordering::Relaxed) {
-                return;
-            }
-            let _ = app_for_task.emit("generate-progress", event);
-        };
-        run_generate_with_sink(
-            args_for_task,
-            Some(&mut sink_inner),
-            Some(app_for_task),
-            &run_id_for_task,
-            cancelled_for_task,
-        )
-        .0
-    });
-
-    let result = match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), task).await {
-        Ok(joined) => match joined {
-            Ok(envelope) => envelope,
-            Err(_) => GenerateEnvelope::Failure {
-                ok: false,
-                error: ErrorEnvelope {
-                    mode: Some(args.request.mode.clone()),
-                    source_video_url: Some(args.request.youtube_url.clone()),
-                    error: "Generation task failed.".to_string(),
-                    details: Some(json!({"stage":"task","code":"E_GENERATION_TASK_FAILED","run_id":run_id})),
-                },
-            },
-        },
-        Err(_) => {
-            cancelled.store(true, Ordering::Relaxed);
-            let event = ProgressEvent {
-                event: "terminal".to_string(),
-                run_id: Some(run_id.clone()),
-                stage: "generate:timeout".to_string(),
-                progress: 1.0,
-                message: Some("pipeline timed out".to_string()),
-                mode: Some(args.request.mode.clone()),
-                source_video_url: Some(args.request.youtube_url.clone()),
-                provider_payload: Default::default(),
-            };
-            let _ = app_handle.emit("generate-progress", event);
-            timeout_envelope(&args, &run_id)
+    let started_at = Instant::now();
+    let app_for_sink = app_handle.clone();
+    let cancelled_for_sink = cancelled.clone();
+    let run_id_for_sink = run_id.clone();
+    let mut sink = move |event: &ProgressEvent| {
+        if event.run_id.as_deref() != Some(run_id_for_sink.as_str()) {
+            return;
         }
+        if cancelled_for_sink.load(Ordering::Relaxed) && event.event != "terminal" {
+            return;
+        }
+        let _ = app_for_sink.emit("generate-progress", event);
     };
+
+    let mut result = run_generate_with_sink(
+        args.clone(),
+        Some(&mut sink),
+        Some(app_handle.clone()),
+        &run_id,
+        cancelled.clone(),
+    )
+    .0;
+
+    if timed_out.load(Ordering::Relaxed)
+        || (timeout_secs > 0 && started_at.elapsed() >= Duration::from_secs(timeout_secs))
+    {
+        let event = ProgressEvent {
+            event: "terminal".to_string(),
+            run_id: Some(run_id.clone()),
+            stage: "generate:timeout".to_string(),
+            progress: 1.0,
+            message: Some("pipeline timed out".to_string()),
+            mode: Some(args.request.mode.clone()),
+            source_video_url: Some(args.request.youtube_url.clone()),
+            provider_payload: Default::default(),
+        };
+        let _ = app_handle.emit("generate-progress", event);
+        result = timeout_envelope(&args, &run_id);
+    }
     unregister_run(&run_id);
     Ok(result)
 }

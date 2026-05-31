@@ -1088,6 +1088,7 @@ async function handleAdminDeletionApprove(request, env) {
       phaseForError = nextPhase;
     };
     const maybeFail = (phaseName) => {
+      phaseForError = phaseName;
       if (String(env?.DELETION_FAIL_PHASE || "").trim() === phaseName) {
         throw new Error(`forced_failure:${phaseName}`);
       }
