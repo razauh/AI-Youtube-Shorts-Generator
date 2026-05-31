@@ -28,6 +28,7 @@ fn main() {
             shorts_tauri_app::commands::generate::generate_shorts,
             shorts_tauri_app::commands::generate::generate_shorts_with_events,
             shorts_tauri_app::commands::generate::generate_shorts_stream,
+            shorts_tauri_app::commands::generate::cancel_generate_run,
             shorts_tauri_app::commands::health::health_check,
             shorts_tauri_app::commands::health::validate_runtime,
             shorts_tauri_app::commands::health::app_config_summary,

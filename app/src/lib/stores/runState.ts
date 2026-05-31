@@ -5,6 +5,7 @@ export type RunLifecycle = 'idle' | 'running' | 'success' | 'error';
 
 export interface RunStateShape {
   lifecycle: RunLifecycle;
+  runId: string | null;
   progress: {
     stage: string;
     value: number;
@@ -16,6 +17,7 @@ export interface RunStateShape {
 
 const initialState: RunStateShape = {
   lifecycle: 'idle',
+  runId: null,
   progress: {
     stage: 'idle',
     value: 0,
@@ -31,24 +33,32 @@ export function createRunState() {
   return {
     subscribe,
     reset: () => set(initialState),
-    start: () =>
+    start: (runId: string) =>
       update((state) => ({
         ...state,
         lifecycle: 'running',
+        runId,
         progress: { stage: 'start', value: 0, message: '' },
         result: null,
         error: null
       })),
     onProgress: (event: ProgressEvent) =>
-      update((state) => ({
-        ...state,
-        lifecycle: state.lifecycle === 'idle' ? 'running' : state.lifecycle,
-        progress: {
-          stage: event.stage,
-          value: event.progress,
-          message: event.message ?? ''
+      update((state) => {
+        if (state.runId && event.run_id && state.runId !== event.run_id) {
+          return state;
         }
-      })),
+        const nextRunId = state.runId ?? event.run_id ?? null;
+        return {
+          ...state,
+          runId: nextRunId,
+          lifecycle: state.lifecycle === 'idle' ? 'running' : state.lifecycle,
+          progress: {
+            stage: event.stage,
+            value: event.progress,
+            message: event.message ?? ''
+          }
+        };
+      }),
     onSuccess: (result: PipelineSuccess) =>
       update((state) => ({
         ...state,

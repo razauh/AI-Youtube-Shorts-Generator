@@ -10,11 +10,15 @@ use license_control_suite::desktop::tauri::AuthAppState;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::Path;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::Emitter;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct GenerateShortsCommand {
+    #[serde(default)]
+    pub run_id: Option<String>,
     pub youtube_url: String,
     #[serde(default = "default_num_clips")]
     pub num_clips: usize,
@@ -53,6 +57,12 @@ pub struct GenerateCommandArgs {
     pub test_mode: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelGenerateArgs {
+    pub run_id: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum GenerateEnvelope {
@@ -68,12 +78,14 @@ pub struct GenerateWithEventsResponse {
 
 struct TauriMuapiProgressEmitter {
     app_handle: tauri::AppHandle,
+    run_id: String,
 }
 
 impl ProgressEmitter for TauriMuapiProgressEmitter {
     fn emit_status_change(&self, label: &str, status: &str) {
         let event = ProgressEvent {
             event: "progress".to_string(),
+            run_id: Some(self.run_id.clone()),
             stage: format!("muapi_poll:{status}"),
             progress: 0.4,
             message: Some(format!("[muapi] {label}: {status}")),
@@ -85,8 +97,73 @@ impl ProgressEmitter for TauriMuapiProgressEmitter {
     }
 }
 
+fn now_epoch_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn active_runs() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
+    static RUNS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+    RUNS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn normalize_run_id(value: Option<&str>) -> String {
+    value
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| format!("run-{}-{}", now_epoch_ms(), std::process::id()))
+}
+
+fn register_run(run_id: &str) -> Arc<AtomicBool> {
+    let mut runs = active_runs().lock().unwrap_or_else(|e| e.into_inner());
+    let flag = Arc::new(AtomicBool::new(false));
+    runs.insert(run_id.to_string(), flag.clone());
+    flag
+}
+
+fn unregister_run(run_id: &str) {
+    let mut runs = active_runs().lock().unwrap_or_else(|e| e.into_inner());
+    runs.remove(run_id);
+}
+
+fn cancel_run(run_id: &str) -> bool {
+    let runs = active_runs().lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(flag) = runs.get(run_id) {
+        flag.store(true, Ordering::Relaxed);
+        return true;
+    }
+    false
+}
+
+fn cancelled_envelope(args: &GenerateCommandArgs, run_id: &str) -> GenerateEnvelope {
+    GenerateEnvelope::Failure {
+        ok: false,
+        error: ErrorEnvelope {
+            mode: Some(args.request.mode.clone()),
+            source_video_url: Some(args.request.youtube_url.clone()),
+            error: "Generation cancelled.".to_string(),
+            details: Some(json!({"stage":"cancel","code":"E_GENERATION_CANCELLED","run_id":run_id})),
+        },
+    }
+}
+
+fn timeout_envelope(args: &GenerateCommandArgs, run_id: &str) -> GenerateEnvelope {
+    GenerateEnvelope::Failure {
+        ok: false,
+        error: ErrorEnvelope {
+            mode: Some(args.request.mode.clone()),
+            source_video_url: Some(args.request.youtube_url.clone()),
+            error: "Generation timed out.".to_string(),
+            details: Some(json!({"stage":"timeout","code":"E_GENERATION_TIMEOUT","run_id":run_id})),
+        },
+    }
+}
+
 fn push_progress(
     events: &mut Vec<ProgressEvent>,
+    run_id: &str,
     stage: &str,
     progress: f64,
     message: Option<String>,
@@ -94,8 +171,32 @@ fn push_progress(
 ) {
     let event = ProgressEvent {
         event: "progress".to_string(),
+        run_id: Some(run_id.to_string()),
         stage: stage.to_string(),
         progress,
+        message,
+        mode: None,
+        source_video_url: None,
+        provider_payload: Default::default(),
+    };
+    if let Some(cb) = sink.as_deref_mut() {
+        cb(&event);
+    }
+    events.push(event);
+}
+
+fn push_terminal(
+    events: &mut Vec<ProgressEvent>,
+    run_id: &str,
+    stage: &str,
+    message: Option<String>,
+    sink: &mut Option<&mut dyn FnMut(&ProgressEvent)>,
+) {
+    let event = ProgressEvent {
+        event: "terminal".to_string(),
+        run_id: Some(run_id.to_string()),
+        stage: stage.to_string(),
+        progress: 1.0,
         message,
         mode: None,
         source_video_url: None,
@@ -125,6 +226,7 @@ fn as_request(c: &GenerateShortsCommand) -> GenerateShortsRequest {
 
 fn run_mock(
     events: &mut Vec<ProgressEvent>,
+    run_id: &str,
     req: &GenerateShortsRequest,
     mode: &str,
     sink: &mut Option<&mut dyn FnMut(&ProgressEvent)>,
@@ -160,12 +262,13 @@ fn run_mock(
             })])),
     };
 
-    push_progress(events, "download:start", 0.1, None, sink);
-    push_progress(events, "download:end", 0.25, None, sink);
-    push_progress(events, "transcribe:start", 0.3, None, sink);
+    push_progress(events, run_id, "download:start", 0.1, None, sink);
+    push_progress(events, run_id, "download:end", 0.25, None, sink);
+    push_progress(events, run_id, "transcribe:start", 0.3, None, sink);
     if mode == "success_with_status" {
         push_progress(
             events,
+            run_id,
             "muapi_poll:queued",
             0.35,
             Some("[muapi] transcribe: queued".to_string()),
@@ -173,6 +276,7 @@ fn run_mock(
         );
         push_progress(
             events,
+            run_id,
             "muapi_poll:completed",
             0.4,
             Some("[muapi] transcribe: completed".to_string()),
@@ -182,11 +286,11 @@ fn run_mock(
 
     let out = generate_shorts_with(req, &mut stages);
     if out.is_ok() {
-        push_progress(events, "transcribe:end", 0.55, None, sink);
-        push_progress(events, "highlights:start", 0.6, None, sink);
-        push_progress(events, "highlights:end", 0.75, None, sink);
-        push_progress(events, "clip:start", 0.8, None, sink);
-        push_progress(events, "clip:end", 1.0, None, sink);
+        push_progress(events, run_id, "transcribe:end", 0.55, None, sink);
+        push_progress(events, run_id, "highlights:start", 0.6, None, sink);
+        push_progress(events, run_id, "highlights:end", 0.75, None, sink);
+        push_progress(events, run_id, "clip:start", 0.8, None, sink);
+        push_progress(events, run_id, "clip:end", 1.0, None, sink);
     }
     out
 }
@@ -217,11 +321,87 @@ pub async fn generate_shorts_stream(
     if let Some(error) = generation_auth_error(&args, &auth_state).await {
         return Ok(GenerateEnvelope::Failure { ok: false, error });
     }
+    let run_id = normalize_run_id(args.request.run_id.as_deref());
+    let cancelled = register_run(&run_id);
+
     let sink_handle = app_handle.clone();
     let mut sink = |event: &ProgressEvent| {
+        if event.run_id.as_deref() != Some(run_id.as_str()) {
+            return;
+        }
         let _ = sink_handle.emit("generate-progress", event);
     };
-    Ok(run_generate_with_sink(args, Some(&mut sink), Some(app_handle)).0)
+
+    let timeout_secs = std::env::var("GENERATE_RUN_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(1800);
+    let args_for_task = args.clone();
+    let run_id_for_task = run_id.clone();
+    let cancelled_for_task = cancelled.clone();
+    let app_for_task = app_handle.clone();
+    let _ = app_handle.emit(
+        "generate-progress",
+        ProgressEvent {
+            event: "progress".to_string(),
+            run_id: Some(run_id.clone()),
+            stage: "generate:start".to_string(),
+            progress: 0.0,
+            message: Some("pipeline started".to_string()),
+            mode: Some(args.request.mode.clone()),
+            source_video_url: Some(args.request.youtube_url.clone()),
+            provider_payload: Default::default(),
+        },
+    );
+
+    let task = tokio::task::spawn_blocking(move || {
+        let mut sink_inner = |event: &ProgressEvent| {
+            if cancelled_for_task.load(Ordering::Relaxed) {
+                return;
+            }
+            let _ = app_for_task.emit("generate-progress", event);
+        };
+        run_generate_with_sink(
+            args_for_task,
+            Some(&mut sink_inner),
+            Some(app_for_task),
+            &run_id_for_task,
+            cancelled_for_task,
+        )
+        .0
+    });
+
+    let result = match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), task).await {
+        Ok(joined) => match joined {
+            Ok(envelope) => envelope,
+            Err(_) => GenerateEnvelope::Failure {
+                ok: false,
+                error: ErrorEnvelope {
+                    mode: Some(args.request.mode.clone()),
+                    source_video_url: Some(args.request.youtube_url.clone()),
+                    error: "Generation task failed.".to_string(),
+                    details: Some(json!({"stage":"task","code":"E_GENERATION_TASK_FAILED","run_id":run_id})),
+                },
+            },
+        },
+        Err(_) => {
+            cancelled.store(true, Ordering::Relaxed);
+            let event = ProgressEvent {
+                event: "terminal".to_string(),
+                run_id: Some(run_id.clone()),
+                stage: "generate:timeout".to_string(),
+                progress: 1.0,
+                message: Some("pipeline timed out".to_string()),
+                mode: Some(args.request.mode.clone()),
+                source_video_url: Some(args.request.youtube_url.clone()),
+                provider_payload: Default::default(),
+            };
+            let _ = app_handle.emit("generate-progress", event);
+            timeout_envelope(&args, &run_id)
+        }
+    };
+    unregister_run(&run_id);
+    Ok(result)
 }
 
 pub async fn run_generate_authorized(
@@ -235,7 +415,8 @@ pub async fn run_generate_authorized(
 }
 
 pub fn run_generate(args: GenerateCommandArgs) -> (GenerateEnvelope, Vec<ProgressEvent>) {
-    run_generate_with_sink(args, None, None)
+    let run_id = normalize_run_id(args.request.run_id.as_deref());
+    run_generate_with_sink(args, None, None, &run_id, Arc::new(AtomicBool::new(false)))
 }
 
 async fn generation_auth_error(
@@ -265,40 +446,53 @@ pub fn run_generate_with_sink(
     args: GenerateCommandArgs,
     mut sink: Option<&mut dyn FnMut(&ProgressEvent)>,
     app_handle: Option<tauri::AppHandle>,
+    run_id: &str,
+    cancelled: Arc<AtomicBool>,
 ) -> (GenerateEnvelope, Vec<ProgressEvent>) {
     let req = as_request(&args.request);
     let output_json = args.request.output_json.clone();
     let mut events = Vec::new();
 
     let out = if let Some(test_mode) = args.test_mode.as_deref() {
-        run_mock(&mut events, &req, test_mode, &mut sink)
+        run_mock(&mut events, run_id, &req, test_mode, &mut sink)
     } else {
-        push_progress(
-            &mut events,
-            "generate:start",
-            0.0,
-            Some("pipeline started".to_string()),
-            &mut sink,
-        );
         let result = {
             let mut emit_stage = |stage: &str, progress: f64, message: Option<String>| {
-                push_progress(&mut events, stage, progress, message, &mut sink);
+                if cancelled.load(Ordering::Relaxed) {
+                    return;
+                }
+                push_progress(&mut events, run_id, stage, progress, message, &mut sink);
             };
             let muapi_emitter = app_handle.as_ref().map(|h| {
                 Arc::new(TauriMuapiProgressEmitter {
                     app_handle: h.clone(),
+                    run_id: run_id.to_string(),
                 }) as Arc<dyn ProgressEmitter>
             });
-            generate_shorts_with_progress_live(&req, Some(&mut emit_stage), muapi_emitter)
+            generate_shorts_with_progress_live(
+                &req,
+                Some(&mut emit_stage),
+                muapi_emitter,
+                Some(&|| cancelled.load(Ordering::Relaxed)),
+            )
         };
         if result.is_ok() {
-            push_progress(
+            push_terminal(
                 &mut events,
-                "generate:end",
-                1.0,
+                run_id,
+                "generate:success",
                 Some("pipeline completed".to_string()),
                 &mut sink,
             );
+        } else if cancelled.load(Ordering::Relaxed) {
+            push_terminal(
+                &mut events,
+                run_id,
+                "generate:cancelled",
+                Some("pipeline cancelled".to_string()),
+                &mut sink,
+            );
+            return (cancelled_envelope(&args, run_id), events);
         }
         result
     };
@@ -330,5 +524,25 @@ pub fn run_generate_with_sink(
         Err(error) => GenerateEnvelope::Failure { ok: false, error },
     };
 
+    if !cancelled.load(Ordering::Relaxed) {
+        match &envelope {
+            GenerateEnvelope::Success { .. } => {}
+            GenerateEnvelope::Failure { error, .. } => {
+                push_terminal(
+                    &mut events,
+                    run_id,
+                    "generate:failure",
+                    Some(error.error.clone()),
+                    &mut sink,
+                );
+            }
+        }
+    }
+
     (envelope, events)
+}
+
+#[tauri::command]
+pub async fn cancel_generate_run(args: CancelGenerateArgs) -> Result<bool, String> {
+    Ok(cancel_run(args.run_id.trim()))
 }

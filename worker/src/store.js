@@ -307,6 +307,18 @@ export async function updateDeletionRequestStatus(
     .run();
 }
 
+export async function updateDeletionRequestMetadata(db, { requestId, updatedAtMs, requestMetadataJson }) {
+  return db
+    .prepare(
+      `UPDATE user_data_deletion_requests
+       SET request_metadata_json = ?,
+           updated_at_ms = ?
+       WHERE request_id = ?`,
+    )
+    .bind(requestMetadataJson, updatedAtMs, requestId)
+    .run();
+}
+
 export async function sanitizeCompletedDeletionRequest(db, requestId, updatedAtMs) {
   return db
     .prepare(

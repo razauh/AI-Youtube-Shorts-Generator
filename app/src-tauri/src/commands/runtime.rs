@@ -18,6 +18,7 @@ const APP_DIR_NAME: &str = "ai-youtube-shorts-generator";
 const KEYCHAIN_SERVICE: &str = "ai-youtube-shorts-generator";
 pub const DEFAULT_LOCAL_RUNTIME_PACK_MANIFEST_URL: &str =
     "https://license-worker.demandscout.workers.dev/runtime-pack/manifest.json";
+const MAX_RUNTIME_PACK_BYTES: u64 = 2_000_000_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -441,6 +442,82 @@ fn validate_runtime_pack_install(root: &Path, required_modules: &[String]) -> Re
     Ok(())
 }
 
+fn best_effort_preflight_file_allocation(path: &Path, required_bytes: u64) -> Result<(), String> {
+    let mut file = fs::File::create(path).map_err(|_| "permission_error".to_string())?;
+    if required_bytes > 0 {
+        file.set_len(required_bytes)
+            .map_err(|_| "disk_space".to_string())?;
+        file.set_len(0).map_err(|_| "disk_space".to_string())?;
+    }
+    Ok(())
+}
+
+async fn download_to_file_streaming(
+    url: &str,
+    dest: &Path,
+    expected_size: Option<u64>,
+) -> Result<u64, String> {
+    let res = reqwest::get(url)
+        .await
+        .map_err(|_| "network_error".to_string())?;
+    if !res.status().is_success() {
+        return Err("network_error".to_string());
+    }
+
+    let content_len = res.content_length();
+    let expected = expected_size.or(content_len);
+    if let Some(size) = expected {
+        if size > MAX_RUNTIME_PACK_BYTES {
+            return Err("runtime_pack_too_large".to_string());
+        }
+        best_effort_preflight_file_allocation(dest, size)?;
+    } else {
+        best_effort_preflight_file_allocation(dest, 0)?;
+    }
+
+    let mut file = fs::File::create(dest).map_err(|_| "permission_error".to_string())?;
+    let mut downloaded: u64 = 0;
+    let mut response = res;
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| "network_error".to_string())?
+    {
+        downloaded = downloaded.saturating_add(chunk.len() as u64);
+        if downloaded > MAX_RUNTIME_PACK_BYTES {
+            return Err("runtime_pack_too_large".to_string());
+        }
+        file.write_all(&chunk)
+            .map_err(|_| "disk_space".to_string())?;
+    }
+    Ok(downloaded)
+}
+
+fn try_auto_rollback_runtime_pack(runtime_root: &Path) -> bool {
+    let current = runtime_root.join("current");
+    let previous = runtime_root.join("previous");
+    if !current.exists() || !previous.exists() {
+        return false;
+    }
+
+    let required_modules: Vec<String> = vec![];
+    if validate_runtime_pack_install(&current, &required_modules).is_ok() {
+        return false;
+    }
+    if validate_runtime_pack_install(&previous, &required_modules).is_err() {
+        return false;
+    }
+
+    let rollback_dir = runtime_root.join(format!("rollback-{}", now_epoch_ms()));
+    let _ = fs::rename(&current, &rollback_dir);
+    if fs::rename(&previous, &current).is_ok() {
+        let _ = fs::remove_dir_all(&rollback_dir);
+        return true;
+    }
+    let _ = fs::rename(&rollback_dir, &current);
+    false
+}
+
 fn emit_runtime_pack_progress(
     app: &tauri::AppHandle,
     phase: &str,
@@ -616,6 +693,20 @@ fn read_runtime_pack_status() -> Result<LocalRuntimePackStatus, String> {
                 error_code: None,
                 debug_ref: None,
             });
+        }
+    }
+
+    if matches!(store.status, Some(RuntimePackStatusKind::Ready)) {
+        let runtime_root = local_runtime_pack_root()?;
+        if try_auto_rollback_runtime_pack(&runtime_root) {
+            let rolled = LocalRuntimePackStateStore {
+                status: Some(RuntimePackStatusKind::Ready),
+                version: store.version.clone(),
+                installed_at_ms: store.installed_at_ms,
+                last_error_code: None,
+                last_debug_ref: Some(format!("rp-{}", now_epoch_ms())),
+            };
+            let _ = save_runtime_pack_state_store(&rolled);
         }
     }
 
@@ -2712,20 +2803,56 @@ pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRu
         "Downloading runtime-pack...",
         RuntimePackStatusKind::Downloading,
     );
-    let bytes = reqwest::get(&asset.url)
-        .await
-        .map_err(|_| {
-            log_runtime_setup("downloading_runtime", "network_error", "Runtime pack download request failed.");
-            "runtime pack download failed".to_string()
-        })?
-        .bytes()
-        .await
-        .map_err(|_| {
-            log_runtime_setup("downloading_runtime", "network_error", "Runtime pack download body read failed.");
-            "runtime pack download failed".to_string()
-        })?;
     if let Some(expected_size) = asset.size {
-        if bytes.len() as u64 != expected_size {
+        if expected_size > MAX_RUNTIME_PACK_BYTES {
+            let store = LocalRuntimePackStateStore {
+                status: Some(RuntimePackStatusKind::Corrupted),
+                version: Some(manifest.version.clone()),
+                installed_at_ms: None,
+                last_error_code: Some("runtime_pack_too_large".to_string()),
+                last_debug_ref: Some(format!("rp-{}", now_epoch_ms())),
+            };
+            let _ = save_runtime_pack_state_store(&store);
+            log_runtime_setup("downloading_runtime", "validation_failed", "Runtime pack exceeds max allowed size.");
+            return read_runtime_pack_status();
+        }
+    }
+    let downloaded = match download_to_file_streaming(&asset.url, &tmp_zip, asset.size).await {
+        Ok(value) => value,
+        Err(code) => {
+            let _ = fs::remove_file(&tmp_zip);
+            let status = if code == "permission_error" {
+                RuntimePackStatusKind::PermissionError
+            } else if code == "network_error" {
+                RuntimePackStatusKind::NetworkError
+            } else if code == "runtime_pack_too_large" {
+                RuntimePackStatusKind::Corrupted
+            } else {
+                RuntimePackStatusKind::Failed
+            };
+            let store = LocalRuntimePackStateStore {
+                status: Some(status),
+                version: Some(manifest.version.clone()),
+                installed_at_ms: None,
+                last_error_code: Some(code.clone()),
+                last_debug_ref: Some(format!("rp-{}", now_epoch_ms())),
+            };
+            let _ = save_runtime_pack_state_store(&store);
+            let category = if code == "disk_space" {
+                "disk_space"
+            } else if code == "permission_error" {
+                "permission_error"
+            } else if code == "runtime_pack_too_large" {
+                "validation_failed"
+            } else {
+                "network_error"
+            };
+            log_runtime_setup("downloading_runtime", category, "Runtime pack download failed.");
+            return read_runtime_pack_status();
+        }
+    };
+    if let Some(expected_size) = asset.size {
+        if downloaded != expected_size {
             let store = LocalRuntimePackStateStore {
                 status: Some(RuntimePackStatusKind::Corrupted),
                 version: Some(manifest.version),
@@ -2738,10 +2865,6 @@ pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRu
             return read_runtime_pack_status();
         }
     }
-    fs::write(&tmp_zip, &bytes).map_err(|e| {
-        log_runtime_setup("installing_runtime", "permission_error", "Failed to write runtime archive.");
-        e.to_string()
-    })?;
     let actual = sha256_file(&tmp_zip)?;
     if actual != asset.sha256.to_ascii_lowercase() {
         let store = LocalRuntimePackStateStore {
@@ -2797,7 +2920,6 @@ pub async fn local_runtime_pack_prepare(app: tauri::AppHandle) -> Result<LocalRu
     }
     fs::rename(&staging_dir, &current_dir).map_err(|e| e.to_string())?;
     let _ = fs::remove_file(&tmp_zip);
-    let _ = fs::remove_dir_all(&backup_dir);
 
     let store = LocalRuntimePackStateStore {
         status: Some(RuntimePackStatusKind::Ready),
@@ -2825,8 +2947,6 @@ pub async fn local_runtime_pack_retry(app: tauri::AppHandle) -> Result<LocalRunt
 
 #[tauri::command]
 pub async fn local_runtime_pack_repair(app: tauri::AppHandle) -> Result<LocalRuntimePackStatus, String> {
-    let root = local_runtime_pack_root()?;
-    let _ = fs::remove_dir_all(root.join("current"));
     local_runtime_pack_prepare(app).await
 }
 

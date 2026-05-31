@@ -628,6 +628,7 @@ describe('test_ui flow parity', () => {
     expect(runGenerateAndStream).toHaveBeenCalledTimes(1);
     const req = runGenerateAndStream.mock.calls[0][0];
     expect(req).toEqual({
+      run_id: expect.any(String),
       youtube_url: 'https://youtube.com/watch?v=abc',
       mode: 'api',
       num_clips: 5,

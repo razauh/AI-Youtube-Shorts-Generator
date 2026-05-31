@@ -87,18 +87,27 @@ pub fn generate_shorts_with(
     request: &GenerateShortsRequest,
     stages: &mut dyn PipelineStages,
 ) -> Result<PipelineSuccess, ErrorEnvelope> {
-    generate_shorts_with_progress(request, stages, None)
+    generate_shorts_with_progress(request, stages, None, None)
 }
 
 pub fn generate_shorts_with_progress(
     request: &GenerateShortsRequest,
     stages: &mut dyn PipelineStages,
     mut progress_cb: Option<&mut dyn FnMut(&str, f64, Option<String>)>,
+    cancel_cb: Option<&dyn Fn() -> bool>,
 ) -> Result<PipelineSuccess, ErrorEnvelope> {
     let mode = if request.mode.trim().is_empty() {
         "api".to_string()
     } else {
         request.mode.to_lowercase()
+    };
+
+    let is_cancelled = || cancel_cb.map(|cb| cb()).unwrap_or(false);
+    let cancelled = || ErrorEnvelope {
+        mode: Some(mode.clone()),
+        source_video_url: Some(request.youtube_url.clone()),
+        error: "Generation cancelled.".to_string(),
+        details: Some(json!({"stage":"cancel","code":"E_GENERATION_CANCELLED"})),
     };
 
     if mode == "local" {
@@ -109,6 +118,9 @@ pub fn generate_shorts_with_progress(
                 error: "Local processing runtime is not ready. Download Local Processing Runtime from Settings.".to_string(),
                 details: Some(json!({"stage":"runtime_pack","code":"E_RUNTIME_PACK_SETUP_REQUIRED"})),
             });
+        }
+        if is_cancelled() {
+            return Err(cancelled());
         }
         emit_progress(
             &mut progress_cb,
@@ -123,6 +135,9 @@ pub fn generate_shorts_with_progress(
             request.download_format.clone(),
             request.language.clone(),
         );
+        if is_cancelled() {
+            return Err(cancelled());
+        }
         if out.is_ok() {
             emit_progress(
                 &mut progress_cb,
@@ -143,6 +158,9 @@ pub fn generate_shorts_with_progress(
         });
     }
 
+    if is_cancelled() {
+        return Err(cancelled());
+    }
     emit_progress(
         &mut progress_cb,
         "download:start",
@@ -152,6 +170,9 @@ pub fn generate_shorts_with_progress(
     let source_url = stages
         .download_youtube(&request.youtube_url, &request.download_format)
         .map_err(|e| map_api_error("download", ErrorCode::DownloadFailed, e, None))?;
+    if is_cancelled() {
+        return Err(cancelled());
+    }
     emit_progress(
         &mut progress_cb,
         "download:end",
@@ -159,6 +180,9 @@ pub fn generate_shorts_with_progress(
         Some("download completed".to_string()),
     );
 
+    if is_cancelled() {
+        return Err(cancelled());
+    }
     emit_progress(
         &mut progress_cb,
         "transcribe:start",
@@ -175,6 +199,9 @@ pub fn generate_shorts_with_progress(
                 Some(source_url.clone()),
             )
         })?;
+    if is_cancelled() {
+        return Err(cancelled());
+    }
     emit_progress(
         &mut progress_cb,
         "transcribe:end",
@@ -200,6 +227,9 @@ pub fn generate_shorts_with_progress(
         ));
     }
 
+    if is_cancelled() {
+        return Err(cancelled());
+    }
     emit_progress(
         &mut progress_cb,
         "highlights:start",
@@ -216,6 +246,9 @@ pub fn generate_shorts_with_progress(
                 Some(source_url.clone()),
             )
         })?;
+    if is_cancelled() {
+        return Err(cancelled());
+    }
     emit_progress(
         &mut progress_cb,
         "highlights:end",
@@ -246,6 +279,9 @@ pub fn generate_shorts_with_progress(
     });
     top.truncate(request.num_clips);
 
+    if is_cancelled() {
+        return Err(cancelled());
+    }
     emit_progress(
         &mut progress_cb,
         "clip:start",
@@ -255,6 +291,9 @@ pub fn generate_shorts_with_progress(
     let shorts_values = stages
         .crop_highlights(&source_url, top, &request.aspect_ratio)
         .map_err(|e| map_api_error("clip", ErrorCode::ClipFailed, e, Some(source_url.clone())))?;
+    if is_cancelled() {
+        return Err(cancelled());
+    }
     emit_progress(
         &mut progress_cb,
         "clip:end",
@@ -350,6 +389,45 @@ impl HighlightLlm for MuApiLlm {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{generate_shorts_with_progress, GenerateShortsRequest, MockPipelineStages};
+
+    #[test]
+    fn cancel_cb_short_circuits_pipeline() {
+        let mut stages = MockPipelineStages::default()
+            .with_download(Ok("https://cdn.example.com/video.mp4".to_string()))
+            .with_transcript(Ok(serde_json::json!({
+                "duration": 12.0,
+                "segments": [{"start": 0.0, "end": 6.0, "text": "hello"}]
+            })))
+            .with_highlights(Ok(serde_json::json!({
+                "highlights": [{
+                    "title": "hello",
+                    "start_time": 0.0,
+                    "end_time": 6.0,
+                    "score": 90,
+                    "hook_sentence": "hello",
+                    "virality_reason": "test"
+                }]
+            })))
+            .with_crop(Ok(vec![]));
+        let req = GenerateShortsRequest {
+            youtube_url: "https://youtube.com/watch?v=abc".to_string(),
+            num_clips: 1,
+            aspect_ratio: "9:16".to_string(),
+            download_format: "720".to_string(),
+            language: None,
+            mode: "api".to_string(),
+        };
+        let cancel = || true;
+        let out = generate_shorts_with_progress(&req, &mut stages, None, Some(&cancel));
+        assert!(out.is_err());
+        let err = out.err().unwrap();
+        assert!(err.error.to_lowercase().contains("cancel"));
+    }
+}
+
 pub struct LivePipelineStages {
     config: Config,
     runtime: tokio::runtime::Runtime,
@@ -423,13 +501,14 @@ impl PipelineStages for LivePipelineStages {
 }
 
 pub fn generate_shorts(request: &GenerateShortsRequest) -> Result<PipelineSuccess, ErrorEnvelope> {
-    generate_shorts_with_progress_live(request, None, None)
+    generate_shorts_with_progress_live(request, None, None, None)
 }
 
 pub fn generate_shorts_with_progress_live(
     request: &GenerateShortsRequest,
     progress_cb: Option<&mut dyn FnMut(&str, f64, Option<String>)>,
     muapi_emitter: Option<Arc<dyn ProgressEmitter>>,
+    cancel_cb: Option<&dyn Fn() -> bool>,
 ) -> Result<PipelineSuccess, ErrorEnvelope> {
     if request.mode.to_lowercase() == "local" {
         return run_local_pipeline_bridge(
@@ -458,7 +537,7 @@ pub fn generate_shorts_with_progress_live(
             details: None,
         })?;
 
-    generate_shorts_with_progress(request, &mut live, progress_cb)
+    generate_shorts_with_progress(request, &mut live, progress_cb, cancel_cb)
 }
 
 #[derive(Default)]

@@ -19,7 +19,6 @@ CREATE TABLE IF NOT EXISTS device_bindings (
 CREATE TABLE IF NOT EXISTS reset_requests (
   request_id TEXT PRIMARY KEY,
   license_key_hash TEXT,
-  masked_license_key TEXT,
   purchaser_email TEXT,
   status TEXT NOT NULL,
   created_at_ms INTEGER NOT NULL,

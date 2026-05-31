@@ -5,7 +5,7 @@
   import { runState } from '../lib/stores/runState';
   import { authState } from '../lib/stores/authState';
   import { getUserDataDeletionStatus, requestUserDataDeletion } from '../lib/api/authClient';
-  import { openInFileManager, pickLocalVideoFile, pickOutputJsonPath, runGenerateAndStream } from '../lib/api/tauriClient';
+  import { cancelGenerateRun, openInFileManager, pickLocalVideoFile, pickOutputJsonPath, runGenerateAndStream } from '../lib/api/tauriClient';
   import {
     apiKeyProfileActivate,
     apiKeyProfileAdd,
@@ -142,6 +142,7 @@
   let licenseFormStatusKind = 'info';
   let generateFormStatus = '';
   let generateFormStatusKind = 'info';
+  let cancelRunBusy = false;
   let theme = 'dark';
   let mobileNavOpen = false;
   let setupStatus = {
@@ -1218,11 +1219,14 @@
     if (!setupReady) {
       return;
     }
-    runState.start();
+    const runId = crypto.randomUUID();
+    cancelRunBusy = false;
+    runState.start(runId);
 
     try {
       const envelope = await runGenerateAndStream(
         {
+          run_id: runId,
           youtube_url: trimmedUrl,
           mode,
           num_clips: normalizedNumClips,
@@ -1259,6 +1263,19 @@
         mode,
         source_video_url: trimmedUrl
       });
+    }
+  }
+
+  async function cancelCurrentRun() {
+    if (cancelRunBusy) return;
+    if (!$runState.runId) return;
+    cancelRunBusy = true;
+    try {
+      await cancelGenerateRun($runState.runId);
+    } catch (_e) {
+      // no-op
+    } finally {
+      cancelRunBusy = false;
     }
   }
 </script>
@@ -1546,6 +1563,11 @@
           <p class="status-line">Running: {$runState.progress.stage} ({Math.round($runState.progress.value * 100)}%)</p>
           <div class="meter">
             <span style={`width:${Math.max(0, Math.min(100, Math.round($runState.progress.value * 100)))}%`}></span>
+          </div>
+          <div class="row">
+            <button type="button" class="button-secondary" on:click={cancelCurrentRun} disabled={cancelRunBusy}>
+              {cancelRunBusy ? 'Cancelling...' : 'Cancel Run'}
+            </button>
           </div>
         </section>
       {/if}

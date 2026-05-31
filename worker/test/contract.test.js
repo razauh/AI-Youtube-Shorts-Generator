@@ -60,6 +60,18 @@ class MockStatement {
     if (this.sql.includes('COUNT(*) AS count FROM audit_events')) {
       return { count: this.db.auditEvents.length };
     }
+    if (this.sql.includes('COUNT(*) AS count FROM idempotency_records')) {
+      return { count: this.db.idempotency.size };
+    }
+    if (this.sql.includes('COUNT(*) AS count FROM reset_requests')) {
+      return { count: this.db.resetRequests.size };
+    }
+    if (this.sql.includes('COUNT(*) AS count FROM device_bindings')) {
+      return { count: this.db.deviceBindings.size };
+    }
+    if (this.sql.includes('COUNT(*) AS count FROM user_data_deletion_requests')) {
+      return { count: this.db.deletionRequests.size };
+    }
     if (this.sql.includes('FROM idempotency_records')) {
       const [op, key] = this.args;
       return this.db.idempotency.get(`${op}:${key}`) ?? null;
@@ -280,6 +292,19 @@ class MockStatement {
       return { success: true };
     }
 
+    if (this.sql.includes('UPDATE user_data_deletion_requests') && this.sql.includes('SET request_metadata_json = ?')) {
+      const [requestMetadataJson, updatedAtMs, requestId] = this.args;
+      const existing = this.db.deletionRequests.get(requestId);
+      if (existing) {
+        this.db.deletionRequests.set(requestId, {
+          ...existing,
+          request_metadata_json: requestMetadataJson,
+          updated_at_ms: updatedAtMs,
+        });
+      }
+      return { success: true };
+    }
+
     if (this.sql.includes('UPDATE user_data_deletion_requests')) {
       const [status, updatedAtMs, decidedAtMs, completedAtMs, summaryJson, errorCode, errorMessageSafe, requestId] = this.args;
       const existing = this.db.deletionRequests.get(requestId);
@@ -423,6 +448,67 @@ test('health works', async () => {
   assert.equal(res.status, 200);
   const json = await res.json();
   assert.equal(json.ok, true);
+});
+
+test('readyz returns ready when env is configured', async () => {
+  const res = await call('/readyz', {
+    method: 'GET',
+    env: {
+      DB: new MockD1Database(),
+      HASH_PEPPER: 'pepper',
+      TOKEN_SIGNING_SECRET: 'secret',
+      ADMIN_API_TOKEN: 'admin-token',
+    },
+  });
+  assert.equal(res.status, 200);
+  const json = await res.json();
+  assert.equal(json.status, 'ready');
+  assert.equal(json.checks.d1.ok, true);
+  assert.equal(json.checks.secrets.ok, true);
+});
+
+test('readyz returns not_ready when required secrets are missing', async () => {
+  const res = await call('/readyz', {
+    method: 'GET',
+    env: {
+      DB: new MockD1Database(),
+      HASH_PEPPER: 'pepper',
+      TOKEN_SIGNING_SECRET: '',
+      ADMIN_API_TOKEN: 'admin-token',
+    },
+  });
+  assert.equal(res.status, 503);
+  const json = await res.json();
+  assert.equal(json.status, 'not_ready');
+  assert.equal(json.checks.secrets.ok, false);
+});
+
+test('runtime-pack manifest route returns storage error when not configured', async () => {
+  const res = await call('/runtime-pack/manifest.json', { method: 'GET' });
+  assert.equal(res.status, 404);
+  const json = await res.json();
+  assert.equal(json.ok, false);
+  assert.equal(json.error.code, 'storage');
+});
+
+test('runtime-pack manifest route proxies configured manifest', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () =>
+    new Response(JSON.stringify({ version: 'test', assets: [] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  try {
+    const res = await call('/runtime-pack/manifest.json', {
+      method: 'GET',
+      env: { RUNTIME_PACK_MANIFEST_URL: 'https://runtime.example.test/manifest.json' },
+    });
+    assert.equal(res.status, 200);
+    const json = await res.json();
+    assert.equal(json.version, 'test');
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
 
 test('unknown routes return route_not_found', async () => {
@@ -801,6 +887,67 @@ test('admin approve deletion deletes devices and anonymizes license/reset data',
   assert.equal(db.resetRequests.get('reset-1').license_key_hash, null);
   assert.equal(db.deletionRequests.get(reqJson.data.request_id).purchaser_email, null);
   assert.equal(JSON.stringify(db.auditEvents).includes('buyer@example.com'), false);
+});
+
+test('admin approve deletion can be retried after phase failure', async () => {
+  const db = new MockD1Database();
+  const baseEnv = { DB: db, HASH_PEPPER: 'pepper_123', ADMIN_API_TOKEN: 'admin-secret' };
+  const licenseKey = 'AAAA-BBBB-CCCC-DDDD';
+  const licenseHash = await sha256Hex(`${baseEnv.HASH_PEPPER}:${licenseKey}`);
+  db.licenses.set(licenseHash, {
+    license_key_hash: licenseHash,
+    purchaser_email: 'buyer@example.com',
+    entitlement_status: 'active',
+    provider: 'gumroad',
+    provider_sale_id: 'sale_1',
+    updated_at_ms: 1,
+  });
+  db.deviceBindings.set('dev-1', {
+    device_id: 'dev-1',
+    license_key_hash: licenseHash,
+    public_key: 'pub',
+    fingerprint_json: '{}',
+    status: 'active',
+    updated_at_ms: 1,
+  });
+  db.resetRequests.set('reset-1', {
+    request_id: 'reset-1',
+    license_key_hash: licenseHash,
+    masked_license_key: '••••-DDDD',
+    purchaser_email: 'buyer@example.com',
+    status: 'approved',
+    created_at_ms: 1,
+    updated_at_ms: 1,
+  });
+
+  const req = await call('/v1/privacy/delete/request', {
+    headers: { 'x-idempotency-key': 'delete-request-3' },
+    body: { license_key: licenseKey, confirmation: 'DELETE', timestamp_ms: Date.now() },
+    env: baseEnv,
+  });
+  const reqJson = await req.json();
+
+  const failed = await call('/v1/admin/privacy/delete/approve', {
+    headers: { authorization: 'Bearer admin-secret', 'x-idempotency-key': 'approve-delete-fail-1' },
+    body: { request_id: reqJson.data.request_id, confirmation: 'DELETE USER DATA', reason: 'privacy request' },
+    env: { ...baseEnv, DELETION_FAIL_PHASE: 'anonymize_license' },
+  });
+  assert.equal(failed.status, 503);
+  assert.equal((await failed.json()).error.code, 'storage');
+  assert.equal(db.deletionRequests.get(reqJson.data.request_id).status, 'failed');
+  assert.equal(db.deviceBindings.size, 0);
+
+  const retry = await call('/v1/admin/privacy/delete/approve', {
+    headers: { authorization: 'Bearer admin-secret', 'x-idempotency-key': 'approve-delete-retry-1' },
+    body: { request_id: reqJson.data.request_id, confirmation: 'DELETE USER DATA', reason: 'privacy request' },
+    env: baseEnv,
+  });
+  assert.equal(retry.status, 200);
+  const retryJson = await retry.json();
+  assert.equal(retryJson.data.status, 'completed');
+  assert.equal(db.licenses.get(licenseHash).purchaser_email, null);
+  assert.equal(db.licenses.get(licenseHash).entitlement_status, 'disabled');
+  assert.equal(db.deletionRequests.get(reqJson.data.request_id).purchaser_email, null);
 });
 
 test('admin licenses endpoint masks email and returns prefixes', async () => {

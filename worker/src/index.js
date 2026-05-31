@@ -30,6 +30,7 @@ import {
   listLicensesByHashPrefix,
   updateLicenseEntitlementStatus,
   getOpenDeletionRequestByLicenseHash,
+  updateDeletionRequestMetadata,
 } from "./store.js";
 
 export default {
@@ -40,6 +41,14 @@ export default {
 
     if (method === "GET" && path === "/health") {
       return ok({ status: "ok", contract: "v1" });
+    }
+
+    if (method === "GET" && path === "/readyz") {
+      return handleReadyz(request, env);
+    }
+
+    if (method === "GET" && path === "/runtime-pack/manifest.json") {
+      return handleRuntimePackManifest(env);
     }
 
     const updateMatch = path.match(/^\/updates\/([^/]+)\/([^/]+)\/([^/]+)$/);
@@ -112,6 +121,145 @@ export default {
     return err("route_not_found", "Route not found", requestId(), false, 404);
   },
 };
+
+function nonEmpty(value) {
+  return typeof value === "string" ? value.trim().length > 0 : Boolean(value);
+}
+
+async function handleReadyz(env) {
+async function handleReadyz(request, env) {
+  const url = new URL(request.url);
+  const deep = url.searchParams.get("deep") === "1";
+
+  const checks = {
+    d1: { ok: false, tables: {}, schema: { reset_requests_masked_license_key: false } },
+    secrets: {
+      ok: false,
+      core_ok: false,
+      admin_ok: false,
+      gumroad_ok: false,
+      hash_pepper: nonEmpty(env?.HASH_PEPPER),
+      token_signing_secret: nonEmpty(env?.TOKEN_SIGNING_SECRET),
+      admin_api_token: nonEmpty(env?.ADMIN_API_TOKEN),
+      gumroad_access_token: nonEmpty(env?.GUMROAD_ACCESS_TOKEN),
+    },
+    config: {
+      license_contract_version: String(env?.LICENSE_CONTRACT_VERSION || "").trim() || null,
+      update_manifest_url_configured: nonEmpty(env?.UPDATE_MANIFEST_URL),
+      runtime_pack_manifest_url_configured: nonEmpty(env?.RUNTIME_PACK_MANIFEST_URL),
+    },
+    deep: {
+      enabled: deep,
+      updater_manifest_ok: null,
+      runtime_pack_manifest_ok: null,
+    },
+  };
+
+  let ready = true;
+
+  checks.secrets.core_ok = checks.secrets.hash_pepper && checks.secrets.token_signing_secret;
+  checks.secrets.admin_ok = checks.secrets.admin_api_token;
+  checks.secrets.gumroad_ok = checks.secrets.gumroad_access_token;
+  checks.secrets.ok = checks.secrets.core_ok && checks.secrets.admin_ok;
+  if (!checks.secrets.ok) ready = false;
+
+  if (!env?.DB) {
+    checks.d1.ok = false;
+    ready = false;
+  } else {
+    const requiredTables = [
+      "licenses",
+      "device_bindings",
+      "reset_requests",
+      "idempotency_records",
+      "audit_events",
+      "user_data_deletion_requests",
+    ];
+    for (const table of requiredTables) {
+      try {
+        await env.DB.prepare(`SELECT COUNT(*) AS count FROM ${table}`).first();
+        checks.d1.tables[table] = true;
+      } catch {
+        checks.d1.tables[table] = false;
+        ready = false;
+      }
+    }
+
+    if (checks.d1.tables.reset_requests) {
+      try {
+        await env.DB.prepare("SELECT masked_license_key FROM reset_requests LIMIT 1").first();
+        checks.d1.schema.reset_requests_masked_license_key = true;
+      } catch {
+        checks.d1.schema.reset_requests_masked_license_key = false;
+        ready = false;
+      }
+    }
+
+    checks.d1.ok =
+      Object.values(checks.d1.tables).every(Boolean) && checks.d1.schema.reset_requests_masked_license_key;
+  }
+
+  if (deep) {
+    if (checks.config.update_manifest_url_configured) {
+      try {
+        const res = await fetch(String(env.UPDATE_MANIFEST_URL).trim());
+        checks.deep.updater_manifest_ok = res.ok;
+        if (!res.ok) ready = false;
+      } catch {
+        checks.deep.updater_manifest_ok = false;
+        ready = false;
+      }
+    } else {
+      checks.deep.updater_manifest_ok = true;
+    }
+
+    if (checks.config.runtime_pack_manifest_url_configured) {
+      try {
+        const res = await fetch(String(env.RUNTIME_PACK_MANIFEST_URL).trim());
+        checks.deep.runtime_pack_manifest_ok = res.ok;
+        if (!res.ok) ready = false;
+      } catch {
+        checks.deep.runtime_pack_manifest_ok = false;
+        ready = false;
+      }
+    } else {
+      checks.deep.runtime_pack_manifest_ok = true;
+    }
+  }
+
+  return json(
+    {
+      status: ready ? "ready" : "not_ready",
+      contract: "v1",
+      checks,
+    },
+    { status: ready ? 200 : 503 },
+  );
+}
+
+async function handleRuntimePackManifest(env) {
+  const manifestUrl = String(env?.RUNTIME_PACK_MANIFEST_URL || "").trim();
+  if (!manifestUrl) {
+    return err("storage", "Runtime pack manifest url not configured.", requestId(), false, 404);
+  }
+
+  let res;
+  try {
+    res = await fetch(manifestUrl);
+  } catch {
+    return err("storage", "Runtime pack manifest fetch failed.", requestId(), true, 503);
+  }
+  if (!res.ok) {
+    return err("storage", "Runtime pack manifest unavailable.", requestId(), true, 503);
+  }
+
+  const headers = new Headers(res.headers);
+  if (!headers.has("content-type")) {
+    headers.set("content-type", "application/json; charset=utf-8");
+  }
+  headers.set("cache-control", "public, max-age=60");
+  return new Response(res.body, { status: 200, headers });
+}
 
 async function handleUpdateCheck(env, request) {
   const manifestUrl = String(env?.UPDATE_MANIFEST_URL || "").trim();
@@ -914,7 +1062,7 @@ async function handleAdminDeletionApprove(request, env) {
   if (!deletion) {
     return err("deletion_request_not_found", "Deletion request was not found.", rid, false, 404);
   }
-  if (!["pending", "failed"].includes(deletion.status)) {
+  if (!["pending", "failed", "approved", "processing"].includes(deletion.status)) {
     return err("invalid_transition", "Deletion request cannot be approved from its current state.", rid, false, 409);
   }
   if (!deletion.license_key_hash) {
@@ -923,30 +1071,81 @@ async function handleAdminDeletionApprove(request, env) {
 
   const now = Date.now();
   let summary;
+  let phaseForError = "start";
   try {
-    summary = await getDeletionPreviewByLicenseHash(env.DB, deletion.license_key_hash);
-    await updateDeletionRequestStatus(env.DB, {
-      requestId: deletion.request_id,
-      status: "approved",
-      updatedAtMs: now,
-      decidedAtMs: now,
-      errorCode: null,
-      errorMessageSafe: null,
-    });
-    await updateDeletionRequestStatus(env.DB, {
-      requestId: deletion.request_id,
-      status: "processing",
-      updatedAtMs: now,
-      errorCode: null,
-      errorMessageSafe: null,
-    });
-    await deleteDeviceBindingsByLicenseHash(env.DB, deletion.license_key_hash);
-    await anonymizeResetRequestsByLicenseHash(env.DB, deletion.license_key_hash, now);
-    await anonymizeLicenseForPrivacyDeletion(env.DB, deletion.license_key_hash, now);
+    const meta = safeJsonObject(deletion.request_metadata_json);
+    const attempt = Number(meta.attempt || 0) + 1;
+    let phase = typeof meta.phase === "string" ? meta.phase : "start";
+    phaseForError = phase;
+
+    const writePhase = async (nextPhase) => {
+      const next = { ...meta, attempt, phase: nextPhase, phase_updated_at_ms: Date.now() };
+      await updateDeletionRequestMetadata(env.DB, {
+        requestId: deletion.request_id,
+        updatedAtMs: Date.now(),
+        requestMetadataJson: JSON.stringify(next),
+      });
+      phase = nextPhase;
+      phaseForError = nextPhase;
+    };
+    const maybeFail = (phaseName) => {
+      if (String(env?.DELETION_FAIL_PHASE || "").trim() === phaseName) {
+        throw new Error(`forced_failure:${phaseName}`);
+      }
+    };
+
+    if (phase === "start") {
+      summary = await getDeletionPreviewByLicenseHash(env.DB, deletion.license_key_hash);
+      await writePhase("previewed");
+    } else {
+      summary = await getDeletionPreviewByLicenseHash(env.DB, deletion.license_key_hash);
+    }
+
+    if (["start", "previewed"].includes(phase) || deletion.status === "pending" || deletion.status === "failed") {
+      await updateDeletionRequestStatus(env.DB, {
+        requestId: deletion.request_id,
+        status: "approved",
+        updatedAtMs: Date.now(),
+        decidedAtMs: deletion.decided_at_ms ? null : Date.now(),
+        errorCode: null,
+        errorMessageSafe: null,
+      });
+      await writePhase("approved");
+    }
+
+    if (["start", "previewed", "approved"].includes(phase) || deletion.status === "approved") {
+      await updateDeletionRequestStatus(env.DB, {
+        requestId: deletion.request_id,
+        status: "processing",
+        updatedAtMs: Date.now(),
+        errorCode: null,
+        errorMessageSafe: null,
+      });
+      await writePhase("processing");
+    }
+
+    if (!["device_bindings_deleted", "reset_requests_anonymized", "license_anonymized", "completed"].includes(phase)) {
+      maybeFail("delete_device_bindings");
+      await deleteDeviceBindingsByLicenseHash(env.DB, deletion.license_key_hash);
+      await writePhase("device_bindings_deleted");
+    }
+
+    if (!["reset_requests_anonymized", "license_anonymized", "completed"].includes(phase)) {
+      maybeFail("anonymize_reset_requests");
+      await anonymizeResetRequestsByLicenseHash(env.DB, deletion.license_key_hash, now);
+      await writePhase("reset_requests_anonymized");
+    }
+
+    if (!["license_anonymized", "completed"].includes(phase)) {
+      maybeFail("anonymize_license");
+      await anonymizeLicenseForPrivacyDeletion(env.DB, deletion.license_key_hash, now);
+      await writePhase("license_anonymized");
+    }
     const completedSummary = {
       ...summary,
       action: "backend_licensing_data_deleted_or_anonymized",
     };
+    maybeFail("mark_completed");
     await updateDeletionRequestStatus(env.DB, {
       requestId: deletion.request_id,
       status: "completed",
@@ -956,6 +1155,7 @@ async function handleAdminDeletionApprove(request, env) {
       errorCode: null,
       errorMessageSafe: null,
     });
+    await writePhase("completed");
     await sanitizeCompletedDeletionRequest(env.DB, deletion.request_id, now);
     await writeAuditEvent(
       env.DB,
@@ -975,7 +1175,7 @@ async function handleAdminDeletionApprove(request, env) {
       status: "failed",
       updatedAtMs: Date.now(),
       errorCode: "storage",
-      errorMessageSafe: "Deletion execution failed. Retry after checking Worker storage.",
+      errorMessageSafe: `Deletion execution failed at phase=${phaseForError}. Retry after checking Worker storage.`,
     });
     return err("storage", "Failed to execute deletion request.", rid, true, 503);
   }
@@ -1501,6 +1701,16 @@ function asOptionalString(value) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function safeJsonObject(value) {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 function parseLimit(value, fallback, max) {

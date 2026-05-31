@@ -10,6 +10,8 @@ Production release configuration is centralized in [`docs/release-production-con
 ## Routes
 
 - `GET /health`
+- `GET /readyz`
+- `GET /runtime-pack/manifest.json`
 - `POST /v1/license/activate`
 - `POST /v1/license/validate`
 - `POST /v1/license/reset/request`

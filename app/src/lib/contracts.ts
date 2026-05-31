@@ -51,6 +51,7 @@ export interface ErrorEnvelope {
 
 export interface ProgressEvent {
   event: string;
+  run_id?: string;
   stage: string;
   progress: number;
   message?: string;

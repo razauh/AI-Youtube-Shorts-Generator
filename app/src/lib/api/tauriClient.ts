@@ -5,6 +5,7 @@ import type {
 } from '../contracts';
 
 export interface GenerateRequest {
+  run_id: string;
   youtube_url: string;
   mode: 'api' | 'local';
   num_clips: number;
@@ -60,6 +61,7 @@ export async function runGenerateAndStream(
     const envelope = await invoke<GenerateEnvelope>('generate_shorts_stream', {
       args: {
         request: {
+          run_id: request.run_id,
           youtube_url: request.youtube_url,
           mode: request.mode,
           num_clips: request.num_clips,
@@ -74,6 +76,12 @@ export async function runGenerateAndStream(
   } finally {
     unlisten();
   }
+}
+
+export async function cancelGenerateRun(run_id: string): Promise<boolean> {
+  const { invoke } = await getCore();
+  const result = await invoke<boolean>('cancel_generate_run', { args: { runId: run_id } });
+  return Boolean(result);
 }
 
 export async function pickLocalVideoFile(): Promise<string | null> {

@@ -66,6 +66,8 @@ pub struct ErrorEnvelope {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProgressEvent {
     pub event: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
     pub stage: String,
     pub progress: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
