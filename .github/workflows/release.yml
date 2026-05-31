@@ -29,15 +29,19 @@ jobs:
           - os_name: linux-x64
             runner: ubuntu-latest
             runtime_target: linux-x86_64
+            bundle_targets: deb,rpm
           - os_name: windows-x64
             runner: windows-latest
             runtime_target: windows-x86_64
+            bundle_targets: nsis,msi
           - os_name: macos-x64
             runner: macos-13
             runtime_target: macos-x86_64
+            bundle_targets: app,dmg
           - os_name: macos-aarch64
             runner: macos-14
             runtime_target: macos-aarch64
+            bundle_targets: app,dmg
     steps:
       - uses: actions/checkout@v4
 
@@ -94,15 +98,29 @@ jobs:
       - name: Build customer Tauri bundles
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: pnpm run bundle:customer
+        run: pnpm --dir app tauri build --config src-tauri/tauri.conf.json --bundles "${{ matrix.platform.bundle_targets }}" -- --bin shorts_tauri_app
+
+      - name: Collect customer bundles
+        shell: bash
+        run: |
+          rm -rf release-artifact
+          mkdir -p release-artifact
+          for dir in target app/src-tauri/target; do
+            [ -d "$dir" ] || continue
+            find "$dir" -type f \( -path '*/release/bundle/*' -o -path '*/release/*.sig' \)
+          done | while IFS= read -r file; do
+            dest="release-artifact/${file#./}"
+            mkdir -p "$(dirname "$dest")"
+            cp "$file" "$dest"
+          done
+          find release-artifact -type f -print
+          test -n "$(find release-artifact -type f -print -quit)"
 
       - name: Upload customer bundles
         uses: actions/upload-artifact@v4
         with:
           name: customer-${{ matrix.platform.os_name }}
-          path: |
-            app/src-tauri/target/release/bundle/**/*
-            app/src-tauri/target/release/*.sig
+          path: release-artifact/**/*
           if-no-files-found: error
 
   build-admin:
@@ -115,15 +133,19 @@ jobs:
           - os_name: linux-x64
             runner: ubuntu-latest
             runtime_target: linux-x86_64
+            bundle_targets: deb,rpm
           - os_name: windows-x64
             runner: windows-latest
             runtime_target: windows-x86_64
+            bundle_targets: nsis,msi
           - os_name: macos-x64
             runner: macos-13
             runtime_target: macos-x86_64
+            bundle_targets: app,dmg
           - os_name: macos-aarch64
             runner: macos-14
             runtime_target: macos-aarch64
+            bundle_targets: app,dmg
     steps:
       - uses: actions/checkout@v4
 
@@ -174,15 +196,29 @@ jobs:
       - name: Build admin Tauri bundles
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: pnpm run bundle:admin
+        run: pnpm --dir app tauri build --config src-tauri/tauri.admin.conf.json --bundles "${{ matrix.platform.bundle_targets }}" -- --bin admin_desktop
+
+      - name: Collect admin bundles
+        shell: bash
+        run: |
+          rm -rf release-artifact
+          mkdir -p release-artifact
+          for dir in target app/src-tauri/target; do
+            [ -d "$dir" ] || continue
+            find "$dir" -type f \( -path '*/release/bundle/*' -o -path '*/release/*.sig' \)
+          done | while IFS= read -r file; do
+            dest="release-artifact/${file#./}"
+            mkdir -p "$(dirname "$dest")"
+            cp "$file" "$dest"
+          done
+          find release-artifact -type f -print
+          test -n "$(find release-artifact -type f -print -quit)"
 
       - name: Upload admin bundles
         uses: actions/upload-artifact@v4
         with:
           name: admin-${{ matrix.platform.os_name }}
-          path: |
-            app/src-tauri/target/release/bundle/**/*
-            app/src-tauri/target/release/*.sig
+          path: release-artifact/**/*
           if-no-files-found: error
 
   source-archive:

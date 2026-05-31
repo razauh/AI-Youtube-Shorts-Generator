@@ -22,7 +22,7 @@ pass() {
 }
 
 contains() {
-  grep -Eq "$1" "$2"
+  grep -Eq -- "$1" "$2"
 }
 
 RELEASE_WORKFLOW="${ROOT_DIR}/.github/workflows/release.yml"
@@ -189,10 +189,16 @@ else
   fail "runtime builders do not use GitHub token for release API lookup"
 fi
 
-if contains "libfuse2t64|libfuse2" "${RELEASE_WORKFLOW}" && contains "desktop-file-utils" "${RELEASE_WORKFLOW}"; then
-  pass "Linux release workflow installs AppImage support packages"
+if contains "bundle_targets: deb,rpm" "${RELEASE_WORKFLOW}" && contains "--bundles.*matrix\\.platform\\.bundle_targets" "${RELEASE_WORKFLOW}"; then
+  pass "Linux release workflow avoids AppImage linuxdeploy by using explicit bundle targets"
 else
-  fail "Linux release workflow missing AppImage support packages"
+  fail "Linux release workflow missing explicit non-AppImage bundle targets"
+fi
+
+if contains "release-artifact/\\*\\*/\\*" "${RELEASE_WORKFLOW}" && contains "Collect customer bundles" "${RELEASE_WORKFLOW}" && contains "Collect admin bundles" "${RELEASE_WORKFLOW}"; then
+  pass "workflow collects Tauri bundles from discovered target directories"
+else
+  fail "workflow missing target-directory bundle collection"
 fi
 
 if contains "prepare-bundled-runtime\.sh" "${RELEASE_WORKFLOW}" && contains "scan-bundled-runtime\.sh" "${RELEASE_WORKFLOW}"; then
