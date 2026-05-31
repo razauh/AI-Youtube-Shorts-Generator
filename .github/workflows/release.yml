@@ -29,19 +29,23 @@ jobs:
           - os_name: linux-x64
             runner: ubuntu-latest
             runtime_target: linux-x86_64
-            bundle_targets: deb,rpm
+            customer_build_script: tauri:build:customer:release:linux
+            admin_build_script: tauri:build:admin:release:linux
           - os_name: windows-x64
             runner: windows-latest
             runtime_target: windows-x86_64
-            bundle_targets: nsis,msi
+            customer_build_script: tauri:build:customer:release:windows
+            admin_build_script: tauri:build:admin:release:windows
           - os_name: macos-x64
             runner: macos-13
             runtime_target: macos-x86_64
-            bundle_targets: app,dmg
+            customer_build_script: tauri:build:customer:release:macos
+            admin_build_script: tauri:build:admin:release:macos
           - os_name: macos-aarch64
             runner: macos-14
             runtime_target: macos-aarch64
-            bundle_targets: app,dmg
+            customer_build_script: tauri:build:customer:release:macos
+            admin_build_script: tauri:build:admin:release:macos
     steps:
       - uses: actions/checkout@v4
 
@@ -99,7 +103,7 @@ jobs:
         working-directory: app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: pnpm run tauri:build:customer:release -- --bundles "${{ matrix.platform.bundle_targets }}"
+        run: pnpm run "${{ matrix.platform.customer_build_script }}"
 
       - name: Collect customer bundles
         shell: bash
@@ -143,19 +147,23 @@ jobs:
           - os_name: linux-x64
             runner: ubuntu-latest
             runtime_target: linux-x86_64
-            bundle_targets: deb,rpm
+            customer_build_script: tauri:build:customer:release:linux
+            admin_build_script: tauri:build:admin:release:linux
           - os_name: windows-x64
             runner: windows-latest
             runtime_target: windows-x86_64
-            bundle_targets: nsis,msi
+            customer_build_script: tauri:build:customer:release:windows
+            admin_build_script: tauri:build:admin:release:windows
           - os_name: macos-x64
             runner: macos-13
             runtime_target: macos-x86_64
-            bundle_targets: app,dmg
+            customer_build_script: tauri:build:customer:release:macos
+            admin_build_script: tauri:build:admin:release:macos
           - os_name: macos-aarch64
             runner: macos-14
             runtime_target: macos-aarch64
-            bundle_targets: app,dmg
+            customer_build_script: tauri:build:customer:release:macos
+            admin_build_script: tauri:build:admin:release:macos
     steps:
       - uses: actions/checkout@v4
 
@@ -207,7 +215,7 @@ jobs:
         working-directory: app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: pnpm run tauri:build:admin:release -- --bundles "${{ matrix.platform.bundle_targets }}"
+        run: pnpm run "${{ matrix.platform.admin_build_script }}"
 
       - name: Collect admin bundles
         shell: bash

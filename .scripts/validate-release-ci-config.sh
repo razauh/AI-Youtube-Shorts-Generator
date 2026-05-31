@@ -189,10 +189,10 @@ else
   fail "runtime builders do not use GitHub token for release API lookup"
 fi
 
-if contains "bundle_targets: deb,rpm" "${RELEASE_WORKFLOW}" && contains "tauri:build:customer:release.*--bundles.*matrix\\.platform\\.bundle_targets" "${RELEASE_WORKFLOW}" && contains "tauri:build:admin:release.*--bundles.*matrix\\.platform\\.bundle_targets" "${RELEASE_WORKFLOW}"; then
-  pass "Linux release workflow avoids AppImage linuxdeploy by using explicit bundle targets"
+if contains "customer_build_script: tauri:build:customer:release:linux" "${RELEASE_WORKFLOW}" && contains "admin_build_script: tauri:build:admin:release:linux" "${RELEASE_WORKFLOW}"; then
+  pass "Linux release workflow avoids AppImage linuxdeploy through release scripts"
 else
-  fail "Linux release workflow missing explicit non-AppImage bundle targets"
+  fail "Linux release workflow missing non-AppImage release scripts"
 fi
 
 if contains "release-artifact/\\*\\*/\\*" "${RELEASE_WORKFLOW}" && contains "Collect customer bundles" "${RELEASE_WORKFLOW}" && contains "Collect admin bundles" "${RELEASE_WORKFLOW}"; then
@@ -256,19 +256,19 @@ else
   pass "workflow does not pass updater signing password"
 fi
 
-if contains "working-directory: app" "${RELEASE_WORKFLOW}" && contains "tauri:build:customer:release" "${RELEASE_WORKFLOW}" && contains "tauri:build:admin:release" "${RELEASE_WORKFLOW}"; then
+if contains "working-directory: app" "${RELEASE_WORKFLOW}" && contains "matrix\\.platform\\.customer_build_script" "${RELEASE_WORKFLOW}" && contains "matrix\\.platform\\.admin_build_script" "${RELEASE_WORKFLOW}"; then
   pass "workflow invokes Tauri release scripts from app workspace"
 else
   fail "workflow does not invoke Tauri release scripts through app workspace"
 fi
 
-if contains "pnpm run tauri -- build|pnpm --dir app tauri build|pnpm run tauri build" "${RELEASE_WORKFLOW}"; then
+if contains "pnpm run tauri -- build|pnpm --dir app tauri build|pnpm run tauri build|--bundles.*matrix\\.platform" "${RELEASE_WORKFLOW}"; then
   fail "workflow contains a known-bad Tauri CLI invocation"
 else
   pass "workflow avoids known-bad Tauri CLI invocation forms"
 fi
 
-if contains "tauri:build:customer:release" "${APP_PACKAGE_JSON}" && contains "tauri:build:admin:release" "${APP_PACKAGE_JSON}"; then
+if contains "tauri:build:customer:release:linux.*--bundles deb,rpm -- --bin shorts_tauri_app" "${APP_PACKAGE_JSON}" && contains "tauri:build:customer:release:windows.*--bundles nsis,msi -- --bin shorts_tauri_app" "${APP_PACKAGE_JSON}" && contains "tauri:build:customer:release:macos.*--bundles app,dmg -- --bin shorts_tauri_app" "${APP_PACKAGE_JSON}" && contains "tauri:build:admin:release:linux.*--bundles deb,rpm -- --bin admin_desktop" "${APP_PACKAGE_JSON}" && contains "tauri:build:admin:release:windows.*--bundles nsis,msi -- --bin admin_desktop" "${APP_PACKAGE_JSON}" && contains "tauri:build:admin:release:macos.*--bundles app,dmg -- --bin admin_desktop" "${APP_PACKAGE_JSON}"; then
   pass "app package defines release-specific Tauri build scripts"
 else
   fail "app package missing release-specific Tauri build scripts"

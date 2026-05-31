@@ -14,8 +14,12 @@
     "tauri:dev:admin": "tauri dev --config src-tauri/tauri.admin.conf.json -- --bin admin_desktop",
     "tauri:build:customer": "tauri build --config src-tauri/tauri.conf.json -- --bin shorts_tauri_app",
     "tauri:build:admin": "tauri build --config src-tauri/tauri.admin.conf.json -- --bin admin_desktop",
-    "tauri:build:customer:release": "tauri build --config src-tauri/tauri.conf.json",
-    "tauri:build:admin:release": "tauri build --config src-tauri/tauri.admin.conf.json"
+    "tauri:build:customer:release:linux": "tauri build --config src-tauri/tauri.conf.json --bundles deb,rpm -- --bin shorts_tauri_app",
+    "tauri:build:customer:release:windows": "tauri build --config src-tauri/tauri.conf.json --bundles nsis,msi -- --bin shorts_tauri_app",
+    "tauri:build:customer:release:macos": "tauri build --config src-tauri/tauri.conf.json --bundles app,dmg -- --bin shorts_tauri_app",
+    "tauri:build:admin:release:linux": "tauri build --config src-tauri/tauri.admin.conf.json --bundles deb,rpm -- --bin admin_desktop",
+    "tauri:build:admin:release:windows": "tauri build --config src-tauri/tauri.admin.conf.json --bundles nsis,msi -- --bin admin_desktop",
+    "tauri:build:admin:release:macos": "tauri build --config src-tauri/tauri.admin.conf.json --bundles app,dmg -- --bin admin_desktop"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^3.1.2",
