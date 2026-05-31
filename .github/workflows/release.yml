@@ -96,9 +96,10 @@ jobs:
         run: test -n "$TAURI_SIGNING_PRIVATE_KEY"
 
       - name: Build customer Tauri bundles
+        working-directory: app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: pnpm --dir app tauri build --config src-tauri/tauri.conf.json --bundles "${{ matrix.platform.bundle_targets }}" -- --bin shorts_tauri_app
+        run: pnpm run tauri -- build --config src-tauri/tauri.conf.json --bundles "${{ matrix.platform.bundle_targets }}" -- --bin shorts_tauri_app
 
       - name: Collect customer bundles
         shell: bash
@@ -194,9 +195,10 @@ jobs:
           bash .scripts/scan-bundled-runtime.sh
 
       - name: Build admin Tauri bundles
+        working-directory: app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: pnpm --dir app tauri build --config src-tauri/tauri.admin.conf.json --bundles "${{ matrix.platform.bundle_targets }}" -- --bin admin_desktop
+        run: pnpm run tauri -- build --config src-tauri/tauri.admin.conf.json --bundles "${{ matrix.platform.bundle_targets }}" -- --bin admin_desktop
 
       - name: Collect admin bundles
         shell: bash
