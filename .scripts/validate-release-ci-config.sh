@@ -96,6 +96,12 @@ else
   fail "release workflow missing workflow_dispatch"
 fi
 
+if contains "cache: pnpm" "${RELEASE_WORKFLOW}"; then
+  fail "release workflow uses setup-node pnpm cache before corepack activation"
+else
+  pass "release workflow avoids setup-node pnpm cache bootstrap failure"
+fi
+
 if contains "bundle:customer" "${ROOT_PACKAGE_JSON}"; then
   pass "bundle:customer script exists"
 else
