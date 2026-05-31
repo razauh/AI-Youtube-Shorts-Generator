@@ -61,6 +61,7 @@ pnpm-debug.log*
 
 # Local tooling artifacts
 .codex/
+.tauri/
 graphify-out/
 worker/.wrangler/
 *repomix*.xml
