@@ -36,6 +36,7 @@ UNIX_RUNTIME_BUILDER="${ROOT_DIR}/scripts/build-bundled-runtime-unix.sh"
 WINDOWS_RUNTIME_BUILDER="${ROOT_DIR}/scripts/build-bundled-runtime-windows.ps1"
 RUNTIME_PREPARE_SCRIPT="${ROOT_DIR}/scripts/prepare-bundled-runtime.sh"
 RUNTIME_SCAN_SCRIPT="${ROOT_DIR}/.scripts/scan-bundled-runtime.sh"
+ICON_DIR="${ROOT_DIR}/app/src-tauri/icons"
 
 [ -f "${RELEASE_WORKFLOW}" ] || fail "missing .github/workflows/release.yml"
 pass "release workflow exists"
@@ -72,6 +73,12 @@ pass "bundled runtime prepare script exists"
 
 [ -f "${RUNTIME_SCAN_SCRIPT}" ] || fail "missing .scripts/scan-bundled-runtime.sh"
 pass "bundled runtime release scan exists"
+
+for icon in 32x32.png 128x128.png 128x128@2x.png icon.png icon.ico icon.icns; do
+  icon_path="${ICON_DIR}/${icon}"
+  [ -s "${icon_path}" ] || fail "missing or empty Tauri icon: app/src-tauri/icons/${icon}"
+done
+pass "Tauri release icons are present and non-empty"
 
 if [ -f "${ROOT_DIR}/package-lock.json" ] || [ -f "${ROOT_DIR}/npm-shrinkwrap.json" ]; then
   fail "npm lockfiles must not be tracked in the pnpm workspace"
@@ -198,6 +205,17 @@ if contains "TAURI_SIGNING_PRIVATE_KEY" "${RELEASE_WORKFLOW}"; then
   pass "workflow passes Tauri updater signing key to customer build"
 else
   fail "workflow missing TAURI_SIGNING_PRIVATE_KEY"
+fi
+
+if awk '
+  /Build admin Tauri bundles/ { in_step = 1 }
+  in_step && /TAURI_SIGNING_PRIVATE_KEY/ { found = 1 }
+  in_step && /run: pnpm run bundle:admin/ { exit found ? 0 : 1 }
+  END { if (!found) exit 1 }
+' "${RELEASE_WORKFLOW}"; then
+  pass "workflow passes Tauri signing key to admin build"
+else
+  fail "workflow missing TAURI_SIGNING_PRIVATE_KEY for admin build"
 fi
 
 if contains "generate-customer-updater-manifest\.mjs" "${RELEASE_WORKFLOW}"; then
