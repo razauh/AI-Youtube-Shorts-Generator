@@ -99,7 +99,7 @@ jobs:
         working-directory: app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: pnpm run tauri build --config src-tauri/tauri.conf.json --bundles "${{ matrix.platform.bundle_targets }}" -- --bin shorts_tauri_app
+        run: pnpm run tauri:build:customer:release -- --bundles "${{ matrix.platform.bundle_targets }}"
 
       - name: Collect customer bundles
         shell: bash
@@ -207,7 +207,7 @@ jobs:
         working-directory: app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: pnpm run tauri build --config src-tauri/tauri.admin.conf.json --bundles "${{ matrix.platform.bundle_targets }}" -- --bin admin_desktop
+        run: pnpm run tauri:build:admin:release -- --bundles "${{ matrix.platform.bundle_targets }}"
 
       - name: Collect admin bundles
         shell: bash

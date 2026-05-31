@@ -189,7 +189,7 @@ else
   fail "runtime builders do not use GitHub token for release API lookup"
 fi
 
-if contains "bundle_targets: deb,rpm" "${RELEASE_WORKFLOW}" && contains "--bundles.*matrix\\.platform\\.bundle_targets" "${RELEASE_WORKFLOW}"; then
+if contains "bundle_targets: deb,rpm" "${RELEASE_WORKFLOW}" && contains "tauri:build:customer:release.*--bundles.*matrix\\.platform\\.bundle_targets" "${RELEASE_WORKFLOW}" && contains "tauri:build:admin:release.*--bundles.*matrix\\.platform\\.bundle_targets" "${RELEASE_WORKFLOW}"; then
   pass "Linux release workflow avoids AppImage linuxdeploy by using explicit bundle targets"
 else
   fail "Linux release workflow missing explicit non-AppImage bundle targets"
@@ -199,6 +199,20 @@ if contains "release-artifact/\\*\\*/\\*" "${RELEASE_WORKFLOW}" && contains "Col
   pass "workflow collects Tauri bundles from discovered target directories"
 else
   fail "workflow missing target-directory bundle collection"
+fi
+
+for installer_suffix in "\\*.AppImage" "\\*.app.tar.gz" "\\*.deb" "\\*.dmg" "\\*.exe" "\\*.msi" "\\*.rpm" "\\*.sig"; do
+  if contains "${installer_suffix}" "${RELEASE_WORKFLOW}"; then
+    pass "workflow collects installer suffix ${installer_suffix}"
+  else
+    fail "workflow missing installer collection suffix ${installer_suffix}"
+  fi
+done
+
+if contains "path '\\*/release/bundle/\\*'" "${RELEASE_WORKFLOW}"; then
+  fail "workflow must not upload every file inside macOS .app bundles"
+else
+  pass "workflow avoids uploading raw macOS .app directory contents"
 fi
 
 if contains "prepare-bundled-runtime\.sh" "${RELEASE_WORKFLOW}" && contains "scan-bundled-runtime\.sh" "${RELEASE_WORKFLOW}"; then
@@ -228,12 +242,36 @@ fi
 if awk '
   /Build admin Tauri bundles/ { in_step = 1 }
   in_step && /TAURI_SIGNING_PRIVATE_KEY/ { found = 1 }
-  in_step && /run: pnpm run bundle:admin/ { exit found ? 0 : 1 }
+  in_step && /run: / { exit found ? 0 : 1 }
   END { if (!found) exit 1 }
 ' "${RELEASE_WORKFLOW}"; then
   pass "workflow passes Tauri signing key to admin build"
 else
   fail "workflow missing TAURI_SIGNING_PRIVATE_KEY for admin build"
+fi
+
+if contains "TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "${RELEASE_WORKFLOW}"; then
+  fail "workflow must not pass TAURI_SIGNING_PRIVATE_KEY_PASSWORD for the configured unencrypted key"
+else
+  pass "workflow does not pass updater signing password"
+fi
+
+if contains "working-directory: app" "${RELEASE_WORKFLOW}" && contains "tauri:build:customer:release" "${RELEASE_WORKFLOW}" && contains "tauri:build:admin:release" "${RELEASE_WORKFLOW}"; then
+  pass "workflow invokes Tauri release scripts from app workspace"
+else
+  fail "workflow does not invoke Tauri release scripts through app workspace"
+fi
+
+if contains "pnpm run tauri -- build|pnpm --dir app tauri build|pnpm run tauri build" "${RELEASE_WORKFLOW}"; then
+  fail "workflow contains a known-bad Tauri CLI invocation"
+else
+  pass "workflow avoids known-bad Tauri CLI invocation forms"
+fi
+
+if contains "tauri:build:customer:release" "${APP_PACKAGE_JSON}" && contains "tauri:build:admin:release" "${APP_PACKAGE_JSON}"; then
+  pass "app package defines release-specific Tauri build scripts"
+else
+  fail "app package missing release-specific Tauri build scripts"
 fi
 
 if contains "generate-customer-updater-manifest\.mjs" "${RELEASE_WORKFLOW}"; then
