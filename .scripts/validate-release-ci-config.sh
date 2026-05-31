@@ -242,6 +242,18 @@ else
   pass "customer updater config has production endpoint and public key"
 fi
 
+if contains "\"icon\"" "${CUSTOMER_TAURI_CONFIG}" && contains "icons/icon\.ico" "${CUSTOMER_TAURI_CONFIG}" && contains "icons/32x32\.png" "${CUSTOMER_TAURI_CONFIG}"; then
+  pass "customer Tauri config explicitly declares release icons"
+else
+  fail "customer Tauri config missing explicit release icons"
+fi
+
+if contains "\"icon\"" "${ROOT_DIR}/app/src-tauri/tauri.admin.conf.json" && contains "icons/icon\.ico" "${ROOT_DIR}/app/src-tauri/tauri.admin.conf.json" && contains "icons/32x32\.png" "${ROOT_DIR}/app/src-tauri/tauri.admin.conf.json"; then
+  pass "admin Tauri config explicitly declares release icons"
+else
+  fail "admin Tauri config missing explicit release icons"
+fi
+
 if contains "http://127\.0\.0\.1:8787|localhost:8787" "${RUST_CONFIG}"; then
   fail "Rust license worker default still points at a development endpoint"
 else
