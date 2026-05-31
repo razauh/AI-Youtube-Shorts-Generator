@@ -126,7 +126,6 @@ function nonEmpty(value) {
   return typeof value === "string" ? value.trim().length > 0 : Boolean(value);
 }
 
-async function handleReadyz(env) {
 async function handleReadyz(request, env) {
   const url = new URL(request.url);
   const deep = url.searchParams.get("deep") === "1";

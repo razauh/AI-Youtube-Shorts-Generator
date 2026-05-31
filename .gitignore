@@ -88,6 +88,7 @@ scripts/graphify_split_merge.py
 !/.scripts/run-user-data-deletion-validation.sh
 !/.scripts/scan-bundled-runtime.sh
 !/.scripts/run-availability-validation.sh
+!/.scripts/check-updater-manifest-url.sh
 app/.scripts/
 .opencode/
 app/.opencode/
