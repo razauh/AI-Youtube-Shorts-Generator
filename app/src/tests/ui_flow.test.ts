@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, screen, cleanup } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { createRunState } from '../lib/stores/runState';
-import { POLICY_SECTIONS } from '../lib/legal/policiesContent';
+import { POLICY_LAST_UPDATED_LABEL, POLICY_SECTIONS, type PolicyTab } from '../lib/legal/policiesContent';
 
 const runGenerateAndStream = vi.fn();
 const pickLocalVideoFile = vi.fn();
@@ -385,9 +385,53 @@ describe('test_ui flow parity', () => {
   it('test_policy_content_has_no_release_placeholders_or_stale_product_names', () => {
     const encoded = JSON.stringify(POLICY_SECTIONS);
     expect(encoded).toContain('AI YouTube Shorts Generator');
-    expect(encoded).not.toMatch(/VERIFY|\[(APP NAME|DEVELOPER NAME|LEGAL COMPANY|CONTACT EMAIL|SUPPORT EMAIL|PRIVACY EMAIL|JURISDICTION|RETENTION PERIOD)\]/);
+    expect(Object.keys(POLICY_SECTIONS).sort()).toEqual(['compliance', 'notices', 'privacy', 'refund', 'terms']);
+    for (const tab of Object.keys(POLICY_SECTIONS) as PolicyTab[]) {
+      expect(POLICY_SECTIONS[tab].length).toBeGreaterThan(0);
+      for (const section of POLICY_SECTIONS[tab]) {
+        expect(section.heading.trim()).not.toBe('');
+        expect(section.paragraphs.length).toBeGreaterThan(0);
+      }
+    }
+    expect(encoded).not.toMatch(/\bVERIFY\b/);
+    expect(encoded).not.toMatch(/Fill in|Final legal entity|May 23, 2026|repomix/i);
+    expect(encoded).not.toMatch(/\[(APP NAME|DEVELOPER NAME|LEGAL COMPANY|COMPANY ADDRESS|CONTACT EMAIL|SUPPORT EMAIL|PRIVACY EMAIL|WEBSITE OR SUPPORT URL|JURISDICTION|EFFECTIVE DATE|RETENTION PERIOD|TO BE COMPLETED)\]/);
     expect(encoded).not.toContain('Signal Forge');
     expect(encoded).not.toContain('AI Shorts App');
+  });
+
+  it('test_policy_content_dates_refunds_services_and_telemetry_are_consistent', () => {
+    const encoded = JSON.stringify(POLICY_SECTIONS);
+    expect(POLICY_LAST_UPDATED_LABEL).toBe('May 30, 2026');
+    expect(encoded.match(/Last updated: May 30, 2026/g)?.length).toBeGreaterThanOrEqual(5);
+    expect(encoded).not.toMatch(/Last updated: (?!May 30, 2026)/);
+
+    expect(encoded).toMatch(/Refunded, charged-back, revoked, disabled, or disputed purchases may lose access/);
+    for (const expected of [
+      'MuAPI',
+      'OpenAI',
+      'Gumroad',
+      'Cloudflare Workers and D1',
+      'YouTube',
+      'Google',
+      'source platforms',
+      'update hosts',
+      'runtime-pack hosts',
+      'model hosts',
+      'FFmpeg',
+      'yt-dlp',
+      'Python runtime',
+      'Tauri/Rust desktop app with Svelte UI',
+      'Vite',
+      'Rust, Tauri, and Native Dependencies',
+      'license-control-suite'
+    ]) {
+      expect(encoded).toContain(expected);
+    }
+
+    expect(encoded).toContain('No general telemetry or analytics SDK was identified during repository inspection.');
+    expect(encoded).toContain('Crash reports are submitted only when an endpoint is configured and the user submits a draft.');
+    expect(encoded).not.toMatch(/automatic telemetry|automatic analytics|automatically uploads crash/i);
   });
 
   it('test_global_theme_switch_toggles_checked_state', async () => {
@@ -800,13 +844,15 @@ describe('test_ui flow parity', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Third-Party Notices' }));
     expect(screen.getAllByText('Third-Party Notices').length).toBeGreaterThan(0);
     expect(screen.getByText('6. Media Tools')).toBeTruthy();
-    expect(screen.getByText(/License metadata for Python packages and transitive dependencies/)).toBeTruthy();
+    expect(screen.getByText(/Exact license metadata for Python packages and transitive dependencies is not shown in this in-app screen/)).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Refund Policy' }));
 
     expect(screen.getAllByText('Refund Policy').length).toBeGreaterThan(0);
     expect(screen.getByText(/within 7 days from purchase/)).toBeTruthy();
     expect(screen.getByText('No automated refund engine is built into this app.')).toBeTruthy();
+    expect(screen.getAllByText(`Last updated: ${POLICY_LAST_UPDATED_LABEL}`).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Refunded, charged-back, revoked, disabled, or disputed purchases may lose access/)).toBeTruthy();
   });
 
   it('test_render short entries and failures', async () => {

@@ -47,7 +47,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       "heading": "4. Third-Party APIs and Services",
       "paragraphs": [
-        "The application may use or connect to third-party APIs and services, including MuAPI, OpenAI, Gumroad, Cloudflare Worker services, update services, crash-report endpoints if configured, and any other provider you connect to the application.",
+        "The application may use or connect to third-party APIs and services, including MuAPI-hosted AI and media-processing endpoints, OpenAI in local mode, Gumroad, Cloudflare Worker/D1 services, YouTube/Google or other source platforms, update hosts, runtime-pack hosts, model hosts, and crash-report endpoints if configured.",
         "Third-party APIs and services are controlled by their respective providers. We do not control their availability, pricing, rate limits, account policies, content policies, output quality, security practices, privacy practices, or terms.",
         "We are not responsible for:",
         "- API downtime, interruptions, latency, or outages.",
@@ -71,7 +71,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       "heading": "6. OpenAI and AI Processing",
       "paragraphs": [
-        "The application may use OpenAI or other AI services for highlight ranking, text generation, title generation, hook generation, scoring, classification, or similar tasks. In the inspected implementation, local mode still may use OpenAI for the LLM highlight-ranking step.",
+        "The application may use MuAPI-hosted AI endpoints in API mode and OpenAI in local mode for highlight ranking, text generation, title generation, hook generation, scoring, classification, or similar tasks. In the inspected implementation, local mode may use OpenAI for the LLM highlight-ranking step.",
         "Information sent to AI providers may include transcript text, prompt text, source-related metadata, highlight-selection instructions, and other processing context.",
         "AI-generated outputs may be inaccurate, incomplete, biased, offensive, misleading, unexpected, duplicative, low quality, legally risky, or unsuitable for your intended use.",
         "You must verify all AI-generated outputs before relying on them or publishing them. We are not responsible for decisions, publications, losses, claims, takedowns, account penalties, monetization loss, or other consequences caused by AI-generated outputs."
@@ -141,13 +141,15 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
         "Based on inspected repository behavior, the application supports both local processing and API-based processing. Local files and generated outputs may remain on your device unless you select a workflow that uses external APIs, license services, update services, or configured crash-report submission.",
         "External transmission may occur when:",
         "- You use MuAPI/API mode.",
-        "- Local mode sends transcript or prompt context to OpenAI or another configured AI provider.",
+        "- Local mode sends transcript or prompt context to OpenAI.",
+        "- URL-based local mode makes source-platform requests through yt-dlp.",
+        "- Runtime packs, local models, or updates are downloaded or checked.",
         "- You activate, validate, or reset a license.",
         "- The licensing worker verifies a Gumroad purchase.",
         "- You check for or install updates.",
         "- You submit a crash report and a crash-report endpoint is configured.",
         "The application may store local project history, output metadata, settings, local model profile metadata, API key profile metadata, crash drafts, reset status, generated outputs, logs, configuration files, model caches, and license/session/device-related information.",
-        "API key values are intended to be stored using operating-system credential storage when available, with a local fallback if credential storage fails.",
+        "API key values, license/session tokens, admin tokens where configured, and device key material are intended to be stored using operating-system credential storage when available. If credential storage is unavailable or fails, local fallback files in app data may store those secrets or key materials, and those fallback files should be treated as sensitive.",
         "No general telemetry or analytics SDK was identified during repository inspection.",
         "You are responsible for deleting local outputs, downloaded media, generated clips, exported JSON, logs, caches, model files, and project history where the application or operating system allows deletion."
       ]
@@ -271,7 +273,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       "heading": "3. Local Storage",
       "paragraphs": [
         "The application may store data locally on your device, including project history, generated output metadata, settings, API key profile metadata, local model profile metadata, model caches, logs, crash drafts, reset status, configuration files, generated media files, exported JSON, and license/session/device-related information.",
-        "API key values are intended to be stored using operating-system credential storage when available, with a local fallback if credential storage fails.",
+        "API key values, license/session tokens, admin tokens where configured, and device key material are intended to be stored using operating-system credential storage when available. If credential storage is unavailable or fails, local fallback files in app data may store those secrets or key materials, and those fallback files should be treated as sensitive.",
         "You are responsible for managing and deleting local files, generated outputs, downloaded media, exported JSON, logs, caches, model files, and project history where the application or operating system allows deletion."
       ]
     },
@@ -280,10 +282,11 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       "paragraphs": [
         "The application may send data to third parties when you choose or configure features that require them.",
         "MuAPI/API mode may receive source URLs, media references, transcript-related data, prompt-like processing data, highlight data, timing data, aspect-ratio settings, and other processing information needed to generate clips.",
-        "OpenAI or another configured AI provider may receive transcript text, prompt text, highlight-selection instructions, generated context, and related metadata for AI processing.",
+        "MuAPI-hosted AI endpoints or OpenAI in local mode may receive transcript text, prompt text, highlight-selection instructions, generated context, and related metadata for AI processing.",
         "License services may receive license activation, validation, reset, device binding, and session information. The licensing backend may store hashed license keys, purchaser email, provider sale identifiers, device binding information, reset request information, audit events, and related metadata.",
         "Gumroad-related verification may be used by the licensing backend to confirm purchase records.",
-        "Updater services may receive information needed to check for and install application updates.",
+        "Source platforms may receive URL download requests and normal network metadata when yt-dlp or hosted download workflows access source media.",
+        "Updater services, runtime-pack hosts, and model hosts may receive request metadata needed to check for updates, install updates, download runtime archives, repair local runtimes, or download local model files.",
         "Crash-report services may receive crash drafts or diagnostic information only if a crash-report endpoint is configured and the user submits a report."
       ]
     },
@@ -328,9 +331,9 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       "heading": "10. Data Retention and Deletion",
       "paragraphs": [
         "Local data may remain on your device until you delete it, the application deletes it, or your operating system removes it.",
-        "User data deletion removes or anonymizes application-controlled licensing records. Historical idempotency records may not always be linkable to a deletion subject and are handled on a best-effort basis.",
-        "Cloudflare platform logs and provider-level infrastructure logs are governed by the relevant provider or account retention policy and are not directly deleted by the application.",
-        "Server-side license, purchase, device binding, reset, audit, support, update, or crash-report data may be retained according to the relevant backend or provider configuration.",
+        "Backend deletion requests are admin-reviewed and apply to application-controlled licensing records where the operator can identify the subject. Approved deletion deletes device bindings and anonymizes or disables reset and license records where practical.",
+        "Historical audit events, idempotency records, payment/provider records, Cloudflare platform logs, and provider-level infrastructure logs may remain where they are required or reasonably retained for legal, accounting, security, fraud-prevention, dispute, or operational purposes.",
+        "Server-side license, purchase, reset, audit, support, update, or crash-report data may be retained according to the relevant backend or provider configuration.",
         "Records are retained only as reasonably necessary for support, security, legal, fraud-prevention, payment, and licensing purposes unless a longer period is required by law."
       ]
     },
@@ -623,7 +626,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       "heading": "23. Security Measures",
       "paragraphs": [
-        "Security controls identified or expected include license-gated UI for generation features, device binding and signed access tokens, server-side hashed license keys with hash pepper, admin bearer-token authentication, masked emails/license keys in several UI/API responses, local secure-store use where available, crash-draft redaction for selected secret/license patterns, runtime-pack checksum validation, structured error mapping to avoid exposing raw auth failures, and avoidance of automatic telemetry/analytics in inspected code.",
+        "Security controls identified or expected include license-gated UI for generation features, device binding and signed access tokens, server-side hashed license keys with hash pepper, admin bearer-token authentication, masked emails/license keys in several UI/API responses, local secure-store use where available, crash-draft redaction for selected secret/license patterns, runtime-pack checksum validation, structured error mapping to avoid exposing raw auth failures, and no general telemetry/analytics SDK identified in inspected code.",
         "Additional release controls recommended: enforce HTTPS for hosted Worker/update/runtime endpoints, set and rotate strong Worker secrets, add rate limiting and abuse controls to public Worker routes, implement admin token rotation and least privilege, review Tauri Content Security Policy and updater signing before production, encrypt or eliminate plaintext local fallback secrets where feasible, add server-side retention/deletion tooling, and run dependency/license/security audits before each release."
       ]
     },
@@ -679,12 +682,12 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       "heading": "30. Compliance Checklist Before Release",
       "paragraphs": [
-        "Complete these items before commercial release:",
-        "- Fill in company name, address, privacy email, support email, website, governing law, and effective dates.",
+        "Operator release review should confirm these items before commercial release:",
+        "- Confirm operator name, business address, privacy channel, support channel, website, governing law, and effective dates in all release materials.",
         "- Have qualified counsel review Terms, Privacy Policy, Third-Party Notices, Data Compliance, refund policy, consumer terms, and regional notices.",
         "- Sync in-app policy content with the final markdown policy documents if the app displays policy text internally.",
         "- Verify final production product name across UI, bundle metadata, policies, purchase pages, and support materials.",
-        "- Generate npm, Cargo, and Python dependency license reports.",
+        "- Generate frontend, Cargo, and Python dependency license reports from committed manifests and lockfiles.",
         "- Verify FFmpeg, yt-dlp, Python runtime, runtime-pack, and model redistribution obligations.",
         "- Verify model licenses for all selectable faster-whisper/Whisper models.",
         "- Confirm MuAPI, OpenAI, Gumroad, Cloudflare, update host, runtime-pack host, model host, and crash-report provider terms and DPAs.",
@@ -702,10 +705,10 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       "heading": "31. Open Legal and Compliance Items",
       "paragraphs": [
-        "The following items require legal or operator decisions:",
-        "- Final legal entity and contact information.",
-        "- Final governing law, venue, arbitration, class-action waiver, and consumer-law carveouts.",
-        "- Final refund policy and regional consumer cancellation rights.",
+        "The following items remain operator-controlled release decisions:",
+        "- Operator legal entity and contact information.",
+        "- Governing law, venue, arbitration, class-action waiver, and consumer-law carveouts.",
+        "- Refund policy and regional consumer cancellation rights.",
         "- Data Processing Agreements and subprocessor disclosures.",
         "- Retention periods for all backend and support records.",
         "- Whether the operator is subject to GDPR, UK GDPR, CCPA/CPRA, other US state privacy laws, or other regional laws.",
@@ -767,7 +770,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
         "- jsdom",
         "- @testing-library/svelte",
         "- @testing-library/jest-dom",
-        "License metadata for these packages was not included in the inspected repomix file. Generate and review a final pnpm license report before release, including transitive dependencies from pnpm-lock.yaml if present in the release repository."
+        "Exact license metadata for these packages is not shown in this in-app screen. Generate and review a final frontend license report from committed manifests and lockfiles before release, including transitive dependencies from pnpm-lock.yaml if present in the release repository."
       ]
     },
     {
@@ -785,7 +788,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
         "- sha2",
         "- async-trait",
         "- license-control-suite as a local path dependency under vendor/license-control-suite",
-        "License metadata and transitive crate license data were not included in the inspected repomix file. Generate and review a final Cargo license report before release, including the local license-control-suite path dependency and any bundled license notices required by Tauri, Rust crates, and updater artifacts."
+        "Exact license metadata and transitive crate license data are not shown in this in-app screen. Generate and review a final Cargo license report from committed manifests and lockfiles before release, including the local license-control-suite path dependency and any bundled license notices required by Tauri, Rust crates, and updater artifacts."
       ]
     },
     {
@@ -805,7 +808,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
         "- tokenizers",
         "- av",
         "- numpy",
-        "License metadata for Python packages and transitive dependencies was not included in the inspected repomix file. Generate and review a final Python license report for both normal and optional local-mode dependencies before release."
+        "Exact license metadata for Python packages and transitive dependencies is not shown in this in-app screen. Generate and review a final Python license report from committed requirement files and runtime manifests for both normal and optional local-mode dependencies before release."
       ]
     },
     {
@@ -849,11 +852,11 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       ]
     },
     {
-      "heading": "11. License Metadata Not Fully Discoverable From Repomix",
+      "heading": "11. License Metadata Not Shown In App",
       "paragraphs": [
-        "The inspected repomix file did not include complete lockfiles, transitive dependency inventories, full third-party license texts, FFmpeg build metadata, model cards, runtime-pack manifests, or final production service contracts.",
+        "Exact license metadata is not shown in this in-app screen. The operator must generate release notices from committed manifests, lockfiles, transitive dependency inventories, full third-party license texts, FFmpeg build metadata, model cards, runtime-pack manifests, and final production service contracts.",
         "Before release, complete all of the following:",
-        "- Generate an npm license report for frontend dependencies and transitive packages.",
+        "- Generate a frontend package license report from committed manifests and lockfiles.",
         "- Generate a Cargo license report for Rust crates and the local path dependency.",
         "- Generate a Python license report for base and local-mode dependencies.",
         "- Verify FFmpeg, yt-dlp, Python runtime, and runtime-pack redistribution obligations.",
@@ -875,6 +878,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       "heading": "Refund Policy",
       "paragraphs": [
+        "Last updated: May 30, 2026",
         "Refund requests are handled manually within 7 days from purchase, subject to purchase records and platform dispute rules.",
         "No automated refund engine is built into this app.",
         "Refund eligibility may depend on the payment platform, purchase record, licensing status, dispute status, abuse prevention, and applicable law."
@@ -885,7 +889,8 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       "paragraphs": [
         "The app may require license activation, validation, device binding, session validation, and reset requests before protected features are available.",
         "A license may not work if it is invalid, revoked, expired, already bound to another device, blocked, reset-pending, affected by payment issues, or rejected by the licensing backend.",
-        "The developers are not responsible for access interruptions caused by invalid purchases, chargebacks, Gumroad issues, license server downtime, network failures, device reset delays, device changes, local storage corruption, or unsupported environments."
+        "Refunded, charged-back, revoked, disabled, or disputed purchases may lose access, and protected features may stop working after the licensing backend updates entitlement or validation state.",
+        "The operator is not responsible for access interruptions caused by invalid purchases, chargebacks, Gumroad issues, license server downtime, network failures, device reset delays, device changes, local storage corruption, or unsupported environments."
       ]
     }
   ]
@@ -893,4 +898,4 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
 
 export const POLICY_COMMON_SECTIONS: PolicySection[] = [];
 
-export const POLICY_LAST_UPDATED_LABEL = 'May 23, 2026';
+export const POLICY_LAST_UPDATED_LABEL = 'May 30, 2026';
