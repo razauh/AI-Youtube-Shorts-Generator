@@ -59,18 +59,24 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            desktop-file-utils
+          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
 
       - name: Install desktop app dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build bundled runtime input
         if: runner.os != 'Windows'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/build-bundled-runtime-unix.sh "${{ matrix.platform.runtime_target }}"
 
       - name: Build bundled runtime input
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: .\scripts\build-bundled-runtime-windows.ps1 -Target "${{ matrix.platform.runtime_target }}"
 
       - name: Stage bundled runtime
@@ -88,7 +94,6 @@ jobs:
       - name: Build customer Tauri bundles
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm run bundle:customer
 
       - name: Upload customer bundles
@@ -140,18 +145,24 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            desktop-file-utils
+          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
 
       - name: Install desktop app dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build bundled runtime input
         if: runner.os != 'Windows'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/build-bundled-runtime-unix.sh "${{ matrix.platform.runtime_target }}"
 
       - name: Build bundled runtime input
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: .\scripts\build-bundled-runtime-windows.ps1 -Target "${{ matrix.platform.runtime_target }}"
 
       - name: Stage bundled runtime
@@ -163,7 +174,6 @@ jobs:
       - name: Build admin Tauri bundles
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm run bundle:admin
 
       - name: Upload admin bundles

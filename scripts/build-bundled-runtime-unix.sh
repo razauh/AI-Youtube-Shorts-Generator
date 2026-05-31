@@ -40,8 +40,12 @@ mkdir -p "${INPUT_DIR}" "${WORK_DIR}"
 PBS_URL="$(
   PBS_PATTERN="${PBS_PATTERN}" node --input-type=module <<'NODE'
 const pattern = new RegExp(process.env.PBS_PATTERN);
+const headers = { 'user-agent': 'ai-youtube-shorts-generator-runtime-builder' };
+if (process.env.GITHUB_TOKEN) {
+  headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+}
 const res = await fetch('https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest', {
-  headers: { 'user-agent': 'ai-youtube-shorts-generator-runtime-builder' },
+  headers,
 });
 if (!res.ok) throw new Error(`python-build-standalone release lookup failed: ${res.status}`);
 const release = await res.json();

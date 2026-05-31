@@ -34,6 +34,10 @@ $ApiHeaders = @{
   "User-Agent" = "ai-youtube-shorts-generator-runtime-builder"
 }
 
+if ($env:GITHUB_TOKEN) {
+  $ApiHeaders["Authorization"] = "Bearer $env:GITHUB_TOKEN"
+}
+
 $Release = Invoke-RestMethod `
   -Uri "https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest" `
   -Headers $ApiHeaders

@@ -183,6 +183,18 @@ else
   fail "workflow missing bundled runtime input build steps"
 fi
 
+if contains "GITHUB_TOKEN: \\\$\\{\\{ github\\.token \\}\\}" "${RELEASE_WORKFLOW}" && contains "headers\\.authorization" "${UNIX_RUNTIME_BUILDER}" && contains "Authorization" "${WINDOWS_RUNTIME_BUILDER}"; then
+  pass "runtime builders use GitHub token for release API lookup"
+else
+  fail "runtime builders do not use GitHub token for release API lookup"
+fi
+
+if contains "libfuse2t64|libfuse2" "${RELEASE_WORKFLOW}" && contains "desktop-file-utils" "${RELEASE_WORKFLOW}"; then
+  pass "Linux release workflow installs AppImage support packages"
+else
+  fail "Linux release workflow missing AppImage support packages"
+fi
+
 if contains "prepare-bundled-runtime\.sh" "${RELEASE_WORKFLOW}" && contains "scan-bundled-runtime\.sh" "${RELEASE_WORKFLOW}"; then
   pass "workflow stages and scans bundled runtime before packaging"
 else
