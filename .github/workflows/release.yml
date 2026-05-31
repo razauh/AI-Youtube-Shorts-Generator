@@ -99,7 +99,7 @@ jobs:
         working-directory: app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: pnpm run tauri -- build --config src-tauri/tauri.conf.json --bundles "${{ matrix.platform.bundle_targets }}" -- --bin shorts_tauri_app
+        run: pnpm run tauri build --config src-tauri/tauri.conf.json --bundles "${{ matrix.platform.bundle_targets }}" -- --bin shorts_tauri_app
 
       - name: Collect customer bundles
         shell: bash
@@ -108,7 +108,16 @@ jobs:
           mkdir -p release-artifact
           for dir in target app/src-tauri/target; do
             [ -d "$dir" ] || continue
-            find "$dir" -type f \( -path '*/release/bundle/*' -o -path '*/release/*.sig' \)
+            find "$dir" -type f \( \
+              -name '*.AppImage' -o \
+              -name '*.app.tar.gz' -o \
+              -name '*.deb' -o \
+              -name '*.dmg' -o \
+              -name '*.exe' -o \
+              -name '*.msi' -o \
+              -name '*.rpm' -o \
+              -name '*.sig' \
+            \)
           done | while IFS= read -r file; do
             dest="release-artifact/${file#./}"
             mkdir -p "$(dirname "$dest")"
@@ -198,7 +207,7 @@ jobs:
         working-directory: app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: pnpm run tauri -- build --config src-tauri/tauri.admin.conf.json --bundles "${{ matrix.platform.bundle_targets }}" -- --bin admin_desktop
+        run: pnpm run tauri build --config src-tauri/tauri.admin.conf.json --bundles "${{ matrix.platform.bundle_targets }}" -- --bin admin_desktop
 
       - name: Collect admin bundles
         shell: bash
@@ -207,7 +216,16 @@ jobs:
           mkdir -p release-artifact
           for dir in target app/src-tauri/target; do
             [ -d "$dir" ] || continue
-            find "$dir" -type f \( -path '*/release/bundle/*' -o -path '*/release/*.sig' \)
+            find "$dir" -type f \( \
+              -name '*.AppImage' -o \
+              -name '*.app.tar.gz' -o \
+              -name '*.deb' -o \
+              -name '*.dmg' -o \
+              -name '*.exe' -o \
+              -name '*.msi' -o \
+              -name '*.rpm' -o \
+              -name '*.sig' \
+            \)
           done | while IFS= read -r file; do
             dest="release-artifact/${file#./}"
             mkdir -p "$(dirname "$dest")"
