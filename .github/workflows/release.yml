@@ -36,11 +36,6 @@ jobs:
             runtime_target: windows-x86_64
             customer_build_script: tauri:build:customer:release:windows
             admin_build_script: tauri:build:admin:release:windows
-          - os_name: macos-x64
-            runner: macos-13
-            runtime_target: macos-x86_64
-            customer_build_script: tauri:build:customer:release:macos
-            admin_build_script: tauri:build:admin:release:macos
           - os_name: macos-aarch64
             runner: macos-14
             runtime_target: macos-aarch64
@@ -154,11 +149,6 @@ jobs:
             runtime_target: windows-x86_64
             customer_build_script: tauri:build:customer:release:windows
             admin_build_script: tauri:build:admin:release:windows
-          - os_name: macos-x64
-            runner: macos-13
-            runtime_target: macos-x86_64
-            customer_build_script: tauri:build:customer:release:macos
-            admin_build_script: tauri:build:admin:release:macos
           - os_name: macos-aarch64
             runner: macos-14
             runtime_target: macos-aarch64
@@ -321,10 +311,8 @@ jobs:
             release-upload/**
             release-assets/customer-linux-x64/**
             release-assets/customer-windows-x64/**
-            release-assets/customer-macos-x64/**
             release-assets/customer-macos-aarch64/**
             release-assets/admin-linux-x64/**
             release-assets/admin-windows-x64/**
-            release-assets/admin-macos-x64/**
             release-assets/admin-macos-aarch64/**
             release-assets/source-archive/**

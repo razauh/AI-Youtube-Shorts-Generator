@@ -109,6 +109,12 @@ else
   pass "release workflow avoids setup-node pnpm cache bootstrap failure"
 fi
 
+if contains "macos-13|customer-macos-x64|admin-macos-x64" "${RELEASE_WORKFLOW}"; then
+  fail "release workflow must not include temporarily disabled Intel macOS jobs"
+else
+  pass "release workflow excludes temporarily disabled Intel macOS jobs"
+fi
+
 if contains "bundle:customer" "${ROOT_PACKAGE_JSON}"; then
   pass "bundle:customer script exists"
 else
@@ -151,19 +157,23 @@ else
   fail "workflow missing admin build command reference"
 fi
 
-if contains "customer-linux-x64|customer-windows-x64|customer-macos-x64" "${RELEASE_WORKFLOW}"; then
-  pass "workflow has customer artifact naming"
-else
-  fail "workflow missing customer artifact names"
-fi
+for customer_artifact in customer-linux-x64 customer-windows-x64 customer-macos-aarch64; do
+  if contains "${customer_artifact}" "${RELEASE_WORKFLOW}"; then
+    pass "workflow includes customer artifact ${customer_artifact}"
+  else
+    fail "workflow missing customer artifact ${customer_artifact}"
+  fi
+done
 
-if contains "admin-linux-x64|admin-windows-x64|admin-macos-x64" "${RELEASE_WORKFLOW}"; then
-  pass "workflow has admin artifact naming"
-else
-  fail "workflow missing admin artifact names"
-fi
+for admin_artifact in admin-linux-x64 admin-windows-x64 admin-macos-aarch64; do
+  if contains "${admin_artifact}" "${RELEASE_WORKFLOW}"; then
+    pass "workflow includes admin artifact ${admin_artifact}"
+  else
+    fail "workflow missing admin artifact ${admin_artifact}"
+  fi
+done
 
-for runtime_target in linux-x86_64 windows-x86_64 macos-x86_64 macos-aarch64; do
+for runtime_target in linux-x86_64 windows-x86_64 macos-aarch64; do
   if contains "${runtime_target}" "${RELEASE_WORKFLOW}"; then
     pass "workflow includes runtime target ${runtime_target}"
   else
