@@ -105,7 +105,7 @@ jobs:
         run: |
           rm -rf release-artifact
           mkdir -p release-artifact
-          for dir in target app/src-tauri/target; do
+          for dir in target/release/bundle app/src-tauri/target/release/bundle; do
             [ -d "$dir" ] || continue
             find "$dir" -type f \( \
               -name '*.AppImage' -o \
@@ -212,7 +212,7 @@ jobs:
         run: |
           rm -rf release-artifact
           mkdir -p release-artifact
-          for dir in target app/src-tauri/target; do
+          for dir in target/release/bundle app/src-tauri/target/release/bundle; do
             [ -d "$dir" ] || continue
             find "$dir" -type f \( \
               -name '*.AppImage' -o \
