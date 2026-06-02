@@ -31,6 +31,8 @@ const apiKeyProfiles = vi.fn();
 const apiKeyProfileAdd = vi.fn();
 const apiKeyProfileActivate = vi.fn();
 const apiKeyProfileDelete = vi.fn();
+const clipboardWriteText = vi.fn();
+const windowOpen = vi.fn();
 const authStoreMock = vi.hoisted(() => {
   let value: any = {
     lifecycle: 'licensed',
@@ -72,6 +74,18 @@ const authStoreMock = vi.hoisted(() => {
   };
 });
 let Page: Awaited<typeof import('../routes/+page.svelte')>['default'];
+
+Object.defineProperty(navigator, 'clipboard', {
+  configurable: true,
+  value: {
+    writeText: (...args: unknown[]) => clipboardWriteText(...args)
+  }
+});
+Object.defineProperty(window, 'open', {
+  configurable: true,
+  writable: true,
+  value: (...args: unknown[]) => windowOpen(...args)
+});
 
 vi.mock('../lib/api/tauriClient', () => ({
   runGenerateAndStream: (...args: unknown[]) => runGenerateAndStream(...args),
@@ -147,6 +161,10 @@ describe('test_ui flow parity', () => {
     apiKeyProfileAdd.mockReset();
     apiKeyProfileActivate.mockReset();
     apiKeyProfileDelete.mockReset();
+    clipboardWriteText.mockReset();
+    windowOpen.mockReset();
+    clipboardWriteText.mockResolvedValue(undefined);
+    windowOpen.mockReturnValue({});
     secureStoreSave.mockResolvedValue(undefined);
     secureStoreDelete.mockResolvedValue(undefined);
     localModelProfiles.mockResolvedValue({
@@ -895,5 +913,40 @@ describe('test_ui flow parity', () => {
     expect(await screen.findByText('Hit')).toBeTruthy();
     expect(await screen.findByText('Miss')).toBeTruthy();
     expect(await screen.findByText(/FAILED \(render failed\)/)).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Copy Link' }));
+    expect(clipboardWriteText).toHaveBeenCalledWith('https://cdn.example.com/s1.mp4');
+    expect(await screen.findByText('Link copied.')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Open Clip' }));
+    expect(windowOpen).toHaveBeenCalledWith('https://cdn.example.com/s1.mp4', '_blank', 'noopener,noreferrer');
+  });
+
+  it('test_render local short entries with open folder action', async () => {
+    runGenerateAndStream.mockResolvedValue({
+      ok: true,
+      result: {
+        mode: 'api',
+        source_video_url: 'https://cdn.example.com/video.mp4',
+        transcript: { duration: 1, segments: [] },
+        highlights: [{ title: 'H1', start_time: 1, end_time: 2, score: 90, hook_sentence: 'hook', virality_reason: 'reason' }],
+        shorts: [
+          { title: 'Local Hit', start_time: 1, end_time: 2, score: 90, hook_sentence: 'hook', virality_reason: 'reason', clip_url: '/home/test/Videos/short_01.mp4' }
+        ]
+      }
+    });
+    openInFileManager.mockResolvedValue(undefined);
+
+    render(Page);
+    await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+
+    expect(await screen.findByText('Local Hit')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Open Clip' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Copy Link' })).toBeNull();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Open Folder' }));
+    expect(openInFileManager).toHaveBeenCalledWith('/home/test/Videos/short_01.mp4');
+    expect(await screen.findByText('Opened clip folder.')).toBeTruthy();
   });
 });

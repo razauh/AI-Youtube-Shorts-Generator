@@ -56,6 +56,7 @@
     { value: 'youtube', label: 'YouTube URL' },
     { value: 'local', label: 'Local video file' }
   ];
+  const REMOTE_CLIP_URL_PATTERN = /^https?:\/\//i;
   const MODE_OPTIONS = [
     { value: 'api', label: 'api' },
     { value: 'local', label: 'local' }
@@ -142,6 +143,8 @@
   let licenseFormStatusKind = 'info';
   let generateFormStatus = '';
   let generateFormStatusKind = 'info';
+  let clipActionStatus = '';
+  let clipActionTarget = null;
   let cancelRunBusy = false;
   let theme = 'dark';
   let mobileNavOpen = false;
@@ -1169,8 +1172,45 @@
     }
     try {
       await openInFileManager(path);
+      clipActionTarget = path;
+      clipActionStatus = 'Opened clip folder.';
     } catch (_e) {
-      // no-op for now
+      clipActionTarget = path;
+      clipActionStatus = 'Unable to open clip folder.';
+    }
+  }
+
+  function isRemoteClipUrl(value) {
+    return typeof value === 'string' && REMOTE_CLIP_URL_PATTERN.test(value);
+  }
+
+  function isLocalClipPath(value) {
+    return typeof value === 'string' && value.length > 0 && !isRemoteClipUrl(value);
+  }
+
+  function openClipUrl(value, index) {
+    if (!isRemoteClipUrl(value)) {
+      return;
+    }
+    clipActionTarget = `clip-${index}`;
+    window.open(value, '_blank', 'noopener,noreferrer');
+    clipActionStatus = 'Opening clip.';
+  }
+
+  async function copyClipLink(value, index) {
+    if (!isRemoteClipUrl(value)) {
+      return;
+    }
+    clipActionTarget = `clip-${index}`;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        throw new Error('clipboard unavailable');
+      }
+      clipActionStatus = 'Link copied.';
+    } catch (_e) {
+      clipActionStatus = 'Unable to copy link automatically.';
     }
   }
 
@@ -1590,7 +1630,20 @@
                 <p>#{i + 1} score={s.score} {s.start_time}s -> {s.end_time}s</p>
                 <p>hook: {s.hook_sentence}</p>
                 {#if s.clip_url}
-                  <p>clip: {s.clip_url}</p>
+                  <div class="clip-output">
+                    <span class="clip-target" title={s.clip_url}>clip: {s.clip_url}</span>
+                    <div class="clip-actions">
+                      {#if isRemoteClipUrl(s.clip_url)}
+                        <button type="button" on:click={() => openClipUrl(s.clip_url, i)}>Open Clip</button>
+                        <button type="button" class="button-secondary" on:click={() => copyClipLink(s.clip_url, i)}>Copy Link</button>
+                      {:else if isLocalClipPath(s.clip_url)}
+                        <button type="button" on:click={() => openClipFolder(s.clip_url)}>Open Folder</button>
+                      {/if}
+                    </div>
+                  </div>
+                  {#if clipActionTarget === `clip-${i}` || clipActionTarget === s.clip_url}
+                    <p class="meta clip-action-status" aria-live="polite">{clipActionStatus}</p>
+                  {/if}
                 {:else}
                   <p>clip: FAILED ({s.error})</p>
                 {/if}
@@ -2967,6 +3020,28 @@
 
   .cards { display: grid; gap: .5rem; }
   .cards article { background: color-mix(in srgb, var(--color-panel-card) 80%, transparent); border: 1px solid color-mix(in srgb, var(--color-border-strong) 20%, transparent); border-radius: var(--radius-lg); padding: .65rem; }
+
+  .clip-output {
+    display: grid;
+    gap: var(--space-sm);
+    margin-top: var(--space-sm);
+  }
+
+  .clip-target {
+    color: var(--color-text-secondary);
+    overflow-wrap: anywhere;
+    min-width: 0;
+  }
+
+  .clip-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+  }
+
+  .clip-action-status {
+    margin-top: var(--space-xs);
+  }
 
   .orb { position: fixed; width: 320px; height: 320px; border-radius: var(--radius-pill); filter: blur(70px); pointer-events: none; z-index: 0; opacity: .24; }
   .orb-a { top: -80px; left: -90px; background: var(--color-primary); }

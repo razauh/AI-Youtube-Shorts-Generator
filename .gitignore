@@ -85,6 +85,7 @@ scripts/graphify_split_merge.py
 !/.scripts/generate-customer-updater-manifest.mjs
 !/.scripts/generate-customer-updater-manifest.test.mjs
 !/.scripts/run-admin-desktop-validation.sh
+!/.scripts/run-output-access-validation.sh
 !/.scripts/run-svelte-warning-validation.sh
 !/.scripts/run-updater-endpoint-validation.sh
 !/.scripts/validate-release-ci-config.sh
