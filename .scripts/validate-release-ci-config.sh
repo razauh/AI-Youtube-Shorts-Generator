@@ -205,10 +205,16 @@ else
   fail "Linux release workflow missing non-AppImage release scripts"
 fi
 
-if contains "release-artifact/\\*\\*/\\*" "${RELEASE_WORKFLOW}" && contains "Collect customer bundles" "${RELEASE_WORKFLOW}" && contains "Collect admin bundles" "${RELEASE_WORKFLOW}"; then
-  pass "workflow collects Tauri bundles from discovered target directories"
+if contains "for dir in target app/src-tauri/target" "${RELEASE_WORKFLOW}"; then
+  fail "workflow must not scan broad target directories for release artifacts"
 else
-  fail "workflow missing target-directory bundle collection"
+  pass "workflow avoids broad target directory artifact scans"
+fi
+
+if contains "target/release/bundle app/src-tauri/target/release/bundle" "${RELEASE_WORKFLOW}" && contains "release-artifact/\\*\\*/\\*" "${RELEASE_WORKFLOW}" && contains "Collect customer bundles" "${RELEASE_WORKFLOW}" && contains "Collect admin bundles" "${RELEASE_WORKFLOW}"; then
+  pass "workflow collects Tauri bundles from release bundle directories"
+else
+  fail "workflow missing release bundle directory artifact collection"
 fi
 
 for installer_suffix in "\\*.AppImage" "\\*.app.tar.gz" "\\*.deb" "\\*.dmg" "\\*.exe" "\\*.msi" "\\*.rpm" "\\*.sig"; do

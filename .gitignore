@@ -77,6 +77,8 @@ docs/WEBHOOK_VERIFICATION_NOTES.md
 docs/prompts/
 scripts/graphify_split_merge.py
 .script/
+/script/
+/scripts/
 /.scripts/
 !/.scripts/
 /.scripts/*
@@ -91,6 +93,7 @@ scripts/graphify_split_merge.py
 !/.scripts/run-user-data-deletion-validation.sh
 !/.scripts/scan-bundled-runtime.sh
 !/.scripts/run-availability-validation.sh
+!/.scripts/run-license-fallback-validation.sh
 !/.scripts/check-updater-manifest-url.sh
 app/.scripts/
 .opencode/

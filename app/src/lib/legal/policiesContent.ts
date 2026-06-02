@@ -149,7 +149,8 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
         "- You check for or install updates.",
         "- You submit a crash report and a crash-report endpoint is configured.",
         "The application may store local project history, output metadata, settings, local model profile metadata, API key profile metadata, crash drafts, reset status, generated outputs, logs, configuration files, model caches, and license/session/device-related information.",
-        "API key values, license/session tokens, admin tokens where configured, and device key material are intended to be stored using operating-system credential storage when available. If credential storage is unavailable or fails, local fallback files in app data may store those secrets or key materials, and those fallback files should be treated as sensitive.",
+        "API key values, license/session tokens, admin tokens where configured, and device key material are intended to be stored using operating-system credential storage when available. On Windows and macOS, license/session fallback storage uses a protected local encryption key and encrypted app-data fallback files for session tokens and device key material. Raw license keys are not intended to be stored in fallback files.",
+        "Linux secure persistence support has known limitations in the initial release configuration. Linux fallback files are not used for plaintext license/session secret persistence, and Linux secure-storage limitations are planned to be addressed in future updates without a specific date or guarantee.",
         "No general telemetry or analytics SDK was identified during repository inspection.",
         "You are responsible for deleting local outputs, downloaded media, generated clips, exported JSON, logs, caches, model files, and project history where the application or operating system allows deletion."
       ]
@@ -273,7 +274,8 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       "heading": "3. Local Storage",
       "paragraphs": [
         "The application may store data locally on your device, including project history, generated output metadata, settings, API key profile metadata, local model profile metadata, model caches, logs, crash drafts, reset status, configuration files, generated media files, exported JSON, and license/session/device-related information.",
-        "API key values, license/session tokens, admin tokens where configured, and device key material are intended to be stored using operating-system credential storage when available. If credential storage is unavailable or fails, local fallback files in app data may store those secrets or key materials, and those fallback files should be treated as sensitive.",
+        "API key values, license/session tokens, admin tokens where configured, and device key material are intended to be stored using operating-system credential storage when available. On Windows and macOS, license/session fallback storage uses a protected local encryption key and encrypted app-data fallback files for session tokens and device key material. Raw license keys are not intended to be stored in fallback files.",
+        "Linux secure persistence support has known limitations in the initial release configuration. Linux fallback files are not used for plaintext license/session secret persistence, and Linux secure-storage limitations are planned to be addressed in future updates without a specific date or guarantee.",
         "You are responsible for managing and deleting local files, generated outputs, downloaded media, exported JSON, logs, caches, model files, and project history where the application or operating system allows deletion."
       ]
     },
@@ -525,7 +527,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
         "- Display only last-four or redacted tokens where possible.",
         "- Avoid putting full keys in localStorage, logs, errors, screenshots, tests, or support bundles.",
         "- Allow users to delete API-key profiles.",
-        "Risk note: inspected local fallback secret mechanisms can store secrets in local files. Release documentation should clearly tell users to secure their device account and avoid sharing app-data folders."
+        "Risk note: inspected local fallback secret mechanisms can store encrypted session/device materials in local files on supported desktop platforms. Release documentation should clearly tell users to secure their device account and avoid sharing app-data folders."
       ]
     },
     {
@@ -627,7 +629,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       "heading": "23. Security Measures",
       "paragraphs": [
         "Security controls identified or expected include license-gated UI for generation features, device binding and signed access tokens, server-side hashed license keys with hash pepper, admin bearer-token authentication, masked emails/license keys in several UI/API responses, local secure-store use where available, crash-draft redaction for selected secret/license patterns, runtime-pack checksum validation, structured error mapping to avoid exposing raw auth failures, and no general telemetry/analytics SDK identified in inspected code.",
-        "Additional release controls recommended: enforce HTTPS for hosted Worker/update/runtime endpoints, set and rotate strong Worker secrets, add rate limiting and abuse controls to public Worker routes, implement admin token rotation and least privilege, review Tauri Content Security Policy and updater signing before production, encrypt or eliminate plaintext local fallback secrets where feasible, add server-side retention/deletion tooling, and run dependency/license/security audits before each release."
+        "Additional release controls recommended: enforce HTTPS for hosted Worker/update/runtime endpoints, set and rotate strong Worker secrets, add rate limiting and abuse controls to public Worker routes, implement admin token rotation and least privilege, review Tauri Content Security Policy and updater signing before production, keep plaintext local fallback secrets eliminated, add server-side retention/deletion tooling, and run dependency/license/security audits before each release."
       ]
     },
     {

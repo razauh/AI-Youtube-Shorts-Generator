@@ -434,6 +434,23 @@ describe('test_ui flow parity', () => {
     expect(encoded).not.toMatch(/automatic telemetry|automatic analytics|automatically uploads crash/i);
   });
 
+  it('test_policy_content_discloses_linux_secure_storage_limitations_without_timeline', () => {
+    const encoded = JSON.stringify(POLICY_SECTIONS);
+    const linuxLimitations = Object.values(POLICY_SECTIONS)
+      .flat()
+      .flatMap((section) => section.paragraphs)
+      .filter((paragraph) => paragraph.includes('Linux secure persistence support has known limitations'));
+
+    expect(encoded).toContain('On Windows and macOS, license/session fallback storage uses a protected local encryption key and encrypted app-data fallback files');
+    expect(encoded).toContain('Raw license keys are not intended to be stored in fallback files.');
+    expect(encoded).toContain('Linux secure persistence support has known limitations in the initial release configuration.');
+    expect(encoded).toContain('without a specific date or guarantee');
+    expect(linuxLimitations.length).toBeGreaterThan(0);
+    for (const paragraph of linuxLimitations) {
+      expect(paragraph).not.toMatch(/(Q[1-4]|20\d{2}|next month|next quarter|by [A-Z][a-z]+)/i);
+    }
+  });
+
   it('test_global_theme_switch_toggles_checked_state', async () => {
     render(Page);
     const themeSwitch = screen.getByRole('switch', { name: 'Toggle theme' });
