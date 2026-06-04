@@ -27,10 +27,10 @@ Built for creators, agencies, and developers who don't want to pay $20–$300/mo
 ## Features
 
 - **🎬 YouTube In, Vertical Out**: Hand it any YouTube URL — get back N viral-ready 9:16 mp4s
-- **🔀 Two Modes — API (fast) or Local (offline)**: Default `--mode api` uses MuAPI for download/transcription/cropping; `--mode local` runs entirely on your machine with `yt-dlp`, `faster-whisper`, OpenAI, and `ffmpeg`/`opencv` — pick what fits
+- **API-first v1 workflow**: Default `--mode api` uses MuAPI for download, transcription, highlight selection, and clipping. `--mode local` remains available as an optional beta/advanced path for users prepared to manage runtime, model, and platform setup.
 - **🤖 Virality-Aware Highlight Selection**: Clips ranked on hooks, emotional peaks, opinion bombs, revelation moments, conflict, quotable lines, story peaks, and practical value — not just generic "interesting"
 - **📈 Score + Hook + Reason for Every Clip**: Each highlight comes with a viral score, an opening hook line, and a one-sentence explanation of why it works
-- **🎤 Whisper Transcription, Your Choice**: Cloud (`/openai-whisper` via MuAPI) or local (`faster-whisper`, CPU or CUDA) — same downstream output shape
+- **🎤 Whisper Transcription**: API mode uses MuAPI `/openai-whisper`; local beta mode can use `faster-whisper` on CPU or CUDA when the local runtime and model are ready.
 - **🧩 Long-Video Aware**: Videos over 30 minutes are auto-chunked with overlap so nothing gets missed
 - **♻️ Smart Dedupe**: Overlapping highlights are collapsed by score so you never get two near-duplicate clips
 - **🎯 Smart Vertical Crop**: API mode uses MuAPI's auto-crop; local mode runs OpenCV face tracking with motion smoothing
@@ -44,13 +44,21 @@ Don't want to self-host? The [AI Clipping API](https://muapi.ai/playground/ai-cl
 
 ---
 
-## Installation (Self-Hosted)
+## Paid Desktop Customer Setup
+
+Paid desktop customer setup lives in the app onboarding after license activation and in the Gumroad product/delivery page copy stored at [`docs/gumroad-product-page-copy.md`](docs/gumroad-product-page-copy.md). The recommended first setup is API mode with a MuAPI key: activate the Gumroad license, add a MuAPI profile under Settings -> Configuration -> API Providers, generate from a YouTube URL, then use Open Clip, Copy Link, or Open Folder.
+
+Refund, support, and policy information is available under Settings -> Policies and through the Gumroad purchase/support channel.
+
+---
+
+## Installation (Developer / Self-Hosted CLI)
 
 ### Prerequisites
 
 - Python 3.10+
 - For **API mode (default)**: a MuAPI key — powers download, transcription, highlight ranking, and clipping in a single dependency
-- For **Local mode** (`--mode local`): `ffmpeg` on your PATH and an `OPENAI_API_KEY` (only the LLM step is remote; everything else runs offline)
+- For **Local mode beta** (`--mode local`): `ffmpeg` on your PATH and an `OPENAI_API_KEY` (only the LLM step is remote; everything else runs offline). This is an advanced v1 path and may require runtime/model repair or platform-specific troubleshooting.
 
 ### Steps
 
@@ -80,7 +88,7 @@ Don't want to self-host? The [AI Clipping API](https://muapi.ai/playground/ai-cl
    # API mode (default)
    MUAPI_API_KEY=your_muapi_key_here
 
-   # Local mode (--mode local) — only the OPENAI key is required
+   # Local mode beta (--mode local) — only the OPENAI key is required
    OPENAI_API_KEY=your_openai_key_here
    OPENAI_MODEL=gpt-4o-mini          # optional, default gpt-4o-mini
    LOCAL_WHISPER_MODEL=base          # tiny / base / small / medium / large-v3
@@ -96,13 +104,13 @@ Don't want to self-host? The [AI Clipping API](https://muapi.ai/playground/ai-cl
 python main.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-### Single video (Local mode — runs offline except for the LLM call)
+### Single video (Local mode beta — runs offline except for the LLM call)
 
 ```bash
 python main.py "https://www.youtube.com/watch?v=VIDEO_ID" --mode local
 ```
 
-Local mode writes the rendered shorts to `./output/short_01.mp4`, `short_02.mp4`, … (override with `LOCAL_OUTPUT_DIR`).
+Local mode is beta/advanced in v1. It writes rendered shorts to `./output/short_01.mp4`, `short_02.mp4`, … (override with `LOCAL_OUTPUT_DIR`) when the runtime pack, local model, and platform dependencies are ready.
 
 ### With options
 
@@ -142,14 +150,14 @@ xargs -a urls.txt -I{} python main.py "{}"
 
 | Flag | Default | Notes |
 |------|---------|-------|
-| `--mode` | `api` | `api` (MuAPI, fast, no setup) or `local` (yt-dlp + faster-whisper + OpenAI + ffmpeg) |
+| `--mode` | `api` | `api` (recommended MuAPI setup) or `local` (beta/advanced: yt-dlp + faster-whisper + OpenAI + ffmpeg) |
 | `--num-clips` | `3` | How many shorts to render |
 | `--aspect-ratio` | `9:16` | Any ratio; `9:16` for TikTok/Reels, `1:1` for square |
 | `--format` | `720` | Source download resolution: `360` / `480` / `720` / `1080` |
 | `--language` | auto | Force Whisper language code (e.g. `en`) |
 | `--output-json` | — | Dump the full result (transcript + all candidates) to a file |
 
-### API mode vs Local mode
+### API mode vs Local mode beta
 
 | Step | API mode (`--mode api`) | Local mode (`--mode local`) |
 |---|---|---|
@@ -270,15 +278,13 @@ This project is licensed under the MIT License.
 
 ## Legal and Policy Documents
 
-Before using or distributing this application, review the repository policy documents:
+Before using or distributing this application, review Settings -> Policies in the desktop app. Paid desktop customers should also use the Gumroad purchase/support channel for purchase, support, refund, and delivery-page information.
 
-- [Terms and Conditions](TERMS_AND_CONDITIONS.md)
-- [Privacy Policy](PRIVACY_POLICY.md)
-- [Data Compliance](DATA_COMPLIANCE.md)
-- [Third-Party Notices](THIRD_PARTY_NOTICES.md)
-- [Release Production Configuration](docs/release-production-config.md)
+- Gumroad setup copy: [`docs/gumroad-product-page-copy.md`](docs/gumroad-product-page-copy.md)
+- In-app policy location: Settings -> Policies
+- Developer/self-hosted setup: this README's Developer / Self-Hosted CLI section
 
-These documents explain user responsibilities, third-party API risks, AI-output limitations, FFmpeg/media-processing limitations, local dependency requirements, diagnostics/logging cautions, third-party license considerations, and production release configuration.
+The in-app policies cover user responsibilities, third-party API risks, AI-output limitations, FFmpeg/media-processing limitations, local dependency requirements, diagnostics/logging cautions, third-party license considerations, refunds, and liability.
 
 ## Related Projects
 

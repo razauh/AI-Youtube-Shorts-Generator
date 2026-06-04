@@ -13,6 +13,7 @@ const installAppUpdate = vi.fn();
 const appConfigSummary = vi.fn();
 const validateRuntime = vi.fn();
 const runtimeContext = vi.fn();
+const secureStoreLoad = vi.fn();
 const secureStoreSave = vi.fn();
 const secureStoreDelete = vi.fn();
 const localModelProfiles = vi.fn();
@@ -103,6 +104,7 @@ vi.mock('../lib/api/runtimeClient', () => ({
   appConfigSummary: (...args: unknown[]) => appConfigSummary(...args),
   validateRuntime: (...args: unknown[]) => validateRuntime(...args),
   runtimeContext: (...args: unknown[]) => runtimeContext(...args),
+  secureStoreLoad: (...args: unknown[]) => secureStoreLoad(...args),
   secureStoreSave: (...args: unknown[]) => secureStoreSave(...args),
   secureStoreDelete: (...args: unknown[]) => secureStoreDelete(...args),
   localModelProfiles: (...args: unknown[]) => localModelProfiles(...args),
@@ -143,6 +145,7 @@ describe('test_ui flow parity', () => {
     appConfigSummary.mockReset();
     validateRuntime.mockReset();
     runtimeContext.mockReset();
+    secureStoreLoad.mockReset();
     secureStoreSave.mockReset();
     secureStoreDelete.mockReset();
     localModelProfiles.mockReset();
@@ -165,6 +168,7 @@ describe('test_ui flow parity', () => {
     windowOpen.mockReset();
     clipboardWriteText.mockResolvedValue(undefined);
     windowOpen.mockReturnValue({});
+    secureStoreLoad.mockResolvedValue(null);
     secureStoreSave.mockResolvedValue(undefined);
     secureStoreDelete.mockResolvedValue(undefined);
     localModelProfiles.mockResolvedValue({
@@ -304,11 +308,12 @@ describe('test_ui flow parity', () => {
     cleanup();
   });
 
-  it('test_default form values parity', () => {
+  it('test_default form values parity', async () => {
     render(Page);
 
+    expect(await screen.findByRole('dialog', { name: 'Setup Guide' })).toBeTruthy();
     expect((screen.getByLabelText('YouTube video URL') as HTMLInputElement).value).toBe('');
-    expect(screen.getByLabelText('Mode').textContent).toContain('api');
+    expect(screen.getByLabelText('Mode').textContent).toContain('API mode (recommended)');
     expect((screen.getByLabelText('Num clips') as HTMLInputElement).value).toBe('3');
     expect(screen.getByLabelText('Aspect ratio').textContent).toContain('9:16 (Shorts/Reels/TikTok)');
     expect(screen.getByLabelText('Resolution').textContent).toContain('720p');
@@ -316,6 +321,57 @@ describe('test_ui flow parity', () => {
     expect((screen.getByLabelText('YouTube video URL') as HTMLInputElement).getAttribute('required')).toBeNull();
     expect((screen.getByLabelText('Num clips') as HTMLInputElement).getAttribute('min')).toBeNull();
     expect(screen.queryByText('Setup needed before first generation')).toBeNull();
+  });
+
+  it('test_licensed_first_launch_shows_customer_onboarding', async () => {
+    render(Page);
+
+    expect(await screen.findByRole('dialog', { name: 'Setup Guide' })).toBeTruthy();
+    expect(screen.getByText('License activated.')).toBeTruthy();
+    expect(screen.getByText('Add MuAPI key.')).toBeTruthy();
+    expect(screen.getByText('Generate first clip.')).toBeTruthy();
+    expect(screen.getByText('Retrieve output.')).toBeTruthy();
+    expect(screen.getByText('Support and policies.')).toBeTruthy();
+    expect(await screen.findByText(/Add MuAPI Profile|API setup ready/)).toBeTruthy();
+  });
+
+  it('test_onboarding_skip_hides_and_persists_skip', async () => {
+    render(Page);
+
+    await screen.findByRole('dialog', { name: 'Setup Guide' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Setup Guide' })).toBeNull();
+    expect(localStorage.getItem('shorts.onboarding.v1')).toBe('skipped');
+  });
+
+  it('test_onboarding_start_setup_routes_to_api_provider_settings', async () => {
+    render(Page);
+
+    await screen.findByRole('dialog', { name: 'Setup Guide' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Start Setup' }));
+
+    expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Configuration', selected: true })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'API Providers', selected: true })).toBeTruthy();
+    expect(screen.getByText('MuAPI Access')).toBeTruthy();
+  });
+
+  it('test_onboarding_marks_muapi_ready_when_configured', async () => {
+    render(Page);
+
+    expect(await screen.findByText(/Add MuAPI Profile|API setup ready/)).toBeTruthy();
+  });
+
+  it('test_setup_guide_reopens_onboarding_after_skip', async () => {
+    render(Page);
+    await screen.findByRole('dialog', { name: 'Setup Guide' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Setup Guide' }));
+
+    expect(screen.getByRole('dialog', { name: 'Setup Guide' })).toBeTruthy();
+    expect(localStorage.getItem('shorts.onboarding.v1')).toBe('skipped');
   });
 
   it('test_select_controls_use_themed_select_wrapper', () => {
@@ -452,6 +508,15 @@ describe('test_ui flow parity', () => {
     expect(encoded).not.toMatch(/automatic telemetry|automatic analytics|automatically uploads crash/i);
   });
 
+  it('test_terms_include_local_offline_beta_reliability_limitations', () => {
+    const encoded = JSON.stringify(POLICY_SECTIONS.terms);
+
+    expect(encoded).toContain('local/offline mode is a beta/advanced workflow');
+    expect(encoded).toContain('not the primary supported v1 workflow');
+    expect(encoded).toContain('runtime-pack setup');
+    expect(encoded).toContain('local/offline availability, performance, and recovery are not guaranteed');
+  });
+
   it('test_policy_content_discloses_linux_secure_storage_limitations_without_timeline', () => {
     const encoded = JSON.stringify(POLICY_SECTIONS);
     const linuxLimitations = Object.values(POLICY_SECTIONS)
@@ -536,6 +601,7 @@ describe('test_ui flow parity', () => {
     expect(screen.getByRole('tab', { name: 'Device Reset' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Local Processing help' })).toBeTruthy();
     expect(screen.getByText('On-device pipeline')).toBeTruthy();
+    expect(screen.getByText('Local mode is beta/advanced in v1 and may require runtime pack or local model repair. API mode is recommended for first setup.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Download Runtime' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Repair Local Processing Setup' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'MuAPI Access help' })).toBeNull();
@@ -652,7 +718,11 @@ describe('test_ui flow parity', () => {
 
     render(Page);
     await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
-    await chooseThemedSelectOption('Mode', 'api');
+    expect(screen.getByLabelText('Mode').textContent).toContain('API mode (recommended)');
+    await chooseThemedSelectOption('Mode', 'API mode (recommended)');
+    await chooseThemedSelectOption('Mode', 'Local mode (beta)');
+    expect(screen.getByText('Local mode is beta/advanced in v1 and may require runtime pack or local model repair. API mode is recommended for first setup.')).toBeTruthy();
+    await chooseThemedSelectOption('Mode', 'API mode (recommended)');
     await fireEvent.input(screen.getByLabelText('Num clips'), { target: { value: '5' } });
     await chooseThemedSelectOption('Resolution', '1080p');
     await chooseThemedSelectOption('Aspect ratio', '1:1 (Square feed)');
@@ -757,7 +827,7 @@ describe('test_ui flow parity', () => {
     });
 
     render(Page);
-    await chooseThemedSelectOption('Mode', 'local');
+    await chooseThemedSelectOption('Mode', 'Local mode (beta)');
     await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
 

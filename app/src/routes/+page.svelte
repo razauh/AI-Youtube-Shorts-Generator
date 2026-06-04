@@ -30,8 +30,11 @@
   import { POLICY_COMMON_SECTIONS, POLICY_LAST_UPDATED_LABEL, POLICY_SECTIONS } from '../lib/legal/policiesContent';
   const LS = {
     projects: 'shorts.projects.v1',
-    theme: 'shorts.theme.v1'
+    theme: 'shorts.theme.v1',
+    onboarding: 'shorts.onboarding.v1'
   };
+  const ONBOARDING_COMPLETED = 'completed';
+  const ONBOARDING_SKIPPED = 'skipped';
   const APP_VERSION = import.meta.env?.VITE_APP_VERSION ?? '0.1.0';
   const CRASH_REPORT_ENDPOINT = import.meta.env?.VITE_CRASH_REPORT_ENDPOINT ?? '';
   const USER_DATA_DELETION_LOOKUP_TOKEN_KEY = 'USER_DATA_DELETION_LOOKUP_TOKEN';
@@ -58,8 +61,8 @@
   ];
   const REMOTE_CLIP_URL_PATTERN = /^https?:\/\//i;
   const MODE_OPTIONS = [
-    { value: 'api', label: 'api' },
-    { value: 'local', label: 'local' }
+    { value: 'api', label: 'API mode (recommended)' },
+    { value: 'local', label: 'Local mode (beta)' }
   ];
   const ASPECT_RATIO_OPTIONS = [
     { value: '9:16', label: '9:16 (Shorts/Reels/TikTok)' },
@@ -159,6 +162,11 @@
     mode: 'api'
   };
   let setupRequiredModalOpen = false;
+  let onboardingLoaded = true;
+  let onboardingPreference = initialOnboardingPreference();
+  let onboardingOpen = false;
+  let onboardingDismissedThisSession = false;
+  let onboardingMuapiReady = false;
 
   let projects = [];
   const localDraftStore = {
@@ -228,11 +236,16 @@
       : 'Active local model is not ready. Retry the download from Settings or use API mode.';
   $: activeSetupBlockers = mode === 'local' ? setupStatus.blockersLocal : setupStatus.blockersApi;
   $: setupModalBlockerMessages = friendlySetupBlockers(activeSetupBlockers);
+  $: isLicensedAppSession = $authState.lifecycle === 'licensed' || $authState.lifecycle === 'licensed_offline_grace';
+  $: muapiReadyForOnboarding = onboardingMuapiReady || setupStatus.readyApi || Boolean(settingsConfig?.muapiConfigured);
+  $: shouldShowOnboarding =
+    isLicensedAppSession && onboardingLoaded && !onboardingPreference && !onboardingDismissedThisSession;
 
   onMount(() => {
     let unlistenLocalModel = null;
     try {
       loadState();
+      loadOnboardingState();
       loadDeletionStatusCache();
       loadCrashDraftFromLocalStorage();
       authState.bootstrap();
@@ -277,6 +290,21 @@
     if (!p) persistProjects();
   }
 
+  function loadOnboardingState() {
+    const stored = localStorage.getItem(LS.onboarding);
+    onboardingPreference = stored === ONBOARDING_COMPLETED || stored === ONBOARDING_SKIPPED ? stored : '';
+    onboardingLoaded = true;
+  }
+
+  function initialOnboardingPreference() {
+    try {
+      const stored = localStorage.getItem(LS.onboarding);
+      return stored === ONBOARDING_COMPLETED || stored === ONBOARDING_SKIPPED ? stored : '';
+    } catch (_err) {
+      return '';
+    }
+  }
+
   function persistProjects() {
     localStorage.setItem(LS.projects, JSON.stringify(projects));
   }
@@ -301,6 +329,34 @@
     }
     active = screen;
     mobileNavOpen = false;
+  }
+
+  function openOnboardingGuide() {
+    onboardingDismissedThisSession = false;
+    onboardingOpen = true;
+  }
+
+  function dismissOnboardingForSession() {
+    onboardingDismissedThisSession = true;
+    onboardingOpen = false;
+  }
+
+  function skipOnboarding() {
+    onboardingPreference = ONBOARDING_SKIPPED;
+    localStorage.setItem(LS.onboarding, ONBOARDING_SKIPPED);
+    onboardingOpen = false;
+  }
+
+  function completeOnboarding() {
+    onboardingPreference = ONBOARDING_COMPLETED;
+    localStorage.setItem(LS.onboarding, ONBOARDING_COMPLETED);
+    onboardingOpen = false;
+  }
+
+  function startOnboardingSetup() {
+    onboardingDismissedThisSession = true;
+    onboardingOpen = false;
+    openSetupConfiguration('api');
   }
 
   async function loadSettingsStatus() {
@@ -452,6 +508,7 @@
         validateRuntime(),
         localModelProfiles()
       ]);
+      onboardingMuapiReady = Boolean(config?.muapiConfigured);
       setupStatus = computeSetupStatus(config, runtime, models);
     } catch (_err) {
       setupStatus = {
@@ -1485,6 +1542,58 @@
     </aside>
 
     <section class="content">
+      {#if onboardingOpen || shouldShowOnboarding}
+        <div class="policy-modal-backdrop" role="presentation" on:click|self={dismissOnboardingForSession}>
+          <section
+            class="panel policy-modal onboarding-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="customer-onboarding-title"
+          >
+            <div class="policy-modal-head">
+              <div>
+                <p class="eyebrow">First run</p>
+                <h2 id="customer-onboarding-title">Setup Guide</h2>
+              </div>
+            </div>
+            <div class="policy-modal-content onboarding-content">
+              <ol class="onboarding-steps">
+                <li>
+                  <strong>License activated.</strong>
+                  <span class="ok">This app is unlocked for this device.</span>
+                </li>
+                <li>
+                  <strong>Add MuAPI key.</strong>
+                  {#if muapiReadyForOnboarding}
+                    <span class="ok">API setup ready.</span>
+                  {:else}
+                    <span class="warn-text">Go to Settings -&gt; Configuration -&gt; API Providers and choose Add MuAPI Profile.</span>
+                  {/if}
+                </li>
+                <li>
+                  <strong>Generate first clip.</strong>
+                  <span>Paste a YouTube URL on the Generate screen, keep API mode selected, and run generation.</span>
+                </li>
+                <li>
+                  <strong>Retrieve output.</strong>
+                  <span>Use Open Clip, Copy Link, or Open Folder after generation finishes.</span>
+                </li>
+                <li>
+                  <strong>Support and policies.</strong>
+                  <span>Refund, support, and usage policies are under Settings -&gt; Policies and your Gumroad purchase/support channel.</span>
+                </li>
+              </ol>
+              <p class="meta">API mode with MuAPI is the recommended first setup. OpenAI and local processing are optional advanced paths with extra runtime and model requirements.</p>
+              <div class="row onboarding-actions">
+                <button type="button" on:click={startOnboardingSetup}>Start Setup</button>
+                <button type="button" class="button-secondary" on:click={skipOnboarding}>Skip</button>
+                <button type="button" class="button-secondary" on:click={completeOnboarding}>Done</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      {/if}
+
       {#if localModelDownload && showLocalModelDownloadBanner}
         <section class="panel local-download-banner" aria-live="polite">
           <div class="local-download-stack">
@@ -1517,8 +1626,13 @@
 
       {#if active === 'generate'}
       <section class="screen-header">
-        <h2 class="screen-title">Generate Shorts</h2>
-        <p class="meta">Create and export short clips from YouTube URLs or local videos.</p>
+        <div class="screen-header-row">
+          <div>
+            <h2 class="screen-title">Generate Shorts</h2>
+            <p class="meta">Create and export short clips from YouTube URLs or local videos.</p>
+          </div>
+          <button type="button" class="button-secondary setup-guide-button" on:click={openOnboardingGuide}>Setup Guide</button>
+        </div>
       </section>
 
       <section class="panel">
@@ -1538,6 +1652,7 @@
             <span>Mode</span>
             <ThemedSelect ariaLabel="Mode" bind:value={mode} options={MODE_OPTIONS} />
           </div>
+          <p class="meta warn-text form-full">Local mode is beta/advanced in v1 and may require runtime pack or local model repair. API mode is recommended for first setup.</p>
           <label>Num clips <input aria-label="Num clips" type="number" bind:value={numClips} /></label>
           <div class="field">
             <span>Aspect ratio</span>
@@ -1893,6 +2008,7 @@
                 </div>
               </div>
             </div>
+            <p class="meta warn-text">Local mode is beta/advanced in v1 and may require runtime pack or local model repair. API mode is recommended for first setup.</p>
             {#if localProfiles?.envOverride}
               <p class="meta warn-text">Environment variable override is active. Saved model profiles are available, but runtime will use the environment model/device.</p>
             {/if}
@@ -2390,6 +2506,35 @@
     padding-right: .3rem;
   }
 
+  .onboarding-modal {
+    width: min(680px, 96vw);
+  }
+
+  .onboarding-content {
+    display: grid;
+    gap: var(--space-md);
+  }
+
+  .onboarding-steps {
+    display: grid;
+    gap: var(--space-sm);
+    margin: 0;
+    padding-left: 1.25rem;
+  }
+
+  .onboarding-steps li {
+    padding-left: var(--space-xs);
+  }
+
+  .onboarding-steps strong,
+  .onboarding-steps span {
+    display: block;
+  }
+
+  .onboarding-actions {
+    justify-content: flex-start;
+  }
+
   .auth-status,
   .reset-box {
     display: grid;
@@ -2457,6 +2602,15 @@
     gap: .2rem;
     padding: 0;
     margin: 0;
+  }
+  .screen-header-row {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-md);
+    align-items: flex-start;
+  }
+  .setup-guide-button {
+    flex: 0 0 auto;
   }
   .screen-title { margin: 0; font-size: clamp(1.15rem, 1.8vw, 1.45rem); font-weight: 700; }
   .meta { color: var(--color-text-tertiary); }
@@ -3103,6 +3257,12 @@
     .status-chips {
       justify-content: flex-start;
       min-width: 0;
+    }
+    .screen-header-row {
+      display: grid;
+    }
+    .setup-guide-button {
+      width: fit-content;
     }
     .settings-actions {
       display: grid;

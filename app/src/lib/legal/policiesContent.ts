@@ -81,6 +81,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       "heading": "7. Local AI Models and Local Processing",
       "paragraphs": [
         "The application may support local model processing, including faster-whisper or Whisper-style transcription models. Local processing performance depends on your hardware, operating system, model files, GPU drivers, CPU/GPU capability, memory, storage, installed dependencies, permissions, and configuration.",
+        "In v1, local/offline mode is a beta/advanced workflow and is not the primary supported v1 workflow. API mode is the recommended setup path. Local/offline mode may fail because of runtime-pack setup, local model download or repair, platform compatibility, permissions, drivers, dependency conflicts, or system configuration, and local/offline availability, performance, and recovery are not guaranteed.",
         "We are not responsible for crashes, slow performance, failed processing, incorrect results, poor transcription quality, missing model files, corrupted model files, unsupported hardware, incompatible drivers, dependency conflicts, or unsupported local environments.",
         "Selectable local models are downloaded from the model source used by faster-whisper or the configured runtime and remain subject to the applicable model license, model card, and hosting terms."
       ]

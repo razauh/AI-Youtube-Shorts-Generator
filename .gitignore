@@ -96,6 +96,8 @@ scripts/graphify_split_merge.py
 !/.scripts/run-availability-validation.sh
 !/.scripts/run-license-fallback-validation.sh
 !/.scripts/check-updater-manifest-url.sh
+!/.scripts/run-customer-onboarding-validation.sh
+!/.scripts/run-customer-csp-validation.sh
 app/.scripts/
 .opencode/
 app/.opencode/
