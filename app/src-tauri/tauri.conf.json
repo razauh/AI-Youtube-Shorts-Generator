@@ -32,9 +32,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "bundled-runtime"
-    ]
+    "resources": []
   },
   "plugins": {
     "updater": {

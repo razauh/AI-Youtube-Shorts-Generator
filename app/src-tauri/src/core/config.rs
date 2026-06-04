@@ -14,9 +14,6 @@ pub struct Config {
     pub muapi_poll_timeout_seconds: f64,
     pub openai_api_key: String,
     pub openai_model: String,
-    pub local_whisper_model: String,
-    pub local_whisper_device: String,
-    pub local_output_dir: String,
     pub license_worker_base_url: String,
     pub license_storage_namespace: String,
     pub license_keychain_service: String,
@@ -79,9 +76,6 @@ impl Config {
         let muapi_poll_timeout_seconds = parse_float_env("MUAPI_POLL_TIMEOUT", "600")?;
         let openai_api_key = read_env_or_secure("OPENAI_API_KEY", "");
         let openai_model = read_env_trimmed("OPENAI_MODEL", "gpt-4o-mini");
-        let local_whisper_model = read_env_or_secure("LOCAL_WHISPER_MODEL", "base");
-        let local_whisper_device = read_env_or_secure("LOCAL_WHISPER_DEVICE", "auto");
-        let local_output_dir = read_env_trimmed("LOCAL_OUTPUT_DIR", "output");
         let license_worker_base_url =
             read_env_trimmed("LICENSE_WORKER_BASE_URL", PRODUCTION_LICENSE_WORKER_BASE_URL)
                 .trim_end_matches('/')
@@ -118,9 +112,6 @@ impl Config {
             muapi_poll_timeout_seconds,
             openai_api_key,
             openai_model,
-            local_whisper_model,
-            local_whisper_device,
-            local_output_dir,
             license_worker_base_url,
             license_storage_namespace,
             license_keychain_service,
@@ -155,12 +146,6 @@ impl Config {
         Ok(self.muapi_api_key.as_str())
     }
 
-    pub fn require_openai_key(&self) -> Result<&str, ConfigError> {
-        if self.openai_api_key.is_empty() {
-            return Err(ConfigError::MissingOpenAiKey);
-        }
-        Ok(self.openai_api_key.as_str())
-    }
 }
 
 fn read_env_trimmed(key: &str, default: &str) -> String {

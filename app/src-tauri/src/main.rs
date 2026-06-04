@@ -10,7 +10,6 @@ fn main() {
             let auth_state = shorts_tauri_app::auth::build_auth_state(app.handle())
                 .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
             app.manage(auth_state);
-            app.manage(shorts_tauri_app::commands::runtime::LocalModelDownloadState::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -22,15 +21,12 @@ fn main() {
             shorts_tauri_app::commands::auth::get_auth_state,
             shorts_tauri_app::commands::privacy::request_user_data_deletion,
             shorts_tauri_app::commands::privacy::get_user_data_deletion_status,
-            shorts_tauri_app::commands::files::pick_local_video_file,
             shorts_tauri_app::commands::files::pick_output_json_path,
-            shorts_tauri_app::commands::files::open_in_file_manager,
             shorts_tauri_app::commands::generate::generate_shorts,
             shorts_tauri_app::commands::generate::generate_shorts_with_events,
             shorts_tauri_app::commands::generate::generate_shorts_stream,
             shorts_tauri_app::commands::generate::cancel_generate_run,
             shorts_tauri_app::commands::health::health_check,
-            shorts_tauri_app::commands::health::validate_runtime,
             shorts_tauri_app::commands::health::app_config_summary,
             shorts_tauri_app::commands::runtime::runtime_context,
             shorts_tauri_app::commands::runtime::runtime_machine_secret,
@@ -51,16 +47,6 @@ fn main() {
             shorts_tauri_app::commands::runtime::api_key_profile_add,
             shorts_tauri_app::commands::runtime::api_key_profile_activate,
             shorts_tauri_app::commands::runtime::api_key_profile_delete,
-            shorts_tauri_app::commands::runtime::local_model_profiles,
-            shorts_tauri_app::commands::runtime::local_model_download_status,
-            shorts_tauri_app::commands::runtime::local_model_profile_add,
-            shorts_tauri_app::commands::runtime::local_model_profile_activate,
-            shorts_tauri_app::commands::runtime::local_model_profile_delete,
-            shorts_tauri_app::commands::runtime::local_model_profile_retry_download,
-            shorts_tauri_app::commands::runtime::local_runtime_pack_status,
-            shorts_tauri_app::commands::runtime::local_runtime_pack_prepare,
-            shorts_tauri_app::commands::runtime::local_runtime_pack_retry,
-            shorts_tauri_app::commands::runtime::local_runtime_pack_repair,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

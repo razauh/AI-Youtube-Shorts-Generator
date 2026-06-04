@@ -5,25 +5,16 @@
   import { runState } from '../lib/stores/runState';
   import { authState } from '../lib/stores/authState';
   import { getUserDataDeletionStatus, requestUserDataDeletion } from '../lib/api/authClient';
-  import { cancelGenerateRun, openInFileManager, pickLocalVideoFile, pickOutputJsonPath, runGenerateAndStream } from '../lib/api/tauriClient';
+  import { cancelGenerateRun, pickOutputJsonPath, runGenerateAndStream } from '../lib/api/tauriClient';
   import {
     apiKeyProfileActivate,
     apiKeyProfileAdd,
     apiKeyProfileDelete,
     apiKeyProfiles,
     appConfigSummary,
-    listenLocalModelDownloadProgress,
-    localModelDownloadStatus,
-    localModelProfileActivate,
-    localModelProfileAdd,
-    localModelProfileDelete,
-    localModelProfileRetryDownload,
-    localRuntimePackStatus,
-    localModelProfiles,
     secureStoreLoad,
     secureStoreSave,
-    runtimeContext,
-    validateRuntime
+    runtimeContext
   } from '../lib/api/runtimeClient';
   import { checkForAppUpdate, installAppUpdate } from '../lib/api/updaterClient';
   import { CRASH_DRAFT_KEY, createCrashDraft, dismissCrashDraft, saveCrashDraft } from '../support/crashDraft';
@@ -38,32 +29,7 @@
   const APP_VERSION = import.meta.env?.VITE_APP_VERSION ?? '0.1.0';
   const CRASH_REPORT_ENDPOINT = import.meta.env?.VITE_CRASH_REPORT_ENDPOINT ?? '';
   const USER_DATA_DELETION_LOOKUP_TOKEN_KEY = 'USER_DATA_DELETION_LOOKUP_TOKEN';
-  const WHISPER_MODEL_OPTIONS = [
-    { value: 'tiny', label: 'Tiny - fastest, lowest accuracy' },
-    { value: 'base', label: 'Base - default lightweight model' },
-    { value: 'small', label: 'Small - better accuracy, still practical on CPU' },
-    { value: 'medium', label: 'Medium - slower, higher accuracy' },
-    { value: 'large-v3', label: 'Large v3 - best quality, heavy' },
-    { value: 'large-v3-turbo', label: 'Large v3 Turbo - high quality, faster than large' },
-    { value: 'tiny.en', label: 'Tiny English - fastest for English only' },
-    { value: 'base.en', label: 'Base English - lightweight English only' },
-    { value: 'small.en', label: 'Small English - balanced English only' },
-    { value: 'medium.en', label: 'Medium English - accurate English only' }
-  ];
-  const WHISPER_DEVICE_OPTIONS = [
-    { value: 'auto', label: 'Auto - choose CUDA when available' },
-    { value: 'cpu', label: 'CPU - most compatible' },
-    { value: 'cuda', label: 'CUDA - NVIDIA GPU' }
-  ];
-  const SOURCE_TYPE_OPTIONS = [
-    { value: 'youtube', label: 'YouTube URL' },
-    { value: 'local', label: 'Local video file' }
-  ];
   const REMOTE_CLIP_URL_PATTERN = /^https?:\/\//i;
-  const MODE_OPTIONS = [
-    { value: 'api', label: 'API mode (recommended)' },
-    { value: 'local', label: 'Local mode (beta)' }
-  ];
   const ASPECT_RATIO_OPTIONS = [
     { value: '9:16', label: '9:16 (Shorts/Reels/TikTok)' },
     { value: '1:1', label: '1:1 (Square feed)' },
@@ -83,7 +49,6 @@
   let active = 'generate';
 
   let url = '';
-  let sourceType = 'youtube';
   let mode = 'api';
   let numClips = 3;
   let aspectRatio = '9:16';
@@ -105,31 +70,22 @@
   let crashStatus = '';
   let diagnosticsLastCheckedAt = '';
   let diagnosticsShowAdvanced = false;
-  let diagnosticsInstallHelpFor = '';
   let settingsBusy = false;
   let settingsError = '';
   let settingsConfig = null;
-  let settingsRuntime = null;
   let settingsContext = null;
   let settingsTab = 'configuration';
-  let settingsConfigTab = 'local';
+  let settingsConfigTab = 'api';
   let policiesTab = 'terms';
   let apiProfiles = { muapi: null, openai: null };
-  let localProfiles = null;
-  let localModelDownload = null;
-  let localProfileLabel = '';
-  let localRuntimePack = null;
   let muapiProfileLabel = '';
   let muapiKeyInput = '';
   let openaiProfileLabel = '';
   let openaiKeyInput = '';
-  let whisperModelInput = 'base';
-  let whisperDeviceInput = 'auto';
   let settingsActionStatus = '';
   let settingsActionTarget = '';
   let settingsActionKind = 'success';
   let settingsActionBusy = false;
-  let localDownloadActionStatus = '';
   let settingsResetLicenseKey = '';
   let deletionLicenseKey = '';
   let deletionPurchaserEmail = '';
@@ -155,10 +111,7 @@
     checkedAt: '',
     busy: false,
     readyApi: false,
-    readyLocal: false,
     blockersApi: [],
-    blockersLocal: [],
-    dependencyBlockersLocal: [],
     mode: 'api'
   };
   let setupRequiredModalOpen = false;
@@ -182,11 +135,8 @@
         .toLowerCase()
         .includes(shortsSearch.toLowerCase())
     );
-  $: sourceLabel = sourceType === 'local' ? 'Local video file path' : 'YouTube video URL';
-  $: sourcePlaceholder =
-    sourceType === 'local'
-      ? '/home/user/Videos/interview.mp4'
-      : 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+  $: sourceLabel = 'YouTube video URL';
+  $: sourcePlaceholder = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
   $: isResetStatus =
     $authState.lifecycle === 'reset_pending' ||
     $authState.lifecycle === 'reset_approved_unbound' ||
@@ -199,42 +149,11 @@
     $authState.lifecycle !== 'reset_expired';
   $: trimmedMuapiKey = muapiKeyInput.trim();
   $: trimmedOpenaiKey = openaiKeyInput.trim();
-  $: trimmedLocalProfileLabel = localProfileLabel.trim();
   $: trimmedMuapiProfileLabel = muapiProfileLabel.trim();
   $: trimmedOpenaiProfileLabel = openaiProfileLabel.trim();
-  $: trimmedWhisperModel = whisperModelInput.trim();
-  $: trimmedWhisperDevice = whisperDeviceInput.trim();
   $: canSaveMuapiKey = Boolean(trimmedMuapiKey && trimmedMuapiProfileLabel);
   $: canSaveOpenaiKey = Boolean(trimmedOpenaiKey && trimmedOpenaiProfileLabel);
-  $: canSaveLocalProcessing = Boolean(trimmedLocalProfileLabel && trimmedWhisperModel && trimmedWhisperDevice);
-  $: whisperModelOptions = optionListWithCurrent(WHISPER_MODEL_OPTIONS, settingsConfig?.localWhisperModel, 'Current custom model');
-  $: whisperDeviceOptions = optionListWithCurrent(WHISPER_DEVICE_OPTIONS, settingsConfig?.localWhisperDevice, 'Current custom device');
-  $: activeLocalModelProfile = localProfiles?.profiles?.find((profile) => profile.active) ?? null;
-  $: localModelDownloadProfileExists =
-    Boolean(localModelDownload?.profileId) &&
-    Boolean(localProfiles?.profiles?.some((profile) => profile.id === localModelDownload?.profileId));
-  $: showLocalModelDownloadBanner =
-    Boolean(localModelDownload?.active && (!localModelDownload?.profileId || localModelDownloadProfileExists)) ||
-    Boolean(localModelDownload?.phase === 'failed' && localModelDownloadProfileExists);
-  $: localModelDownloadPercent = Math.max(0, Math.min(100, Math.round((localModelDownload?.progress || 0) * 100)));
-  $: activeLocalModelDownloading =
-    Boolean(localModelDownload?.active && localModelDownload?.profileId === activeLocalModelProfile?.id) ||
-    activeLocalModelProfile?.downloadStatus === 'downloading' ||
-    activeLocalModelProfile?.downloadStatus === 'queued';
-  $: activeLocalModelFailed = activeLocalModelProfile?.downloadStatus === 'failed';
-  $: activeLocalModelNotReady =
-    Boolean(activeLocalModelProfile) &&
-    !['ready', 'downloading', 'queued'].includes(activeLocalModelProfile?.downloadStatus || '');
-  $: localRunBlocked =
-    mode === 'local' && (localRuntimePackBlocking || activeLocalModelDownloading || activeLocalModelFailed || activeLocalModelNotReady);
-  $: localRuntimePackReady = localRuntimePack?.status === 'ready';
-  $: localRuntimePackBlocking = mode === 'local' && !localRuntimePackReady;
-  $: localRunBlockedMessage = activeLocalModelDownloading
-    ? 'Local model is still downloading. You can use API mode now or wait for the local model to finish.'
-    : localRuntimePackBlocking
-      ? 'Local processing setup is not ready yet. Start model download from Settings to complete setup.'
-      : 'Active local model is not ready. Retry the download from Settings or use API mode.';
-  $: activeSetupBlockers = mode === 'local' ? setupStatus.blockersLocal : setupStatus.blockersApi;
+  $: activeSetupBlockers = setupStatus.blockersApi;
   $: setupModalBlockerMessages = friendlySetupBlockers(activeSetupBlockers);
   $: isLicensedAppSession = $authState.lifecycle === 'licensed' || $authState.lifecycle === 'licensed_offline_grace';
   $: muapiReadyForOnboarding = onboardingMuapiReady || setupStatus.readyApi || Boolean(settingsConfig?.muapiConfigured);
@@ -242,25 +161,13 @@
     isLicensedAppSession && onboardingLoaded && !onboardingPreference && !onboardingDismissedThisSession;
 
   onMount(() => {
-    let unlistenLocalModel = null;
     try {
       loadState();
       loadOnboardingState();
       loadDeletionStatusCache();
       loadCrashDraftFromLocalStorage();
       authState.bootstrap();
-      loadLocalModelStatus();
       loadSetupStatus();
-      loadRuntimePackStatus();
-      listenLocalModelDownloadProgress((status) => {
-        localModelDownload = status;
-        loadLocalModelProfilesOnly();
-        loadSetupStatus();
-      }).then((unlisten) => {
-        unlistenLocalModel = unlisten;
-      }).catch(() => {
-        localModelDownload = null;
-      });
     } catch (_err) {
       projects = [];
       theme = 'dark';
@@ -273,9 +180,6 @@
     return () => {
       window.removeEventListener('error', captureWindowError);
       window.removeEventListener('unhandledrejection', captureUnhandledRejection);
-      if (unlistenLocalModel) {
-        unlistenLocalModel();
-      }
     };
   });
 
@@ -322,7 +226,7 @@
   function selectScreen(screen) {
     if (screen === 'settings') {
       settingsTab = 'configuration';
-      settingsConfigTab = 'local';
+      settingsConfigTab = 'api';
       policiesTab = 'terms';
       loadSettingsStatus();
       loadCrashDraftFromLocalStorage();
@@ -363,24 +267,15 @@
     settingsBusy = true;
     settingsError = '';
     try {
-      const [config, runtime, context, muapiProfiles, openaiProfiles, modelProfiles, downloadStatus] = await Promise.all([
+      const [config, context, muapiProfiles, openaiProfiles] = await Promise.all([
         appConfigSummary(),
-        validateRuntime(),
         runtimeContext(),
         apiKeyProfiles('muapi'),
-        apiKeyProfiles('openai'),
-        localModelProfiles(),
-        localModelDownloadStatus()
+        apiKeyProfiles('openai')
       ]);
       settingsConfig = config;
-      settingsRuntime = runtime;
       settingsContext = context;
       apiProfiles = { muapi: muapiProfiles, openai: openaiProfiles };
-      localProfiles = modelProfiles;
-      localModelDownload = downloadStatus;
-      localRuntimePack = await localRuntimePackStatus();
-      whisperModelInput = config.localWhisperModel || 'base';
-      whisperDeviceInput = config.localWhisperDevice || 'auto';
       diagnosticsLastCheckedAt = new Date().toISOString();
     } catch (err) {
       settingsError = err instanceof Error ? err.message : 'Unable to load settings status.';
@@ -389,136 +284,39 @@
     }
   }
 
-  async function loadLocalModelStatus() {
-    try {
-      const [modelProfiles, downloadStatus, runtimePackStatus] = await Promise.all([
-        localModelProfiles(),
-        localModelDownloadStatus(),
-        localRuntimePackStatus()
-      ]);
-      localProfiles = modelProfiles;
-      localModelDownload = downloadStatus;
-      localRuntimePack = runtimePackStatus;
-    } catch (_err) {
-      localProfiles = null;
-      localModelDownload = null;
-    }
-  }
-
-  async function loadLocalModelProfilesOnly() {
-    try {
-      localProfiles = await localModelProfiles();
-      await loadSetupStatus();
-    } catch (_err) {
-      // Keep the last known status; this is only a UI refresh helper.
-    }
-  }
-
   function setupBlocker(id, message, action) {
     return { id, message, action };
   }
 
-  function toolStatusMap(runtime) {
-    const map = new Map();
-    for (const tool of runtime?.tools || []) {
-      map.set(tool.tool, tool);
-    }
-    return map;
-  }
-
-  function computeSetupStatus(config, runtime, models) {
+  function computeSetupStatus(config) {
     const blockersApi = [];
-    const blockersLocal = [];
-    const dependencyBlockersLocal = [];
 
     if (!config?.muapiConfigured) {
       blockersApi.push(setupBlocker('muapi_key', 'MuAPI key is not configured.', 'Open API setup'));
-    }
-
-    const localTools = toolStatusMap(runtime);
-    const python = localTools.get('python');
-    const ffmpeg = localTools.get('ffmpeg');
-    const ytdlp = localTools.get('yt-dlp');
-
-    if (!config?.openaiConfigured) {
-      blockersLocal.push(setupBlocker('openai_key', 'OpenAI key is not configured for local mode.', 'Open API setup'));
-    }
-    if (runtime?.runtime_pack_status !== 'ready') {
-      const blocker = setupBlocker('runtime_pack', 'Local processing runtime pack is not ready.', 'Open local setup');
-      blockersLocal.push(blocker);
-      dependencyBlockersLocal.push(blocker);
-    }
-    if (!runtime?.bridge_entry_exists) {
-      blockersLocal.push(setupBlocker('bridge_entry', 'Local runtime bridge is unavailable.', 'Open diagnostics'));
-    }
-    if (!python?.ok) {
-      const blocker = setupBlocker('python', 'Python 3 is not available for local mode.', 'Open diagnostics');
-      blockersLocal.push(blocker);
-      dependencyBlockersLocal.push(blocker);
-    }
-    if (!ffmpeg?.ok) {
-      const blocker = setupBlocker('ffmpeg', 'FFmpeg is not available for local mode.', 'Open diagnostics');
-      blockersLocal.push(blocker);
-      dependencyBlockersLocal.push(blocker);
-    }
-    if (!ytdlp?.ok) {
-      const blocker = setupBlocker('ytdlp', 'yt-dlp is not available for local YouTube downloads.', 'Open diagnostics');
-      blockersLocal.push(blocker);
-      dependencyBlockersLocal.push(blocker);
-    }
-    for (const pkg of runtime?.python_packages || []) {
-      if (!pkg?.ok) {
-        const blocker = setupBlocker(
-          `py_pkg_${pkg.tool}`,
-          `Python package '${pkg.tool}' is unavailable for local mode.`,
-          'Open diagnostics'
-        );
-        blockersLocal.push(blocker);
-        dependencyBlockersLocal.push(blocker);
-      }
-    }
-    if (runtime?.bridge_entry_exists && runtime?.tools?.length && runtime?.local_runtime_ready === false) {
-      blockersLocal.push(setupBlocker('bundled_runtime_incomplete', 'Bundled local runtime is incomplete.', 'Open diagnostics'));
-    }
-
-    const activeModelProfile = models?.profiles?.find((profile) => profile.active) ?? null;
-    if (!activeModelProfile) {
-      blockersLocal.push(setupBlocker('local_profile', 'No active local model profile is configured.', 'Open local setup'));
-    } else if (activeModelProfile.downloadStatus !== 'ready') {
-      blockersLocal.push(setupBlocker('local_model_not_ready', 'Active local model is not ready yet.', 'Open local setup'));
     }
 
     return {
       checkedAt: new Date().toISOString(),
       busy: false,
       readyApi: blockersApi.length === 0,
-      readyLocal: blockersLocal.length === 0,
       blockersApi,
-      blockersLocal,
-      dependencyBlockersLocal,
-      mode
+      mode: 'api'
     };
   }
 
   async function loadSetupStatus() {
     setupStatus = { ...setupStatus, busy: true };
     try {
-      const [config, runtime, models] = await Promise.all([
-        appConfigSummary(),
-        validateRuntime(),
-        localModelProfiles()
-      ]);
+      const config = await appConfigSummary();
       onboardingMuapiReady = Boolean(config?.muapiConfigured);
-      setupStatus = computeSetupStatus(config, runtime, models);
+      setupStatus = computeSetupStatus(config);
     } catch (_err) {
       setupStatus = {
         ...setupStatus,
         busy: false,
         checkedAt: new Date().toISOString(),
         readyApi: false,
-        readyLocal: false,
-        blockersApi: [setupBlocker('setup_unavailable', 'Unable to load setup status.', 'Recheck')],
-        blockersLocal: [setupBlocker('setup_unavailable', 'Unable to load setup status.', 'Recheck')]
+        blockersApi: [setupBlocker('setup_unavailable', 'Unable to load setup status.', 'Recheck')]
       };
     }
   }
@@ -526,19 +324,15 @@
   function openSetupConfiguration(target) {
     active = 'settings';
     settingsTab = 'configuration';
-    if (target === 'api') {
-      settingsConfigTab = 'api';
-    } else {
-      settingsConfigTab = 'local';
-    }
+    settingsConfigTab = 'api';
     loadSettingsStatus();
   }
 
   function setupTargetFromBlockers(blockers) {
-    if (blockers.some((blocker) => blocker.id === 'muapi_key' || blocker.id === 'openai_key')) {
+    if (blockers.some((blocker) => blocker.id === 'muapi_key')) {
       return 'api';
     }
-    return 'local';
+    return 'api';
   }
 
   function friendlySetupBlockers(blockers) {
@@ -549,24 +343,8 @@
       }
     };
     for (const blocker of blockers || []) {
-      if (blocker.id === 'muapi_key' || blocker.id === 'openai_key') {
+      if (blocker.id === 'muapi_key') {
         add('api_key', 'API key is not configured');
-      } else if (blocker.id === 'local_profile' || blocker.id === 'local_model_not_ready') {
-        add('local_model', 'Local model is not selected or downloaded');
-      } else if (blocker.id === 'ffmpeg') {
-        add('ffmpeg', 'FFmpeg is not available');
-      } else if (blocker.id === 'python') {
-        add('python', 'Python 3 is not available for local processing');
-      } else if (blocker.id === 'ytdlp') {
-        add('ytdlp', 'yt-dlp is not available for local YouTube downloads');
-      } else if (blocker.id === 'bridge_entry') {
-        add('bridge_entry', 'Local runtime bridge is unavailable');
-      } else if (blocker.id === 'runtime_pack') {
-        add('runtime_pack', 'Local processing runtime is not installed');
-      } else if (blocker.id === 'bundled_runtime_incomplete') {
-        add('bundled_runtime_incomplete', 'Bundled local runtime is missing or incomplete');
-      } else if (blocker.id?.startsWith('py_pkg_')) {
-        add(blocker.id, blocker.message.replace(/\.$/, ''));
       } else if (blocker.message) {
         add(blocker.id || `blocker-${friendly.length}`, blocker.message.replace(/\.$/, ''));
       }
@@ -578,14 +356,6 @@
     setupRequiredModalOpen = false;
   }
 
-  async function loadRuntimePackStatus() {
-    try {
-      localRuntimePack = await localRuntimePackStatus();
-    } catch (_err) {
-      localRuntimePack = null;
-    }
-  }
-
   function handleSetupConfigureNow() {
     const target = setupTargetFromBlockers(activeSetupBlockers);
     setupRequiredModalOpen = false;
@@ -594,14 +364,14 @@
 
   async function recheckSetupFromModal() {
     await loadSetupStatus();
-    if ((mode === 'local' ? setupStatus.blockersLocal : setupStatus.blockersApi).length === 0) {
+    if (setupStatus.blockersApi.length === 0) {
       setupRequiredModalOpen = false;
     }
   }
 
   async function ensureSetupForRun() {
     await loadSetupStatus();
-    const blockers = mode === 'local' ? setupStatus.blockersLocal : setupStatus.blockersApi;
+    const blockers = setupStatus.blockersApi;
     if (blockers.length === 0) {
       return true;
     }
@@ -856,175 +626,6 @@
     await loadSettingsStatus();
   }
 
-  async function saveLocalProcessing() {
-    if (settingsActionBusy) {
-      return;
-    }
-    if (!canSaveLocalProcessing) {
-      settingsActionStatus = 'Enter a profile name, model, and processing device before continuing.';
-      settingsActionTarget = 'local';
-      settingsActionKind = 'error';
-      return;
-    }
-    settingsActionStatus = '';
-    settingsActionTarget = '';
-    settingsActionKind = 'success';
-    settingsActionBusy = true;
-    try {
-      localProfiles = await localModelProfileAdd(
-        trimmedLocalProfileLabel,
-        trimmedWhisperModel,
-        trimmedWhisperDevice,
-        true
-      );
-      localProfileLabel = '';
-      settingsActionStatus = 'Checking local processing setup and starting model download...';
-      settingsActionTarget = 'local';
-      settingsActionKind = 'success';
-    } finally {
-      settingsActionBusy = false;
-    }
-    await loadSettingsStatus();
-  }
-
-  async function activateLocalModelProfile(profileId) {
-    if (settingsActionBusy) {
-      return;
-    }
-    settingsActionBusy = true;
-    settingsActionTarget = 'local';
-    settingsActionKind = 'success';
-    settingsActionStatus = '';
-    try {
-      localProfiles = await localModelProfileActivate(profileId);
-      settingsActionStatus = 'Active local model profile updated.';
-    } finally {
-      settingsActionBusy = false;
-    }
-    await loadSettingsStatus();
-  }
-
-  async function retryLocalModelDownload(profileId) {
-    if (settingsActionBusy) {
-      return;
-    }
-    settingsActionBusy = true;
-    settingsActionTarget = 'local';
-    settingsActionKind = 'success';
-    settingsActionStatus = '';
-    try {
-      localProfiles = await localModelProfileRetryDownload(profileId);
-      settingsActionStatus = 'Checking local processing setup and retrying model download...';
-    } finally {
-      settingsActionBusy = false;
-    }
-    await loadSettingsStatus();
-  }
-
-  async function recheckLocalSetup() {
-    await loadSettingsStatus();
-    await loadSetupStatus();
-    localDownloadActionStatus = 'Setup rechecked.';
-  }
-
-  async function openLocalDownloadLog() {
-    const path = settingsContext?.logPath;
-    if (!path) {
-      localDownloadActionStatus = 'Log path is unavailable.';
-      return;
-    }
-    try {
-      await openInFileManager(path);
-      localDownloadActionStatus = 'Opened log folder.';
-    } catch (_err) {
-      localDownloadActionStatus = 'Unable to open log folder.';
-    }
-  }
-
-  async function copyLocalDownloadDetails() {
-    const errorCode = localModelDownload?.errorCode || activeLocalModelProfile?.errorCode || 'unknown';
-    const debugRef = localModelDownload?.debugRef || activeLocalModelProfile?.debugRef || 'n/a';
-    const details = [
-      `model=${localModelDownload?.model || activeLocalModelProfile?.model || 'n/a'}`,
-      `device=${localModelDownload?.device || activeLocalModelProfile?.device || 'n/a'}`,
-      `error_code=${errorCode}`,
-      `debug_ref=${debugRef}`,
-      `message=${localModelDownload?.error || activeLocalModelProfile?.error || 'n/a'}`,
-      `log_path=${settingsContext?.logPath || 'n/a'}`
-    ].join('\n');
-    try {
-      if (navigator?.clipboard?.writeText) {
-        await navigator.clipboard.writeText(details);
-      } else {
-        throw new Error('clipboard unavailable');
-      }
-      localDownloadActionStatus = 'Error details copied.';
-    } catch (_err) {
-      localDownloadActionStatus = 'Unable to copy details automatically.';
-    }
-  }
-
-  async function deleteLocalModelProfile(profileId, label = 'this local model') {
-    if (settingsActionBusy) {
-      return;
-    }
-    const confirmed = window.confirm(`Delete "${label}"? This removes the local model profile from the app.`);
-    if (!confirmed) {
-      return;
-    }
-    settingsActionBusy = true;
-    settingsActionTarget = 'local';
-    settingsActionKind = 'success';
-    settingsActionStatus = '';
-    try {
-      if (localModelDownload?.profileId === profileId) {
-        localModelDownload = null;
-      }
-      localProfiles = await localModelProfileDelete(profileId);
-      settingsActionStatus = 'Local model profile deleted.';
-    } finally {
-      settingsActionBusy = false;
-    }
-    await loadSettingsStatus();
-  }
-
-  function localModelStatusLabel(status) {
-    const normalized = status || 'not_downloaded';
-    if (normalized === 'ready') return 'Ready';
-    if (normalized === 'downloading') return 'Downloading';
-    if (normalized === 'queued') return 'Queued';
-    if (normalized === 'failed') return 'Failed';
-    return 'Not downloaded';
-  }
-
-  function localModelPhaseLabel(phase) {
-    const labels = {
-      checking: 'checking model',
-      checking_runtime: 'checking runtime',
-      downloading_runtime: 'downloading runtime',
-      installing_runtime: 'installing runtime',
-      installing_dependency: 'installing dependency',
-      validating_runtime: 'validating runtime',
-      downloading: 'downloading',
-      downloading_model: 'downloading model',
-      verifying: 'verifying',
-      validating_model: 'validating model'
-    };
-    return labels[phase] || phase || 'working';
-  }
-
-  function optionListWithCurrent(options, currentValue, currentLabel) {
-    const current = (currentValue || '').trim();
-    if (!current || options.some((option) => option.value === current)) {
-      return options;
-    }
-    return [{ value: current, label: currentLabel }, ...options];
-  }
-
-  function optionLabel(options, value) {
-    return options.find((option) => option.value === value)?.label ?? value;
-  }
-
   function formatLastChecked(timestamp) {
     if (!timestamp) {
       return 'Not checked yet';
@@ -1034,36 +635,6 @@
       return 'Not checked yet';
     }
     return date.toLocaleString();
-  }
-
-  function toolDisplayName(tool) {
-    if (tool === 'python') {
-      return 'Python 3';
-    }
-    if (tool === 'ffmpeg') {
-      return 'FFmpeg';
-    }
-    return 'yt-dlp';
-  }
-
-  function toolPurpose(tool) {
-    if (tool === 'python') {
-      return 'Runs local processing bridge';
-    }
-    if (tool === 'ffmpeg') {
-      return 'Cuts and exports clips';
-    }
-    return 'Downloads source videos';
-  }
-
-  function installInstructions(tool) {
-    if (tool === 'python') {
-      return 'Install Python 3 and ensure `python3` is available in your PATH.';
-    }
-    if (tool === 'ffmpeg') {
-      return 'Install FFmpeg and ensure `ffmpeg` is available in your PATH.';
-    }
-    return 'Install yt-dlp and ensure `yt-dlp` is available in your PATH.';
   }
 
   function platformLabel() {
@@ -1170,15 +741,6 @@
     }
   }
 
-  async function chooseLocalFile() {
-    const picked = await pickLocalVideoFile();
-    if (picked) {
-      sourceType = 'local';
-      mode = 'local';
-      url = picked;
-    }
-  }
-
   async function submitLicense() {
     const key = licenseKey.trim();
     if (!key) {
@@ -1223,26 +785,8 @@
     }
   }
 
-  async function openClipFolder(path) {
-    if (!path || typeof path !== 'string' || path.startsWith('http')) {
-      return;
-    }
-    try {
-      await openInFileManager(path);
-      clipActionTarget = path;
-      clipActionStatus = 'Opened clip folder.';
-    } catch (_e) {
-      clipActionTarget = path;
-      clipActionStatus = 'Unable to open clip folder.';
-    }
-  }
-
   function isRemoteClipUrl(value) {
     return typeof value === 'string' && REMOTE_CLIP_URL_PATTERN.test(value);
-  }
-
-  function isLocalClipPath(value) {
-    return typeof value === 'string' && value.length > 0 && !isRemoteClipUrl(value);
   }
 
   function openClipUrl(value, index) {
@@ -1284,9 +828,7 @@
   async function submitRun() {
     const trimmedUrl = url.trim();
     if (!trimmedUrl) {
-      generateFormStatus = sourceType === 'local'
-        ? 'Select a local video file path before running.'
-        : 'Enter a YouTube video URL before running.';
+      generateFormStatus = 'Enter a YouTube video URL before running.';
       generateFormStatusKind = 'error';
       return;
     }
@@ -1300,18 +842,6 @@
 
     generateFormStatus = '';
     generateFormStatusKind = 'info';
-    if (sourceType === 'local') {
-      mode = 'local';
-    }
-    if (mode === 'local' && localRunBlocked) {
-      runState.onError({
-        error: localRunBlockedMessage,
-        mode,
-        source_video_url: url,
-        details: { stage: 'local_model_download' }
-      });
-      return;
-    }
     const setupReady = await ensureSetupForRun();
     if (!setupReady) {
       return;
@@ -1576,14 +1106,14 @@
                 </li>
                 <li>
                   <strong>Retrieve output.</strong>
-                  <span>Use Open Clip, Copy Link, or Open Folder after generation finishes.</span>
+                  <span>Use Open Clip or Copy Link after generation finishes.</span>
                 </li>
                 <li>
                   <strong>Support and policies.</strong>
                   <span>Refund, support, and usage policies are under Settings -&gt; Policies and your Gumroad purchase/support channel.</span>
                 </li>
               </ol>
-              <p class="meta">API mode with MuAPI is the recommended first setup. OpenAI and local processing are optional advanced paths with extra runtime and model requirements.</p>
+              <p class="meta">API mode with MuAPI is the supported processing path for this app.</p>
               <div class="row onboarding-actions">
                 <button type="button" on:click={startOnboardingSetup}>Start Setup</button>
                 <button type="button" class="button-secondary" on:click={skipOnboarding}>Skip</button>
@@ -1594,42 +1124,12 @@
         </div>
       {/if}
 
-      {#if localModelDownload && showLocalModelDownloadBanner}
-        <section class="panel local-download-banner" aria-live="polite">
-          <div class="local-download-stack">
-            <p class="status-line local-download-status-line">
-              Local model: {localModelDownload.message}
-              {#if localModelDownload.active}
-                <span class="meta">({localModelDownloadPercent}% - {localModelPhaseLabel(localModelDownload.phase)})</span>
-              {/if}
-              {#if localModelDownload.phase === 'failed' && localModelDownload.error}
-                <span class="error-text">{localModelDownload.error}</span>
-              {/if}
-            </p>
-            <div class="meter">
-              <span style={`width:${localModelDownloadPercent}%`}></span>
-            </div>
-            {#if localModelDownload.phase === 'failed'}
-              <div class="row local-download-actions">
-                <button type="button" on:click={() => retryLocalModelDownload(localModelDownload.profileId)} disabled={settingsActionBusy || !localModelDownload.profileId}>Try Again</button>
-                <button type="button" class="button-secondary" on:click={recheckLocalSetup}>Recheck Setup</button>
-                <button type="button" class="button-secondary" on:click={openLocalDownloadLog}>Open Logs</button>
-                <button type="button" class="button-secondary" on:click={copyLocalDownloadDetails}>Copy Error Details</button>
-              </div>
-              {#if localDownloadActionStatus}
-                <p class="meta local-download-action-status">{localDownloadActionStatus}</p>
-              {/if}
-            {/if}
-          </div>
-        </section>
-      {/if}
-
       {#if active === 'generate'}
       <section class="screen-header">
         <div class="screen-header-row">
           <div>
             <h2 class="screen-title">Generate Shorts</h2>
-            <p class="meta">Create and export short clips from YouTube URLs or local videos.</p>
+            <p class="meta">Create and export short clips from YouTube URLs using API processing.</p>
           </div>
           <button type="button" class="button-secondary setup-guide-button" on:click={openOnboardingGuide}>Setup Guide</button>
         </div>
@@ -1638,21 +1138,7 @@
       <section class="panel">
         <form class="form" novalidate on:submit|preventDefault={submitRun}>
           <label>Project title <input aria-label="Project title" bind:value={projectName} placeholder="My Product Launch Highlights" /></label>
-          <div class="field">
-            <span>Source type</span>
-            <ThemedSelect ariaLabel="Source type" bind:value={sourceType} options={SOURCE_TYPE_OPTIONS} />
-          </div>
           <label>{sourceLabel} <input aria-label="YouTube video URL" bind:value={url} placeholder={sourcePlaceholder} /></label>
-          {#if sourceType === 'local'}
-            <div class="row picker-row">
-              <button type="button" on:click={chooseLocalFile}>Choose File</button>
-            </div>
-          {/if}
-          <div class="field">
-            <span>Mode</span>
-            <ThemedSelect ariaLabel="Mode" bind:value={mode} options={MODE_OPTIONS} />
-          </div>
-          <p class="meta warn-text form-full">Local mode is beta/advanced in v1 and may require runtime pack or local model repair. API mode is recommended for first setup.</p>
           <label>Num clips <input aria-label="Num clips" type="number" bind:value={numClips} /></label>
           <div class="field">
             <span>Aspect ratio</span>
@@ -1670,11 +1156,8 @@
             </div>
           </details>
           <div class="form-action-row">
-            <button type="submit" disabled={localRunBlocked}>Run</button>
+            <button type="submit">Run</button>
           </div>
-          {#if localRunBlocked}
-            <p class="meta warn-text form-full">{localRunBlockedMessage}</p>
-          {/if}
           <div class="form-full">
             <FormStatus message={generateFormStatus} kind={generateFormStatusKind} />
           </div>
@@ -1693,7 +1176,7 @@
               <h2 id="setup-required-modal-title">Setup Required Before Generating</h2>
             </div>
             <div class="policy-modal-content">
-              <p>To generate shorts, you need to configure either an API-based setup or a local model first.</p>
+              <p>To generate shorts, you need to configure API access first.</p>
               {#if setupModalBlockerMessages.length > 0}
                 <ul class="meta">
                   {#each setupModalBlockerMessages as blocker}
@@ -1751,8 +1234,6 @@
                       {#if isRemoteClipUrl(s.clip_url)}
                         <button type="button" on:click={() => openClipUrl(s.clip_url, i)}>Open Clip</button>
                         <button type="button" class="button-secondary" on:click={() => copyClipLink(s.clip_url, i)}>Copy Link</button>
-                      {:else if isLocalClipPath(s.clip_url)}
-                        <button type="button" on:click={() => openClipFolder(s.clip_url)}>Open Folder</button>
                       {/if}
                     </div>
                   </div>
@@ -1772,7 +1253,7 @@
     {#if active === 'library'}
       <section class="screen-header">
         <h2 class="screen-title">Shorts Library</h2>
-        <p class="meta">Open Folder is available for locally generated shorts.</p>
+        <p class="meta">Completed API-generated clips appear here.</p>
       </section>
 
       <section class="panel">
@@ -1796,8 +1277,8 @@
                     {#each project.shorts || [] as short}
                       <div class="row">
                         <span>{short.title}</span>
-                        {#if short.clip_url}
-                          <button type="button" on:click={() => openClipFolder(short.clip_url)}>Open Folder</button>
+                        {#if isRemoteClipUrl(short.clip_url)}
+                          <button type="button" on:click={() => openClipUrl(short.clip_url, short.title)}>Open Clip</button>
                         {/if}
                       </div>
                     {/each}
@@ -1827,7 +1308,7 @@
             class:active-tab={settingsTab === 'configuration'}
             on:click={() => {
               settingsTab = 'configuration';
-              settingsConfigTab = 'local';
+              settingsConfigTab = 'api';
             }}
           >Configuration</button>
           <button
@@ -1862,13 +1343,6 @@
           aria-labelledby="settings-tab-configuration"
         >
           <div class="config-subtabs" role="tablist" aria-label="Configuration sections">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={settingsConfigTab === 'local'}
-              class:active-tab={settingsConfigTab === 'local'}
-              on:click={() => (settingsConfigTab = 'local')}
-            >Local Processing</button>
             <button
               type="button"
               role="tab"
@@ -1994,100 +1468,6 @@
           </article>
           {/if}
 
-          {#if settingsConfigTab === 'local'}
-          <article class="panel config-card">
-            <div class="config-card-head">
-              <div>
-                <p class="eyebrow">On-device pipeline</p>
-                <div class="config-title-row">
-                  <h3>Local Processing</h3>
-                  <span class="help-wrap">
-                    <button class="help-button" type="button" aria-label="Local Processing help" aria-describedby="help-local-processing">?</button>
-                    <span id="help-local-processing" class="help-tooltip" role="tooltip">Tune the local transcription defaults used when generation runs without API mode.</span>
-                  </span>
-                </div>
-              </div>
-            </div>
-            <p class="meta warn-text">Local mode is beta/advanced in v1 and may require runtime pack or local model repair. API mode is recommended for first setup.</p>
-            {#if localProfiles?.envOverride}
-              <p class="meta warn-text">Environment variable override is active. Saved model profiles are available, but runtime will use the environment model/device.</p>
-            {/if}
-            <form class="form config-form local-processing-form" novalidate on:submit|preventDefault={saveLocalProcessing}>
-              <label>Profile name <input aria-label="Local model profile name" autocomplete="off" bind:value={localProfileLabel} placeholder="Balanced local model" /></label>
-              <div class="select-field">
-                <span class="field-label-row">
-                  Whisper model
-                  <span class="help-wrap field-help">
-                    <button class="help-button" type="button" aria-label="Whisper model help" aria-describedby="help-whisper-model">?</button>
-                    <span id="help-whisper-model" class="help-tooltip" role="tooltip">Small is the safest quality/speed upgrade from Base.</span>
-                  </span>
-                </span>
-                <ThemedSelect ariaLabel="Whisper model" bind:value={whisperModelInput} options={whisperModelOptions} />
-              </div>
-              <div class="select-field">
-                <span class="field-label-row">
-                  Processing device
-                  <span class="help-wrap field-help">
-                    <button class="help-button" type="button" aria-label="Processing device help" aria-describedby="help-processing-device">?</button>
-                    <span id="help-processing-device" class="help-tooltip" role="tooltip">This device choice is saved with the model profile and becomes active when that profile is selected.</span>
-                  </span>
-                </span>
-                <ThemedSelect ariaLabel="Processing device" bind:value={whisperDeviceInput} options={whisperDeviceOptions} />
-              </div>
-              <div class="settings-actions">
-                <button type="submit" disabled={settingsActionBusy || !canSaveLocalProcessing}>Download Model</button>
-              </div>
-            </form>
-            <div class="api-profile-list local-model-list" aria-label="Local model profiles">
-              {#if localProfiles?.profiles?.length}
-                {#each localProfiles.profiles as profile}
-                  <div class="api-profile-row local-model-row">
-                    <div class="model-info">
-                      <strong>{profile.label}</strong>
-                      <span class="meta">{profile.model} | {optionLabel(whisperDeviceOptions, profile.device)}</span>
-                      {#if profile.error}
-                        <span class="meta error-text">{profile.error}</span>
-                      {/if}
-                    </div>
-                    <div class="model-actions">
-                      <div class="model-status-group">
-                        {#if profile.active && profile.downloadStatus === 'ready'}
-                          <span class="profile-active-badge">Active</span>
-                        {/if}
-                        {#if profile.downloadStatus !== 'ready'}
-                          <span
-                            class="profile-status-badge"
-                            class:badge-failed={profile.downloadStatus === 'failed'}
-                            class:badge-downloading={profile.downloadStatus === 'downloading' || profile.downloadStatus === 'queued'}
-                            class:badge-not-downloaded={profile.downloadStatus === 'not_downloaded' || !profile.downloadStatus}
-                          >{localModelStatusLabel(profile.downloadStatus)}</span>
-                        {/if}
-                      </div>
-                      <div class="model-action-group">
-                        {#if profile.downloadStatus === 'ready' && !profile.active}
-                          <button type="button" on:click={() => activateLocalModelProfile(profile.id)} disabled={settingsActionBusy}>Set Active</button>
-                        {/if}
-                        {#if profile.downloadStatus === 'failed'}
-                          <button type="button" on:click={() => retryLocalModelDownload(profile.id)} disabled={settingsActionBusy || Boolean(localModelDownload?.active && localModelDownload?.profileId === profile.id)}>Retry Download</button>
-                        {/if}
-                        {#if profile.downloadStatus === 'not_downloaded'}
-                          <button type="button" on:click={() => retryLocalModelDownload(profile.id)} disabled={settingsActionBusy || Boolean(localModelDownload?.active && localModelDownload?.profileId === profile.id)}>Download</button>
-                        {/if}
-                        <button class="button-danger" type="button" on:click={() => deleteLocalModelProfile(profile.id, profile.label)} disabled={settingsActionBusy}>Delete</button>
-                      </div>
-                    </div>
-                  </div>
-                {/each}
-              {:else}
-                <p class="meta">No local model profiles yet. Save a named profile to download and reuse a model.</p>
-              {/if}
-            </div>
-            {#if settingsActionTarget === 'local'}
-              <FormStatus message={settingsActionStatus} kind={settingsActionKind} />
-            {/if}
-          </article>
-          {/if}
-
           {#if settingsConfigTab === 'reset'}
           <article class="panel config-card config-card-caution">
             <div class="config-card-head">
@@ -2139,64 +1519,12 @@
       {#if settingsTab === 'diagnostics'}
         <div id="settings-panel-diagnostics" class="panel" role="tabpanel" aria-labelledby="settings-tab-diagnostics">
           <h3>Diagnostics</h3>
-          <p class="meta">See system health and take action when setup issues are detected.</p>
-          <p>
-            Runtime status:
-            <span class:ok={settingsRuntime?.ok} class:warn={!settingsRuntime?.ok}>
-              {settingsRuntime?.ok ? 'All required dependencies are available.' : 'Action needed for one or more dependencies.'}
-            </span>
-          </p>
+          <p class="meta">See app status and maintenance information.</p>
           <p class="meta">Last checked: {formatLastChecked(diagnosticsLastCheckedAt)}</p>
           <button type="button" on:click={loadSettingsStatus} disabled={settingsBusy}>
-            {settingsBusy ? 'Rechecking...' : 'Recheck Dependencies'}
+            {settingsBusy ? 'Refreshing...' : 'Refresh Status'}
           </button>
         </div>
-        {#if settingsRuntime?.tools?.length}
-          <section class="panel">
-            <h3>Required Dependencies</h3>
-            <div class="tool-list">
-              {#each settingsRuntime.tools as tool}
-                <div class="tool-row">
-                  <div>
-                    <p><strong>{toolDisplayName(tool.tool)}</strong></p>
-                    <p class="meta">{toolPurpose(tool.tool)}</p>
-                    <p class:ok={tool.ok} class:warn={!tool.ok}>{tool.ok ? 'Available' : tool.message}</p>
-                  </div>
-                  <div class="row">
-                    <button type="button" class="button-secondary" on:click={loadSettingsStatus} disabled={settingsBusy}>
-                      Recheck
-                    </button>
-                    <button
-                      type="button"
-                      class="button-secondary"
-                      on:click={() => (diagnosticsInstallHelpFor = diagnosticsInstallHelpFor === tool.tool ? '' : tool.tool)}
-                    >
-                      {diagnosticsInstallHelpFor === tool.tool ? 'Hide instructions' : 'Install instructions'}
-                    </button>
-                  </div>
-                </div>
-                {#if diagnosticsInstallHelpFor === tool.tool}
-                  <p class="meta">{installInstructions(tool.tool)}</p>
-                {/if}
-              {/each}
-            </div>
-          </section>
-        {/if}
-        {#if settingsRuntime?.python_packages?.length}
-          <section class="panel">
-            <h3>Local Python Packages</h3>
-            <div class="tool-list">
-              {#each settingsRuntime.python_packages as pkg}
-                <div class="tool-row">
-                  <div>
-                    <p><strong>{pkg.tool}</strong></p>
-                    <p class:ok={pkg.ok} class:warn={!pkg.ok}>{pkg.ok ? 'Available' : pkg.message}</p>
-                  </div>
-                </div>
-              {/each}
-            </div>
-          </section>
-        {/if}
 
         <section class="panel">
           <h3>Maintenance</h3>
@@ -2230,28 +1558,6 @@
                 <span>{settingsContext?.platform || platformLabel()}</span>
               </div>
               <div class="tool-row">
-                <span>Bridge entry</span>
-                <span>{settingsRuntime?.bridge_entry || 'Unavailable'}</span>
-              </div>
-              <div class="tool-row">
-                <span>Bridge entry exists</span>
-                <span class:ok={settingsRuntime?.bridge_entry_exists} class:warn={!settingsRuntime?.bridge_entry_exists}>
-                  {settingsRuntime?.bridge_entry_exists ? 'Yes' : 'No'}
-                </span>
-              </div>
-              <div class="tool-row">
-                <span>Runtime-pack status</span>
-                <span>{settingsRuntime?.runtime_pack_status || 'unknown'}</span>
-              </div>
-              <div class="tool-row">
-                <span>Runtime-pack version</span>
-                <span>{settingsRuntime?.runtime_pack_version || 'n/a'}</span>
-              </div>
-              <div class="tool-row">
-                <span>Runtime-pack path</span>
-                <span>{settingsRuntime?.runtime_pack_install_dir || 'n/a'}</span>
-              </div>
-              <div class="tool-row">
                 <span>Config path</span>
                 <span>{settingsContext?.configPath || 'Unavailable'}</span>
               </div>
@@ -2259,12 +1565,6 @@
                 <span>Log path</span>
                 <span>{settingsContext?.logPath || 'Unavailable'}</span>
               </div>
-              {#each settingsRuntime?.tools ?? [] as tool}
-                <div class="tool-row">
-                  <span>{toolDisplayName(tool.tool)} source/path</span>
-                  <span>{tool.source || 'n/a'} {tool.path || ''}</span>
-                </div>
-              {/each}
             </div>
           {/if}
         </section>
@@ -2959,41 +2259,6 @@
 
   .config-form {
     align-items: end;
-  }
-
-  .local-processing-form {
-    grid-template-columns: 1fr;
-    align-items: start;
-  }
-
-  .local-download-banner {
-    padding: var(--space-md);
-  }
-
-  .local-download-stack {
-    display: grid;
-    gap: var(--space-sm);
-  }
-
-  .local-download-status-line {
-    display: grid;
-    gap: var(--space-xs);
-    margin: 0;
-  }
-
-  .local-download-actions {
-    gap: var(--space-sm);
-    flex-wrap: wrap;
-  }
-
-  .local-download-action-status {
-    margin-top: var(--space-xs);
-  }
-
-  .local-model-row .model-info {
-    display: grid;
-    gap: var(--space-xs);
-    min-width: 0;
   }
 
   .profile-status-badge {

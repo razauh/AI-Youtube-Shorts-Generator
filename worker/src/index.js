@@ -47,10 +47,6 @@ export default {
       return handleReadyz(request, env);
     }
 
-    if (method === "GET" && path === "/runtime-pack/manifest.json") {
-      return handleRuntimePackManifest(env);
-    }
-
     const updateMatch = path.match(/^\/updates\/([^/]+)\/([^/]+)\/([^/]+)$/);
     if (method === "GET" && updateMatch) {
       return handleUpdateCheck(env, {
@@ -145,12 +141,10 @@ async function handleReadyz(request, env) {
     config: {
       license_contract_version: String(env?.LICENSE_CONTRACT_VERSION || "").trim() || null,
       update_manifest_url_configured: nonEmpty(env?.UPDATE_MANIFEST_URL),
-      runtime_pack_manifest_url_configured: nonEmpty(env?.RUNTIME_PACK_MANIFEST_URL),
     },
     deep: {
       enabled: deep,
       updater_manifest_ok: null,
-      runtime_pack_manifest_ok: null,
     },
   };
 
@@ -211,19 +205,6 @@ async function handleReadyz(request, env) {
     } else {
       checks.deep.updater_manifest_ok = true;
     }
-
-    if (checks.config.runtime_pack_manifest_url_configured) {
-      try {
-        const res = await fetch(String(env.RUNTIME_PACK_MANIFEST_URL).trim());
-        checks.deep.runtime_pack_manifest_ok = res.ok;
-        if (!res.ok) ready = false;
-      } catch {
-        checks.deep.runtime_pack_manifest_ok = false;
-        ready = false;
-      }
-    } else {
-      checks.deep.runtime_pack_manifest_ok = true;
-    }
   }
 
   return json(
@@ -234,30 +215,6 @@ async function handleReadyz(request, env) {
     },
     { status: ready ? 200 : 503 },
   );
-}
-
-async function handleRuntimePackManifest(env) {
-  const manifestUrl = String(env?.RUNTIME_PACK_MANIFEST_URL || "").trim();
-  if (!manifestUrl) {
-    return err("storage", "Runtime pack manifest url not configured.", requestId(), false, 404);
-  }
-
-  let res;
-  try {
-    res = await fetch(manifestUrl);
-  } catch {
-    return err("storage", "Runtime pack manifest fetch failed.", requestId(), true, 503);
-  }
-  if (!res.ok) {
-    return err("storage", "Runtime pack manifest unavailable.", requestId(), true, 503);
-  }
-
-  const headers = new Headers(res.headers);
-  if (!headers.has("content-type")) {
-    headers.set("content-type", "application/json; charset=utf-8");
-  }
-  headers.set("cache-control", "public, max-age=60");
-  return new Response(res.body, { status: 200, headers });
 }
 
 async function handleUpdateCheck(env, request) {

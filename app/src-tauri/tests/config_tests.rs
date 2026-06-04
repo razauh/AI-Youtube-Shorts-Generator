@@ -12,9 +12,6 @@ const CONFIG_ENV_KEYS: &[&str] = &[
     "MUAPI_POLL_TIMEOUT",
     "OPENAI_API_KEY",
     "OPENAI_MODEL",
-    "LOCAL_WHISPER_MODEL",
-    "LOCAL_WHISPER_DEVICE",
-    "LOCAL_OUTPUT_DIR",
     "LICENSE_WORKER_BASE_URL",
     "LICENSE_STORAGE_NAMESPACE",
     "LICENSE_KEYCHAIN_SERVICE",
@@ -99,9 +96,6 @@ fn defaults_match_python_when_env_missing() {
     assert_eq!(cfg.muapi_poll_timeout_seconds, 600.0);
     assert_eq!(cfg.openai_api_key, "");
     assert_eq!(cfg.openai_model, "gpt-4o-mini");
-    assert_eq!(cfg.local_whisper_model, "base");
-    assert_eq!(cfg.local_whisper_device, "auto");
-    assert_eq!(cfg.local_output_dir, "output");
     assert_eq!(cfg.license_worker_base_url, PRODUCTION_LICENSE_WORKER_BASE_URL);
     assert_eq!(cfg.license_storage_namespace, "desktop-client");
     assert_eq!(cfg.license_keychain_service, "ai-youtube-shorts-generator");
@@ -256,12 +250,6 @@ fn missing_required_keys_return_deterministic_prefixes() {
         .expect_err("must fail when MUAPI_API_KEY missing");
     assert!(api_err.to_string().starts_with("MUAPI_API_KEY is not set."));
 
-    let openai_err = cfg
-        .require_openai_key()
-        .expect_err("must fail when OPENAI_API_KEY missing");
-    assert!(openai_err
-        .to_string()
-        .starts_with("OPENAI_API_KEY is not set."));
 }
 
 #[test]

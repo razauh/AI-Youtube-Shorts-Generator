@@ -21,11 +21,8 @@ contains() {
   fi
 }
 
-echo "[check] worker contract tests (includes /readyz + runtime-pack manifest route)"
+echo "[check] worker contract tests"
 node --test worker/test/contract.test.js
-
-echo "[check] bundled runtime scan"
-bash .scripts/scan-bundled-runtime.sh
 
 echo "[check] d1 migration chain sanity (masked_license_key added only once)"
 if contains "masked_license_key" worker/migrations/0001_init.sql; then
@@ -34,12 +31,6 @@ if contains "masked_license_key" worker/migrations/0001_init.sql; then
 fi
 if ! contains "ALTER TABLE reset_requests ADD COLUMN masked_license_key" worker/migrations/0002_add_masked_license_key_to_reset_requests.sql; then
   echo "[fail] expected masked_license_key migration missing in 0002"
-  exit 1
-fi
-
-echo "[check] runtime-pack download is streaming (no full-body bytes load)"
-if contains "runtime pack download body read failed" app/src-tauri/src/commands/runtime.rs && contains "\\.bytes\\(\\)\\s*\\.await" app/src-tauri/src/commands/runtime.rs; then
-  echo "[fail] runtime-pack download appears to use full-body bytes() loading"
   exit 1
 fi
 

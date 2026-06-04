@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_SCRIPT="tauri:dev:customer"
+NODE_VERSION="22.13.1"
+EXPECTED_NODE="$HOME/.nvm/versions/node/v${NODE_VERSION}/bin/node"
+EXPECTED_COREPACK="$HOME/.nvm/versions/node/v${NODE_VERSION}/bin/corepack"
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
+
+fail() {
+  echo "[run-cutomer-app] ERROR: $*" >&2
+  read -r -p "Press Enter to close..." _ || true
+  exit 1
+}
+
+info() {
+  echo "[run-cutomer-app] $*"
+}
+
+if [[ ! -s "$HOME/.nvm/nvm.sh" ]]; then
+  fail "nvm was not found at $HOME/.nvm/nvm.sh"
+fi
+
+export NVM_DIR="$HOME/.nvm"
+# shellcheck source=/dev/null
+. "$NVM_DIR/nvm.sh"
+
+if [[ ! -x "$EXPECTED_NODE" || ! -x "$EXPECTED_COREPACK" ]]; then
+  info "Installing Node.js v${NODE_VERSION} with nvm"
+  nvm install "$NODE_VERSION" || fail "failed to install Node.js v${NODE_VERSION}"
+fi
+
+nvm use "$NODE_VERSION" || fail "failed to switch to Node.js v${NODE_VERSION}"
+hash -r
+
+ACTIVE_NODE="$(command -v node || true)"
+ACTIVE_COREPACK="$(command -v corepack || true)"
+
+[[ "$ACTIVE_NODE" == "$EXPECTED_NODE" ]] || fail "expected node at $EXPECTED_NODE, got ${ACTIVE_NODE:-not found}"
+[[ "$ACTIVE_COREPACK" == "$EXPECTED_COREPACK" ]] || fail "expected corepack at $EXPECTED_COREPACK, got ${ACTIVE_COREPACK:-not found}"
+
+NODE_ACTUAL_VERSION="$(node -v)"
+[[ "$NODE_ACTUAL_VERSION" == "v${NODE_VERSION}" ]] || fail "expected node v${NODE_VERSION}, got $NODE_ACTUAL_VERSION"
+
+info "Using node: $ACTIVE_NODE ($NODE_ACTUAL_VERSION)"
+info "Using corepack: $ACTIVE_COREPACK"
+
+corepack enable || fail "failed to enable corepack"
+corepack pnpm run "$APP_SCRIPT"

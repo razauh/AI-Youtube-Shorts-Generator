@@ -7,7 +7,7 @@ import type {
 export interface GenerateRequest {
   run_id: string;
   youtube_url: string;
-  mode: 'api' | 'local';
+  mode: 'api';
   num_clips: number;
   aspect_ratio: string;
   download_format: string;
@@ -84,19 +84,8 @@ export async function cancelGenerateRun(run_id: string): Promise<boolean> {
   return Boolean(result);
 }
 
-export async function pickLocalVideoFile(): Promise<string | null> {
-  const { invoke } = await getCore();
-  const path = await invoke<string | null>('pick_local_video_file');
-  return path;
-}
-
 export async function pickOutputJsonPath(): Promise<string | null> {
   const { invoke } = await getCore();
   const path = await invoke<string | null>('pick_output_json_path');
   return path;
-}
-
-export async function openInFileManager(path: string): Promise<void> {
-  const { invoke } = await getCore();
-  await invoke('open_in_file_manager', { path });
 }

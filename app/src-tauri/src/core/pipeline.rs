@@ -1,10 +1,8 @@
 use crate::core::api_mode::{clipper, downloader, muapi::MuApiClient, transcriber};
-use crate::commands::runtime::is_local_runtime_pack_ready;
 use crate::core::config::Config;
 use crate::core::contracts::{ErrorEnvelope, Highlight, PipelineSuccess, ShortClip, Transcript};
 use crate::core::errors::{redact_message, ErrorCode};
 use crate::core::highlights::{self, HighlightLlm};
-use crate::core::local_mode::bridge::run_local_pipeline_bridge;
 use crate::core::observability::events::{NoopProgressEmitter, ProgressEmitter};
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -110,50 +108,11 @@ pub fn generate_shorts_with_progress(
         details: Some(json!({"stage":"cancel","code":"E_GENERATION_CANCELLED"})),
     };
 
-    if mode == "local" {
-        if !is_local_runtime_pack_ready() {
-            return Err(ErrorEnvelope {
-                mode: Some("local".to_string()),
-                source_video_url: Some(request.youtube_url.clone()),
-                error: "Local processing runtime is not ready. Download Local Processing Runtime from Settings.".to_string(),
-                details: Some(json!({"stage":"runtime_pack","code":"E_RUNTIME_PACK_SETUP_REQUIRED"})),
-            });
-        }
-        if is_cancelled() {
-            return Err(cancelled());
-        }
-        emit_progress(
-            &mut progress_cb,
-            "local_bridge:start",
-            0.1,
-            Some("starting local bridge".to_string()),
-        );
-        let out = run_local_pipeline_bridge(
-            request.youtube_url.clone(),
-            request.num_clips,
-            request.aspect_ratio.clone(),
-            request.download_format.clone(),
-            request.language.clone(),
-        );
-        if is_cancelled() {
-            return Err(cancelled());
-        }
-        if out.is_ok() {
-            emit_progress(
-                &mut progress_cb,
-                "local_bridge:end",
-                1.0,
-                Some("local bridge completed".to_string()),
-            );
-        }
-        return out;
-    }
-
     if mode != "api" {
         return Err(ErrorEnvelope {
             mode: None,
             source_video_url: None,
-            error: format!("Unknown mode: '{mode}'. Use 'api' or 'local'."),
+            error: format!("Unknown mode: '{mode}'. Use 'api'."),
             details: None,
         });
     }
@@ -510,11 +469,6 @@ pub fn generate_shorts_with_progress_live(
     muapi_emitter: Option<Arc<dyn ProgressEmitter>>,
     cancel_cb: Option<&dyn Fn() -> bool>,
 ) -> Result<PipelineSuccess, ErrorEnvelope> {
-    if request.mode.to_lowercase() == "local" {
-        let mut stages = MockPipelineStages::default();
-        return generate_shorts_with_progress(request, &mut stages, progress_cb, cancel_cb);
-    }
-
     let config = Config::from_env().map_err(|e| ErrorEnvelope {
         mode: Some("api".to_string()),
         source_video_url: None,

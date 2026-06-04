@@ -11,7 +11,6 @@ Production release configuration is centralized in [`docs/release-production-con
 
 - `GET /health`
 - `GET /readyz`
-- `GET /runtime-pack/manifest.json`
 - `POST /v1/license/activate`
 - `POST /v1/license/validate`
 - `POST /v1/license/reset/request`
@@ -58,7 +57,6 @@ wrangler secret put HASH_PEPPER
 ## Notes
 
 - Production desktop licensing defaults to `https://license-worker.demandscout.workers.dev`.
-- Production runtime-pack setup defaults to `https://license-worker.demandscout.workers.dev/runtime-pack/manifest.json`.
 - Worker routes are D1-backed for:
   - activate
   - validate

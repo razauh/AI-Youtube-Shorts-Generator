@@ -22,9 +22,6 @@ def test_python_defaults_and_trimming_behavior():
             "MUAPI_POLL_TIMEOUT",
             "OPENAI_API_KEY",
             "OPENAI_MODEL",
-            "LOCAL_WHISPER_MODEL",
-            "LOCAL_WHISPER_DEVICE",
-            "LOCAL_OUTPUT_DIR",
         ):
             os.environ.pop(key, None)
 
@@ -35,9 +32,6 @@ def test_python_defaults_and_trimming_behavior():
         assert cfg.POLL_TIMEOUT_SECONDS == 600.0
         assert cfg.OPENAI_API_KEY == ""
         assert cfg.OPENAI_MODEL == "gpt-4o-mini"
-        assert cfg.LOCAL_WHISPER_MODEL == "base"
-        assert cfg.LOCAL_WHISPER_DEVICE == "auto"
-        assert cfg.LOCAL_OUTPUT_DIR == "output"
 
         os.environ["MUAPI_BASE_URL"] = "https://api.muapi.ai/api/v1///"
         os.environ["MUAPI_API_KEY"] = "  abc  "
@@ -63,12 +57,6 @@ def test_python_required_key_errors_and_float_parse():
             raise AssertionError("expected RuntimeError for missing MUAPI_API_KEY")
         except RuntimeError as err:
             assert str(err).startswith("MUAPI_API_KEY is not set.")
-
-        try:
-            cfg.require_openai_key()
-            raise AssertionError("expected RuntimeError for missing OPENAI_API_KEY")
-        except RuntimeError as err:
-            assert str(err).startswith("OPENAI_API_KEY is not set.")
 
         os.environ["MUAPI_POLL_INTERVAL"] = "abc"
         try:

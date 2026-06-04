@@ -1,33 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, screen, cleanup } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
 import { createRunState } from '../lib/stores/runState';
 import { POLICY_LAST_UPDATED_LABEL, POLICY_SECTIONS, type PolicyTab } from '../lib/legal/policiesContent';
 
 const runGenerateAndStream = vi.fn();
-const pickLocalVideoFile = vi.fn();
 const pickOutputJsonPath = vi.fn();
-const openInFileManager = vi.fn();
 const checkForAppUpdate = vi.fn();
 const installAppUpdate = vi.fn();
 const appConfigSummary = vi.fn();
-const validateRuntime = vi.fn();
 const runtimeContext = vi.fn();
 const secureStoreLoad = vi.fn();
 const secureStoreSave = vi.fn();
 const secureStoreDelete = vi.fn();
-const localModelProfiles = vi.fn();
-const localModelDownloadStatus = vi.fn();
-const localModelProfileAdd = vi.fn();
-const localModelProfileActivate = vi.fn();
-const localModelProfileDelete = vi.fn();
-const localModelProfileRetryDownload = vi.fn();
-const listenLocalModelDownloadProgress = vi.fn();
-const localRuntimePackStatus = vi.fn();
-const localRuntimePackPrepare = vi.fn();
-const localRuntimePackRetry = vi.fn();
-const localRuntimePackRepair = vi.fn();
-const listenLocalRuntimePackProgress = vi.fn();
 const apiKeyProfiles = vi.fn();
 const apiKeyProfileAdd = vi.fn();
 const apiKeyProfileActivate = vi.fn();
@@ -90,9 +74,7 @@ Object.defineProperty(window, 'open', {
 
 vi.mock('../lib/api/tauriClient', () => ({
   runGenerateAndStream: (...args: unknown[]) => runGenerateAndStream(...args),
-  pickLocalVideoFile: (...args: unknown[]) => pickLocalVideoFile(...args),
-  pickOutputJsonPath: (...args: unknown[]) => pickOutputJsonPath(...args),
-  openInFileManager: (...args: unknown[]) => openInFileManager(...args)
+  pickOutputJsonPath: (...args: unknown[]) => pickOutputJsonPath(...args)
 }));
 
 vi.mock('../lib/api/updaterClient', () => ({
@@ -102,23 +84,10 @@ vi.mock('../lib/api/updaterClient', () => ({
 
 vi.mock('../lib/api/runtimeClient', () => ({
   appConfigSummary: (...args: unknown[]) => appConfigSummary(...args),
-  validateRuntime: (...args: unknown[]) => validateRuntime(...args),
   runtimeContext: (...args: unknown[]) => runtimeContext(...args),
   secureStoreLoad: (...args: unknown[]) => secureStoreLoad(...args),
   secureStoreSave: (...args: unknown[]) => secureStoreSave(...args),
   secureStoreDelete: (...args: unknown[]) => secureStoreDelete(...args),
-  localModelProfiles: (...args: unknown[]) => localModelProfiles(...args),
-  localModelDownloadStatus: (...args: unknown[]) => localModelDownloadStatus(...args),
-  localModelProfileAdd: (...args: unknown[]) => localModelProfileAdd(...args),
-  localModelProfileActivate: (...args: unknown[]) => localModelProfileActivate(...args),
-  localModelProfileDelete: (...args: unknown[]) => localModelProfileDelete(...args),
-  localModelProfileRetryDownload: (...args: unknown[]) => localModelProfileRetryDownload(...args),
-  listenLocalModelDownloadProgress: (...args: unknown[]) => listenLocalModelDownloadProgress(...args),
-  localRuntimePackStatus: (...args: unknown[]) => localRuntimePackStatus(...args),
-  localRuntimePackPrepare: (...args: unknown[]) => localRuntimePackPrepare(...args),
-  localRuntimePackRetry: (...args: unknown[]) => localRuntimePackRetry(...args),
-  localRuntimePackRepair: (...args: unknown[]) => localRuntimePackRepair(...args),
-  listenLocalRuntimePackProgress: (...args: unknown[]) => listenLocalRuntimePackProgress(...args),
   apiKeyProfiles: (...args: unknown[]) => apiKeyProfiles(...args),
   apiKeyProfileAdd: (...args: unknown[]) => apiKeyProfileAdd(...args),
   apiKeyProfileActivate: (...args: unknown[]) => apiKeyProfileActivate(...args),
@@ -137,29 +106,14 @@ describe('test_ui flow parity', () => {
 
   beforeEach(() => {
     runGenerateAndStream.mockReset();
-    pickLocalVideoFile.mockReset();
     pickOutputJsonPath.mockReset();
-    openInFileManager.mockReset();
     checkForAppUpdate.mockReset();
     installAppUpdate.mockReset();
     appConfigSummary.mockReset();
-    validateRuntime.mockReset();
     runtimeContext.mockReset();
     secureStoreLoad.mockReset();
     secureStoreSave.mockReset();
     secureStoreDelete.mockReset();
-    localModelProfiles.mockReset();
-    localModelDownloadStatus.mockReset();
-    localModelProfileAdd.mockReset();
-    localModelProfileActivate.mockReset();
-    localModelProfileDelete.mockReset();
-    localModelProfileRetryDownload.mockReset();
-    listenLocalModelDownloadProgress.mockReset();
-    localRuntimePackStatus.mockReset();
-    localRuntimePackPrepare.mockReset();
-    localRuntimePackRetry.mockReset();
-    localRuntimePackRepair.mockReset();
-    listenLocalRuntimePackProgress.mockReset();
     apiKeyProfiles.mockReset();
     apiKeyProfileAdd.mockReset();
     apiKeyProfileActivate.mockReset();
@@ -171,53 +125,6 @@ describe('test_ui flow parity', () => {
     secureStoreLoad.mockResolvedValue(null);
     secureStoreSave.mockResolvedValue(undefined);
     secureStoreDelete.mockResolvedValue(undefined);
-    localModelProfiles.mockResolvedValue({
-      envOverride: false,
-      activeProfileId: 'local-1',
-      profiles: [{ id: 'local-1', label: 'Base local', model: 'base', device: 'auto', active: true, downloadStatus: 'ready', error: null, createdAtMs: 1, updatedAtMs: 1 }]
-    });
-    localModelDownloadStatus.mockResolvedValue({
-      active: false,
-      profileId: null,
-      model: null,
-      device: null,
-      phase: 'idle',
-      progress: 0,
-      message: 'No local model download is running.',
-      error: null
-    });
-    localModelProfileAdd.mockImplementation((label: string, model: string, device: string) => Promise.resolve({
-      envOverride: false,
-      activeProfileId: 'local-new',
-      profiles: [{ id: 'local-new', label, model, device, active: true, downloadStatus: 'downloading', error: null, createdAtMs: 2, updatedAtMs: 2 }]
-    }));
-    localModelProfileActivate.mockImplementation((profileId: string) => Promise.resolve({
-      envOverride: false,
-      activeProfileId: profileId,
-      profiles: [{ id: profileId, label: 'Activated local', model: 'small', device: 'cpu', active: true, downloadStatus: 'ready', error: null, createdAtMs: 1, updatedAtMs: 2 }]
-    }));
-    localModelProfileDelete.mockResolvedValue({ envOverride: false, activeProfileId: null, profiles: [] });
-    localModelProfileRetryDownload.mockImplementation((profileId: string) => Promise.resolve({
-      envOverride: false,
-      activeProfileId: profileId,
-      profiles: [{ id: profileId, label: 'Retry local', model: 'small', device: 'cpu', active: true, downloadStatus: 'downloading', error: null, createdAtMs: 1, updatedAtMs: 2 }]
-    }));
-    listenLocalModelDownloadProgress.mockResolvedValue(() => {});
-    localRuntimePackStatus.mockResolvedValue({
-      status: 'ready',
-      version: '1.0.0',
-      platform: 'linux',
-      arch: 'x86_64',
-      installDir: '/home/test/.local/share/app/runtime-pack/current',
-      manifestUrl: 'https://example.test/manifest.json',
-      requiredSizeBytes: 1,
-      message: 'Local processing runtime is ready.',
-      errorCode: null
-    });
-    localRuntimePackPrepare.mockImplementation(() => localRuntimePackStatus());
-    localRuntimePackRetry.mockImplementation(() => localRuntimePackStatus());
-    localRuntimePackRepair.mockImplementation(() => localRuntimePackStatus());
-    listenLocalRuntimePackProgress.mockResolvedValue(() => {});
     apiKeyProfiles.mockImplementation((provider: 'muapi' | 'openai') => Promise.resolve({
       provider,
       envOverride: false,
@@ -246,23 +153,8 @@ describe('test_ui flow parity', () => {
       licenseWorkerEndpointKind: 'remote',
       muapiConfigured: true,
       openaiConfigured: true,
-      localWhisperModel: 'base',
-      localWhisperDevice: 'auto',
       licenseWorkerTimeoutMs: 10000,
       licenseWorkerRetryAttempts: 2
-    });
-    validateRuntime.mockResolvedValue({
-      runtime: 'python:python3',
-      bridge_entry: '../../python_legacy/bridge_entry.py',
-      bridge_entry_exists: true,
-      ok: true,
-      local_runtime_ready: true,
-      tools: [
-        { tool: 'python', ok: true, path: '/usr/bin/python3', source: 'path', message: 'ok' },
-        { tool: 'ffmpeg', ok: true, path: '/usr/bin/ffmpeg', source: 'path', message: 'ok' },
-        { tool: 'yt-dlp', ok: true, path: '/usr/bin/yt-dlp', source: 'path', message: 'ok' }
-      ],
-      python_packages: [{ tool: 'faster_whisper', ok: true, message: 'ok' }]
     });
     runtimeContext.mockResolvedValue({
       appVersion: '0.1.0',
@@ -313,7 +205,6 @@ describe('test_ui flow parity', () => {
 
     expect(await screen.findByRole('dialog', { name: 'Setup Guide' })).toBeTruthy();
     expect((screen.getByLabelText('YouTube video URL') as HTMLInputElement).value).toBe('');
-    expect(screen.getByLabelText('Mode').textContent).toContain('API mode (recommended)');
     expect((screen.getByLabelText('Num clips') as HTMLInputElement).value).toBe('3');
     expect(screen.getByLabelText('Aspect ratio').textContent).toContain('9:16 (Shorts/Reels/TikTok)');
     expect(screen.getByLabelText('Resolution').textContent).toContain('720p');
@@ -377,7 +268,7 @@ describe('test_ui flow parity', () => {
   it('test_select_controls_use_themed_select_wrapper', () => {
     render(Page);
 
-    const selectLabels = ['Source type', 'Mode', 'Aspect ratio', 'Resolution'];
+    const selectLabels = ['Aspect ratio', 'Resolution'];
     for (const label of selectLabels) {
       const selectEl = screen.getByLabelText(label) as HTMLButtonElement;
       expect(selectEl.tagName).toBe('BUTTON');
@@ -490,11 +381,7 @@ describe('test_ui flow parity', () => {
       'Google',
       'source platforms',
       'update hosts',
-      'runtime-pack hosts',
-      'model hosts',
       'FFmpeg',
-      'yt-dlp',
-      'Python runtime',
       'Tauri/Rust desktop app with Svelte UI',
       'Vite',
       'Rust, Tauri, and Native Dependencies',
@@ -506,15 +393,6 @@ describe('test_ui flow parity', () => {
     expect(encoded).toContain('No general telemetry or analytics SDK was identified during repository inspection.');
     expect(encoded).toContain('Crash reports are submitted only when an endpoint is configured and the user submits a draft.');
     expect(encoded).not.toMatch(/automatic telemetry|automatic analytics|automatically uploads crash/i);
-  });
-
-  it('test_terms_include_local_offline_beta_reliability_limitations', () => {
-    const encoded = JSON.stringify(POLICY_SECTIONS.terms);
-
-    expect(encoded).toContain('local/offline mode is a beta/advanced workflow');
-    expect(encoded).toContain('not the primary supported v1 workflow');
-    expect(encoded).toContain('runtime-pack setup');
-    expect(encoded).toContain('local/offline availability, performance, and recovery are not guaranteed');
   });
 
   it('test_policy_content_discloses_linux_secure_storage_limitations_without_timeline', () => {
@@ -592,23 +470,15 @@ describe('test_ui flow parity', () => {
     expect(screen.queryByText('Configure API access, manage device licensing, and review diagnostics and policies.')).toBeNull();
     expect(screen.queryByText('License, device, and runtime status for this installation.')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
-    expect(screen.queryByText('Open Folder is available for locally generated shorts.')).toBeNull();
     expect(screen.getByRole('tab', { name: 'Configuration', selected: true })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Diagnostics' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Policies' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Local Processing', selected: true })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'API Providers' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'API Providers', selected: true })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Device Reset' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Local Processing help' })).toBeTruthy();
-    expect(screen.getByText('On-device pipeline')).toBeTruthy();
-    expect(screen.getByText('Local mode is beta/advanced in v1 and may require runtime pack or local model repair. API mode is recommended for first setup.')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Download Runtime' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Repair Local Processing Setup' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'MuAPI Access help' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'OpenAI Access help' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'MuAPI Access help' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'OpenAI Access help' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Device Reset help' })).toBeNull();
 
-    await fireEvent.click(screen.getByRole('tab', { name: 'API Providers' }));
     expect(screen.getByRole('button', { name: 'MuAPI Access help' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'OpenAI Access help' })).toBeTruthy();
     expect(screen.getByText('Video provider')).toBeTruthy();
@@ -629,7 +499,6 @@ describe('test_ui flow parity', () => {
     expect(screen.queryByText('raw-device-id')).toBeNull();
     expect(document.body.textContent).not.toContain('/home/test');
     expect(appConfigSummary.mock.calls.length).toBeGreaterThanOrEqual(1);
-    expect(validateRuntime.mock.calls.length).toBeGreaterThanOrEqual(1);
     expect(runtimeContext).toHaveBeenCalledTimes(1);
     await fireEvent.click(screen.getByRole('tab', { name: 'Device Reset' }));
     expect(screen.getByRole('button', { name: 'Device Reset help' })).toBeTruthy();
@@ -643,7 +512,6 @@ describe('test_ui flow parity', () => {
     await fireEvent.click(screen.getByRole('tab', { name: 'API Providers' }));
     expect(screen.getByText('MuAPI Access')).toBeTruthy();
     expect(screen.getByText('OpenAI Access')).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'Local Processing' })).toBeNull();
     expect(screen.queryByText('License Worker')).toBeNull();
     expect(screen.queryByText('Retry attempts')).toBeNull();
     expect(screen.queryByText('licenses.example.test')).toBeNull();
@@ -658,23 +526,14 @@ describe('test_ui flow parity', () => {
     expect(document.body.textContent).not.toContain('mu-secret');
     expect(document.body.textContent).not.toContain('openai-secret');
 
-    await fireEvent.click(screen.getByRole('tab', { name: 'Local Processing' }));
-    await chooseThemedSelectOption('Whisper model', 'Small - better accuracy, still practical on CPU');
-    await fireEvent.input(screen.getByLabelText('Local model profile name'), { target: { value: 'Small CPU' } });
-    await chooseThemedSelectOption('Processing device', 'CPU - most compatible');
-    await fireEvent.click(screen.getByRole('button', { name: 'Download Model' }));
-    expect(localModelProfileAdd).toHaveBeenCalledWith('Small CPU', 'base', 'auto', true);
-
     await fireEvent.click(screen.getByRole('tab', { name: 'API Providers' }));
     await fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0]);
     expect(apiKeyProfileDelete).toHaveBeenCalledWith('muapi', 'muapi-1');
 
     await fireEvent.click(screen.getByRole('tab', { name: 'Diagnostics' }));
     expect(screen.getByRole('tab', { name: 'Diagnostics', selected: true })).toBeTruthy();
-    expect(screen.getByText('See system health and take action when setup issues are detected.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Recheck Dependencies' })).toBeTruthy();
-    expect(screen.getByText('Required Dependencies')).toBeTruthy();
-    expect(screen.getAllByText('Available').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('See app status and maintenance information.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Refresh Status' })).toBeTruthy();
     expect(screen.getByText('Maintenance')).toBeTruthy();
     expect(screen.queryByText('Logs and Support')).toBeNull();
 
@@ -718,11 +577,6 @@ describe('test_ui flow parity', () => {
 
     render(Page);
     await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
-    expect(screen.getByLabelText('Mode').textContent).toContain('API mode (recommended)');
-    await chooseThemedSelectOption('Mode', 'API mode (recommended)');
-    await chooseThemedSelectOption('Mode', 'Local mode (beta)');
-    expect(screen.getByText('Local mode is beta/advanced in v1 and may require runtime pack or local model repair. API mode is recommended for first setup.')).toBeTruthy();
-    await chooseThemedSelectOption('Mode', 'API mode (recommended)');
     await fireEvent.input(screen.getByLabelText('Num clips'), { target: { value: '5' } });
     await chooseThemedSelectOption('Resolution', '1080p');
     await chooseThemedSelectOption('Aspect ratio', '1:1 (Square feed)');
@@ -750,8 +604,6 @@ describe('test_ui flow parity', () => {
       licenseWorkerEndpointKind: 'remote',
       muapiConfigured: false,
       openaiConfigured: true,
-      localWhisperModel: 'base',
-      localWhisperDevice: 'auto',
       licenseWorkerTimeoutMs: 10000,
       licenseWorkerRetryAttempts: 2
     });
@@ -762,7 +614,7 @@ describe('test_ui flow parity', () => {
 
     expect(runGenerateAndStream).not.toHaveBeenCalled();
     expect(screen.getByRole('dialog', { name: 'Setup Required Before Generating' })).toBeTruthy();
-    expect(screen.getByText('To generate shorts, you need to configure either an API-based setup or a local model first.')).toBeTruthy();
+    expect(screen.getByText('To generate shorts, you need to configure API access first.')).toBeTruthy();
     expect(screen.getByText('API key is not configured')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Configure Now' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
@@ -776,8 +628,6 @@ describe('test_ui flow parity', () => {
       licenseWorkerEndpointKind: 'remote',
       muapiConfigured: false,
       openaiConfigured: true,
-      localWhisperModel: 'base',
-      localWhisperDevice: 'auto',
       licenseWorkerTimeoutMs: 10000,
       licenseWorkerRetryAttempts: 2
     });
@@ -799,8 +649,6 @@ describe('test_ui flow parity', () => {
       licenseWorkerEndpointKind: 'remote',
       muapiConfigured: false,
       openaiConfigured: true,
-      localWhisperModel: 'base',
-      localWhisperDevice: 'auto',
       licenseWorkerTimeoutMs: 10000,
       licenseWorkerRetryAttempts: 2
     });
@@ -817,29 +665,6 @@ describe('test_ui flow parity', () => {
     expect((screen.getByLabelText('Project title') as HTMLInputElement).value).toBe('My Project');
     expect((screen.getByLabelText('YouTube video URL') as HTMLInputElement).value).toBe('https://youtube.com/watch?v=abc');
     expect((screen.getByLabelText('Num clips') as HTMLInputElement).value).toBe('4');
-  });
-
-  it('test_setup_modal_configure_now_routes_to_configuration_local_processing_for_local_blockers', async () => {
-    localModelProfiles.mockResolvedValue({
-      envOverride: false,
-      activeProfileId: null,
-      profiles: []
-    });
-
-    render(Page);
-    await chooseThemedSelectOption('Mode', 'Local mode (beta)');
-    await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
-
-    expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Configuration', selected: true })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Local Processing', selected: true })).toBeTruthy();
-  });
-
-  it('test_local_download_failure_banner_uses_spaced_actions_layout', async () => {
-    const source = readFileSync('src/routes/+page.svelte', 'utf8');
-    expect(source).toContain('.local-download-stack');
-    expect(source).toContain('.local-download-actions');
   });
 
   it('test_generate_form_shows_persistent_error_for_empty_source', async () => {
@@ -930,6 +755,8 @@ describe('test_ui flow parity', () => {
   });
 
   it('test_legal_page_states_manual_7_day_refund_policy', async () => {
+    localStorage.setItem('shorts.onboarding.v1', 'skipped');
+
     render(Page);
     expect(screen.queryByRole('button', { name: 'Legal' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Terms' })).toBeNull();
@@ -941,22 +768,22 @@ describe('test_ui flow parity', () => {
     expect(screen.getByText('1. Acceptance of Terms')).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Privacy' }));
-    expect(screen.getByText('Privacy Policy')).toBeTruthy();
+    expect(screen.getByText('Privacy Notice')).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Data Compliance' }));
     expect(screen.getAllByText('Data Compliance').length).toBeGreaterThan(0);
-    expect(screen.getByText('1. Purpose and Scope')).toBeTruthy();
+    expect(screen.getByText('Security Controls')).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Third-Party Notices' }));
     expect(screen.getAllByText('Third-Party Notices').length).toBeGreaterThan(0);
-    expect(screen.getByText('6. Media Tools')).toBeTruthy();
-    expect(screen.getByText(/Exact license metadata for Python packages and transitive dependencies is not shown in this in-app screen/)).toBeTruthy();
+    expect(screen.getByText('Provider Terms')).toBeTruthy();
+    expect(screen.getByText(/Exact license metadata is not shown in this in-app screen/)).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Refund Policy' }));
 
     expect(screen.getAllByText('Refund Policy').length).toBeGreaterThan(0);
-    expect(screen.getByText(/within 7 days from purchase/)).toBeTruthy();
-    expect(screen.getByText('No automated refund engine is built into this app.')).toBeTruthy();
+    expect(screen.getByText(/Refund requests are handled through the payment provider or support channel/)).toBeTruthy();
+    expect(screen.getByText('Support Boundaries')).toBeTruthy();
     expect(screen.getAllByText(`Last updated: ${POLICY_LAST_UPDATED_LABEL}`).length).toBeGreaterThan(0);
     expect(screen.getByText(/Refunded, charged-back, revoked, disabled, or disputed purchases may lose access/)).toBeTruthy();
   });
@@ -992,31 +819,4 @@ describe('test_ui flow parity', () => {
     expect(windowOpen).toHaveBeenCalledWith('https://cdn.example.com/s1.mp4', '_blank', 'noopener,noreferrer');
   });
 
-  it('test_render local short entries with open folder action', async () => {
-    runGenerateAndStream.mockResolvedValue({
-      ok: true,
-      result: {
-        mode: 'api',
-        source_video_url: 'https://cdn.example.com/video.mp4',
-        transcript: { duration: 1, segments: [] },
-        highlights: [{ title: 'H1', start_time: 1, end_time: 2, score: 90, hook_sentence: 'hook', virality_reason: 'reason' }],
-        shorts: [
-          { title: 'Local Hit', start_time: 1, end_time: 2, score: 90, hook_sentence: 'hook', virality_reason: 'reason', clip_url: '/home/test/Videos/short_01.mp4' }
-        ]
-      }
-    });
-    openInFileManager.mockResolvedValue(undefined);
-
-    render(Page);
-    await fireEvent.input(screen.getByLabelText('YouTube video URL'), { target: { value: 'https://youtube.com/watch?v=abc' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
-
-    expect(await screen.findByText('Local Hit')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Open Clip' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Copy Link' })).toBeNull();
-
-    await fireEvent.click(screen.getByRole('button', { name: 'Open Folder' }));
-    expect(openInFileManager).toHaveBeenCalledWith('/home/test/Videos/short_01.mp4');
-    expect(await screen.findByText('Opened clip folder.')).toBeTruthy();
-  });
 });

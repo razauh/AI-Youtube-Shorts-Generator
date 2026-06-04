@@ -20,7 +20,7 @@ fn mode_invalid_returns_parity_error() {
     let mut stages = MockPipelineStages::default();
 
     let err = generate_shorts_with(&req, &mut stages).expect_err("invalid mode must fail");
-    assert_eq!(err.error, "Unknown mode: 'weird'. Use 'api' or 'local'.");
+    assert_eq!(err.error, "Unknown mode: 'weird'. Use 'api'.");
     assert_eq!(err.mode, None);
     assert_eq!(err.source_video_url, None);
 }
@@ -145,14 +145,4 @@ fn mode_api_clip_failure_matches_partial_success_golden() {
     .expect("golden fixture");
     let got = serde_json::to_value(out).expect("serialize output");
     assert_eq!(got, expected);
-}
-
-#[test]
-fn mode_local_routes_via_bridge() {
-    let req = base_request("local");
-    let mut stages = MockPipelineStages::default();
-    let err = generate_shorts_with(&req, &mut stages).expect_err("runtime-pack should be required");
-    assert_eq!(err.mode.as_deref(), Some("local"));
-    assert!(err.error.contains("Local processing runtime is not ready"));
-    assert_eq!(stages.call_log().len(), 0);
 }

@@ -5,8 +5,7 @@ Release artifacts:
 - DMG or app archive
 
 Runtime source:
-- The customer bundle includes `app/src-tauri/bundled-runtime` when a self-contained runtime is prepared.
-- If the bundled runtime is not present, local mode downloads the runtime pack from the production runtime-pack manifest URL configured in Rust.
+- Local runtime/model bundles are not packaged for the API-only release path.
 
 Smoke validation:
 

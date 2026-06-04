@@ -21,7 +21,7 @@ def test_gate_fail_on_drift_when_threshold_zero(tmp_path: Path) -> None:
     expected = FIX / "success.json"
     actual = tmp_path / "actual.json"
     data = json.loads(expected.read_text(encoding="utf-8"))
-    data["mode"] = "local"
+    data["mode"] = "api-drift"
     actual.write_text(json.dumps(data), encoding="utf-8")
 
     out = run_gate(expected, actual, mode="strict", max_diffs=0)

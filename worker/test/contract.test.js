@@ -483,34 +483,6 @@ test('readyz returns not_ready when required secrets are missing', async () => {
   assert.equal(json.checks.secrets.ok, false);
 });
 
-test('runtime-pack manifest route returns storage error when not configured', async () => {
-  const res = await call('/runtime-pack/manifest.json', { method: 'GET' });
-  assert.equal(res.status, 404);
-  const json = await res.json();
-  assert.equal(json.ok, false);
-  assert.equal(json.error.code, 'storage');
-});
-
-test('runtime-pack manifest route proxies configured manifest', async () => {
-  const originalFetch = global.fetch;
-  global.fetch = async () =>
-    new Response(JSON.stringify({ version: 'test', assets: [] }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
-  try {
-    const res = await call('/runtime-pack/manifest.json', {
-      method: 'GET',
-      env: { RUNTIME_PACK_MANIFEST_URL: 'https://runtime.example.test/manifest.json' },
-    });
-    assert.equal(res.status, 200);
-    const json = await res.json();
-    assert.equal(json.version, 'test');
-  } finally {
-    global.fetch = originalFetch;
-  }
-});
-
 test('unknown routes return route_not_found', async () => {
   const res = await call('/v1/admin/missing', { method: 'GET' });
   assert.equal(res.status, 404);

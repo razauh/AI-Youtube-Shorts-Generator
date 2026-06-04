@@ -16,9 +16,9 @@ def main() -> int:
     parser.add_argument("url", help="YouTube video URL")
     parser.add_argument(
         "--mode",
-        choices=["api", "local"],
+        choices=["api"],
         default="api",
-        help="api (default, MuAPI) or local (yt-dlp + faster-whisper + OpenAI + ffmpeg).",
+        help="api (default, MuAPI).",
     )
     parser.add_argument("--num-clips", type=int, default=3, help="How many shorts to render (default: 3)")
     parser.add_argument("--aspect-ratio", default="9:16", help="Output aspect ratio (default: 9:16)")

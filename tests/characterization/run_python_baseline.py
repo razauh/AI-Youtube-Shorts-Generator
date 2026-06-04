@@ -1,6 +1,5 @@
 import argparse
 import json
-import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -89,17 +88,6 @@ def _run_clip_failure() -> Dict[str, Any]:
         return pipeline.generate_shorts("https://youtube.com/watch?v=abc", num_clips=1, mode="api")
 
 
-def _run_local_live() -> Dict[str, Any]:
-    return pipeline.generate_shorts(
-        youtube_url=os.environ["BASELINE_LOCAL_URL"],
-        num_clips=int(os.environ.get("BASELINE_LOCAL_NUM_CLIPS", "1")),
-        aspect_ratio=os.environ.get("BASELINE_LOCAL_ASPECT_RATIO", "9:16"),
-        download_format=os.environ.get("BASELINE_LOCAL_FORMAT", "360"),
-        language=os.environ.get("BASELINE_LOCAL_LANGUAGE") or None,
-        mode="local",
-    )
-
-
 def _write_json(path: Path, payload: Dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -107,7 +95,6 @@ def _write_json(path: Path, payload: Dict[str, Any]) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Generate Python baseline golden fixtures")
     ap.add_argument("--out-dir", default=str(GOLDEN_DIR))
-    ap.add_argument("--include-local-live", action="store_true")
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -126,11 +113,6 @@ def main() -> int:
         {"id": "no_segments", "file": "no_segments.json", "kind": "mocked"},
         {"id": "clip_failure", "file": "clip_failure.json", "kind": "mocked"},
     ]
-
-    if args.include_local_live and os.environ.get("BASELINE_LOCAL_URL"):
-        local_live = _run_local_live()
-        _write_json(out_dir / "local_success_live.json", local_live)
-        scenarios.append({"id": "local_success_live", "file": "local_success_live.json", "kind": "live"})
 
     manifest = {
         "version": "v1",

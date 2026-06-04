@@ -10,7 +10,7 @@ use shorts_tauri_app::commands::{
         run_generate, run_generate_authorized, GenerateCommandArgs, GenerateEnvelope,
         GenerateShortsCommand,
     },
-    health::{health_check, validate_runtime},
+    health::health_check,
 };
 use std::fs;
 use std::sync::Arc;
@@ -167,12 +167,9 @@ fn event_order_includes_stage_start_end_and_status_changes() {
 }
 
 #[test]
-fn health_and_runtime_validation_commands_callable() {
+fn health_command_callable() {
     let health = health_check();
     assert_eq!(health.status, "ok");
-
-    let validate = validate_runtime();
-    assert!(validate.runtime.contains("python"));
 }
 
 #[test]

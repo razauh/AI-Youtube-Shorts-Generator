@@ -28,17 +28,14 @@ jobs:
         platform:
           - os_name: linux-x64
             runner: ubuntu-latest
-            runtime_target: linux-x86_64
             customer_build_script: tauri:build:customer:release:linux
             admin_build_script: tauri:build:admin:release:linux
           - os_name: windows-x64
             runner: windows-latest
-            runtime_target: windows-x86_64
             customer_build_script: tauri:build:customer:release:windows
             admin_build_script: tauri:build:admin:release:windows
           - os_name: macos-aarch64
             runner: macos-14
-            runtime_target: macos-aarch64
             customer_build_script: tauri:build:customer:release:macos
             admin_build_script: tauri:build:admin:release:macos
     steps:
@@ -68,25 +65,6 @@ jobs:
 
       - name: Install desktop app dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Build bundled runtime input
-        if: runner.os != 'Windows'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: bash scripts/build-bundled-runtime-unix.sh "${{ matrix.platform.runtime_target }}"
-
-      - name: Build bundled runtime input
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: .\scripts\build-bundled-runtime-windows.ps1 -Target "${{ matrix.platform.runtime_target }}"
-
-      - name: Stage bundled runtime
-        shell: bash
-        run: |
-          FORCE_REPLACE=1 bash scripts/prepare-bundled-runtime.sh "${{ matrix.platform.runtime_target }}"
-          bash .scripts/scan-bundled-runtime.sh
 
       - name: Verify customer updater signing key
         shell: bash
@@ -141,17 +119,14 @@ jobs:
         platform:
           - os_name: linux-x64
             runner: ubuntu-latest
-            runtime_target: linux-x86_64
             customer_build_script: tauri:build:customer:release:linux
             admin_build_script: tauri:build:admin:release:linux
           - os_name: windows-x64
             runner: windows-latest
-            runtime_target: windows-x86_64
             customer_build_script: tauri:build:customer:release:windows
             admin_build_script: tauri:build:admin:release:windows
           - os_name: macos-aarch64
             runner: macos-14
-            runtime_target: macos-aarch64
             customer_build_script: tauri:build:customer:release:macos
             admin_build_script: tauri:build:admin:release:macos
     steps:
@@ -181,25 +156,6 @@ jobs:
 
       - name: Install desktop app dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Build bundled runtime input
-        if: runner.os != 'Windows'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: bash scripts/build-bundled-runtime-unix.sh "${{ matrix.platform.runtime_target }}"
-
-      - name: Build bundled runtime input
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: .\scripts\build-bundled-runtime-windows.ps1 -Target "${{ matrix.platform.runtime_target }}"
-
-      - name: Stage bundled runtime
-        shell: bash
-        run: |
-          FORCE_REPLACE=1 bash scripts/prepare-bundled-runtime.sh "${{ matrix.platform.runtime_target }}"
-          bash .scripts/scan-bundled-runtime.sh
 
       - name: Build admin Tauri bundles
         working-directory: app

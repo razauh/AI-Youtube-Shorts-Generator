@@ -30,12 +30,7 @@ ROOT_PACKAGE_JSON="${ROOT_DIR}/package.json"
 APP_PACKAGE_JSON="${ROOT_DIR}/app/package.json"
 CUSTOMER_TAURI_CONFIG="${ROOT_DIR}/app/src-tauri/tauri.conf.json"
 RUST_CONFIG="${ROOT_DIR}/app/src-tauri/src/core/config.rs"
-RUNTIME_COMMANDS="${ROOT_DIR}/app/src-tauri/src/commands/runtime.rs"
 LICENSE_FILE="${ROOT_DIR}/LICENSE"
-UNIX_RUNTIME_BUILDER="${ROOT_DIR}/scripts/build-bundled-runtime-unix.sh"
-WINDOWS_RUNTIME_BUILDER="${ROOT_DIR}/scripts/build-bundled-runtime-windows.ps1"
-RUNTIME_PREPARE_SCRIPT="${ROOT_DIR}/scripts/prepare-bundled-runtime.sh"
-RUNTIME_SCAN_SCRIPT="${ROOT_DIR}/.scripts/scan-bundled-runtime.sh"
 ICON_DIR="${ROOT_DIR}/app/src-tauri/icons"
 
 [ -f "${RELEASE_WORKFLOW}" ] || fail "missing .github/workflows/release.yml"
@@ -53,26 +48,8 @@ pass "customer Tauri config exists"
 [ -f "${RUST_CONFIG}" ] || fail "missing app/src-tauri/src/core/config.rs"
 pass "Rust production config source exists"
 
-[ -f "${RUNTIME_COMMANDS}" ] || fail "missing app/src-tauri/src/commands/runtime.rs"
-pass "runtime command source exists"
-
 [ -f "${LICENSE_FILE}" ] || fail "missing root LICENSE"
 pass "root LICENSE exists"
-
-[ -f "${UNIX_RUNTIME_BUILDER}" ] || fail "missing scripts/build-bundled-runtime-unix.sh"
-pass "Unix bundled runtime builder exists"
-
-[ -x "${UNIX_RUNTIME_BUILDER}" ] || fail "scripts/build-bundled-runtime-unix.sh is not executable"
-pass "Unix bundled runtime builder is executable"
-
-[ -f "${WINDOWS_RUNTIME_BUILDER}" ] || fail "missing scripts/build-bundled-runtime-windows.ps1"
-pass "Windows bundled runtime builder exists"
-
-[ -f "${RUNTIME_PREPARE_SCRIPT}" ] || fail "missing scripts/prepare-bundled-runtime.sh"
-pass "bundled runtime prepare script exists"
-
-[ -f "${RUNTIME_SCAN_SCRIPT}" ] || fail "missing .scripts/scan-bundled-runtime.sh"
-pass "bundled runtime release scan exists"
 
 for icon in 32x32.png 128x128.png 128x128@2x.png icon.png icon.ico icon.icns; do
   icon_path="${ICON_DIR}/${icon}"
@@ -173,30 +150,10 @@ for admin_artifact in admin-linux-x64 admin-windows-x64 admin-macos-aarch64; do
   fi
 done
 
-for runtime_target in linux-x86_64 windows-x86_64 macos-aarch64; do
-  if contains "${runtime_target}" "${RELEASE_WORKFLOW}"; then
-    pass "workflow includes runtime target ${runtime_target}"
-  else
-    fail "workflow missing runtime target ${runtime_target}"
-  fi
-done
-
 if contains "customer-macos-aarch64" "${RELEASE_WORKFLOW}" && contains "admin-macos-aarch64" "${RELEASE_WORKFLOW}"; then
   pass "workflow publishes Apple Silicon artifacts"
 else
   fail "workflow missing Apple Silicon artifact publication"
-fi
-
-if contains "build-bundled-runtime-unix\.sh" "${RELEASE_WORKFLOW}" && contains "build-bundled-runtime-windows\.ps1" "${RELEASE_WORKFLOW}"; then
-  pass "workflow builds bundled runtime inputs for Unix and Windows"
-else
-  fail "workflow missing bundled runtime input build steps"
-fi
-
-if contains "GITHUB_TOKEN: \\\$\\{\\{ github\\.token \\}\\}" "${RELEASE_WORKFLOW}" && contains "headers\\.authorization" "${UNIX_RUNTIME_BUILDER}" && contains "Authorization" "${WINDOWS_RUNTIME_BUILDER}"; then
-  pass "runtime builders use GitHub token for release API lookup"
-else
-  fail "runtime builders do not use GitHub token for release API lookup"
 fi
 
 if contains "customer_build_script: tauri:build:customer:release:linux" "${RELEASE_WORKFLOW}" && contains "admin_build_script: tauri:build:admin:release:linux" "${RELEASE_WORKFLOW}"; then
@@ -229,18 +186,6 @@ if contains "path '\\*/release/bundle/\\*'" "${RELEASE_WORKFLOW}"; then
   fail "workflow must not upload every file inside macOS .app bundles"
 else
   pass "workflow avoids uploading raw macOS .app directory contents"
-fi
-
-if contains "prepare-bundled-runtime\.sh" "${RELEASE_WORKFLOW}" && contains "scan-bundled-runtime\.sh" "${RELEASE_WORKFLOW}"; then
-  pass "workflow stages and scans bundled runtime before packaging"
-else
-  fail "workflow missing bundled runtime staging or scan"
-fi
-
-if contains "imageio-ffmpeg" "${UNIX_RUNTIME_BUILDER}" && contains "imageio-ffmpeg" "${WINDOWS_RUNTIME_BUILDER}" && contains "yt-dlp\.exe" "${WINDOWS_RUNTIME_BUILDER}"; then
-  pass "runtime builders provide portable media tools"
-else
-  fail "runtime builders missing portable ffmpeg or Windows yt-dlp.exe setup"
 fi
 
 if contains "softprops/action-gh-release" "${RELEASE_WORKFLOW}"; then
@@ -336,12 +281,6 @@ if contains "PRODUCTION_LICENSE_WORKER_BASE_URL.*license-worker\.demandscout\.wo
   pass "Rust license worker default names the production Worker origin"
 else
   fail "Rust license worker default is missing the production Worker origin"
-fi
-
-if contains "DEFAULT_LOCAL_RUNTIME_PACK_MANIFEST_URL.*https://license-worker\.demandscout\.workers\.dev/runtime-pack/manifest\.json|license-worker\.demandscout\.workers\.dev/runtime-pack/manifest\.json" "${RUNTIME_COMMANDS}"; then
-  pass "runtime-pack manifest has a production HTTPS default"
-else
-  fail "runtime-pack manifest default is missing or non-production"
 fi
 
 for smoke_script in \

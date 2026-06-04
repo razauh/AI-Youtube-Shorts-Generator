@@ -1,6 +1,6 @@
 {
-  "mode": "local",
-  "source_video_url": "/tmp/source_video.mp4",
+  "mode": "api",
+  "source_video_url": "https://www.youtube.com/watch?v=partial",
   "transcript": {
     "duration": 180.1,
     "segments": [
@@ -35,7 +35,7 @@
       "score": 88,
       "hook_sentence": "I was wrong about this tactic.",
       "virality_reason": "Confession plus resolution drives attention.",
-      "clip_url": "/tmp/short_01.mp4",
+      "clip_url": "https://cdn.example.test/short_01.mp4",
       "error": null
     },
     {
@@ -46,7 +46,7 @@
       "hook_sentence": "Here is what finally worked.",
       "virality_reason": "Practical sequence has clear payoff.",
       "clip_url": null,
-      "error": "ffmpeg exited with status 1"
+      "error": "autocrop provider returned an empty clip URL"
     }
   ]
 }

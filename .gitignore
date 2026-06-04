@@ -90,6 +90,7 @@ scripts/graphify_split_merge.py
 !/.scripts/run-updater-endpoint-validation.sh
 !/.scripts/validate-release-ci-config.sh
 !/.scripts/run-legal-policy-validation.sh
+!/.scripts/run-remove-local-processing-validation.sh
 !/.scripts/run-pnpm-migration-validation.sh
 !/.scripts/run-user-data-deletion-validation.sh
 !/.scripts/scan-bundled-runtime.sh

@@ -6,9 +6,7 @@ Logic ported from ViralVadoo's transcript_analysis/highlight_generator.py:
   - virality-criteria prompt
   - score-based dedupe with overlap suppression
 
-The LLM call is pluggable via the `llm_fn` argument so the same prompts can
-drive either MuAPI (default, --mode api) or a direct OpenAI client
-(--mode local).
+The LLM call is pluggable via the `llm_fn` argument.
 """
 import json
 import re

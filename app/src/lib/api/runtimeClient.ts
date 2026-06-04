@@ -2,10 +2,6 @@ interface TauriCore {
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
 }
 
-interface TauriEventApi {
-  listen<T>(event: string, handler: (event: { payload: T }) => void): Promise<() => void>;
-}
-
 export interface DesktopRuntimeContext {
   appVersion: string;
   platform: string;
@@ -18,87 +14,12 @@ export interface DesktopRuntimeContext {
   secureFallbackBasePath: string;
 }
 
-export interface RuntimeToolStatus {
-  tool: string;
-  ok: boolean;
-  path?: string | null;
-  source?: string | null;
-  message: string;
-}
-
-export interface RuntimeValidation {
-  runtime: string;
-  bridge_entry: string;
-  bridge_entry_exists: boolean;
-  ok: boolean;
-  tools: RuntimeToolStatus[];
-  python_packages: RuntimeToolStatus[];
-  local_runtime_ready: boolean;
-  runtime_pack_status?: string | null;
-  runtime_pack_version?: string | null;
-  runtime_pack_install_dir?: string | null;
-}
-
-export type RuntimePackStatusKind =
-  | 'not_installed'
-  | 'downloading'
-  | 'installing'
-  | 'installed'
-  | 'ready'
-  | 'failed'
-  | 'corrupted'
-  | 'incompatible_platform'
-  | 'missing_files'
-  | 'missing_dependency'
-  | 'native_import_failure'
-  | 'permission_error'
-  | 'network_error'
-  | 'validation_failed'
-  | 'unknown_error';
-
-export interface LocalRuntimePackStatus {
-  status: RuntimePackStatusKind;
-  version?: string | null;
-  platform: string;
-  arch: string;
-  installDir: string;
-  manifestUrl: string;
-  requiredSizeBytes?: number | null;
-  message: string;
-  errorCode?: string | null;
-  debugRef?: string | null;
-}
-
-export interface RuntimePackProgressEvent {
-  phase: string;
-  progress: number;
-  message: string;
-  status: RuntimePackStatusKind;
-}
-
-export type LocalModelDownloadPhase =
-  | 'idle'
-  | 'checking'
-  | 'checking_runtime'
-  | 'downloading_runtime'
-  | 'installing_runtime'
-  | 'installing_dependency'
-  | 'validating_runtime'
-  | 'downloading'
-  | 'downloading_model'
-  | 'verifying'
-  | 'validating_model'
-  | 'ready'
-  | 'failed';
-
 export interface AppConfigSummary {
   licenseBackendMode: string;
   licenseWorkerEndpoint: string;
   licenseWorkerEndpointKind: string;
   muapiConfigured: boolean;
   openaiConfigured: boolean;
-  localWhisperModel: string;
-  localWhisperDevice: string;
   licenseWorkerTimeoutMs: number;
   licenseWorkerRetryAttempts: number;
 }
@@ -120,54 +41,13 @@ export interface ApiKeyProfilesView {
   profiles: ApiKeyProfile[];
 }
 
-export interface LocalModelProfile {
-  id: string;
-  label: string;
-  model: string;
-  device: string;
-  active: boolean;
-  downloadStatus: string;
-  error?: string | null;
-  errorCode?: string | null;
-  debugRef?: string | null;
-  createdAtMs: number;
-  updatedAtMs: number;
-}
-
-export interface LocalModelProfilesView {
-  envOverride: boolean;
-  activeProfileId?: string | null;
-  profiles: LocalModelProfile[];
-}
-
-export interface LocalModelDownloadStatus {
-  active: boolean;
-  profileId?: string | null;
-  model?: string | null;
-  device?: string | null;
-  phase: LocalModelDownloadPhase;
-  progress: number;
-  message: string;
-  error?: string | null;
-  errorCode?: string | null;
-  debugRef?: string | null;
-}
-
 let corePromise: Promise<TauriCore> | null = null;
-let eventPromise: Promise<TauriEventApi> | null = null;
 
 async function getCore(): Promise<TauriCore> {
   if (!corePromise) {
     corePromise = import('@tauri-apps/api/core') as Promise<TauriCore>;
   }
   return corePromise;
-}
-
-async function getEventApi(): Promise<TauriEventApi> {
-  if (!eventPromise) {
-    eventPromise = import('@tauri-apps/api/event') as Promise<TauriEventApi>;
-  }
-  return eventPromise;
 }
 
 export async function isDesktopRuntime(): Promise<boolean> {
@@ -186,10 +66,6 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
 
 export function runtimeContext(): Promise<DesktopRuntimeContext> {
   return invoke<DesktopRuntimeContext>('runtime_context');
-}
-
-export function validateRuntime(): Promise<RuntimeValidation> {
-  return invoke<RuntimeValidation>('validate_runtime');
 }
 
 export function appConfigSummary(): Promise<AppConfigSummary> {
@@ -271,63 +147,4 @@ export function apiKeyProfileActivate(provider: ApiKeyProvider, profileId: strin
 
 export function apiKeyProfileDelete(provider: ApiKeyProvider, profileId: string): Promise<ApiKeyProfilesView> {
   return invoke<ApiKeyProfilesView>('api_key_profile_delete', { provider, profileId });
-}
-
-export function localModelProfiles(): Promise<LocalModelProfilesView> {
-  return invoke<LocalModelProfilesView>('local_model_profiles');
-}
-
-export function localModelDownloadStatus(): Promise<LocalModelDownloadStatus> {
-  return invoke<LocalModelDownloadStatus>('local_model_download_status');
-}
-
-export function localModelProfileAdd(
-  label: string,
-  model: string,
-  device: string,
-  activate = true
-): Promise<LocalModelProfilesView> {
-  return invoke<LocalModelProfilesView>('local_model_profile_add', { label, model, device, activate });
-}
-
-export function localModelProfileActivate(profileId: string): Promise<LocalModelProfilesView> {
-  return invoke<LocalModelProfilesView>('local_model_profile_activate', { profileId });
-}
-
-export function localModelProfileDelete(profileId: string): Promise<LocalModelProfilesView> {
-  return invoke<LocalModelProfilesView>('local_model_profile_delete', { profileId });
-}
-
-export function localModelProfileRetryDownload(profileId: string): Promise<LocalModelProfilesView> {
-  return invoke<LocalModelProfilesView>('local_model_profile_retry_download', { profileId });
-}
-
-export function localRuntimePackStatus(): Promise<LocalRuntimePackStatus> {
-  return invoke<LocalRuntimePackStatus>('local_runtime_pack_status');
-}
-
-export function localRuntimePackPrepare(): Promise<LocalRuntimePackStatus> {
-  return invoke<LocalRuntimePackStatus>('local_runtime_pack_prepare');
-}
-
-export function localRuntimePackRetry(): Promise<LocalRuntimePackStatus> {
-  return invoke<LocalRuntimePackStatus>('local_runtime_pack_retry');
-}
-
-export function localRuntimePackRepair(): Promise<LocalRuntimePackStatus> {
-  return invoke<LocalRuntimePackStatus>('local_runtime_pack_repair');
-}
-
-export async function listenLocalModelDownloadProgress(
-  handler: (status: LocalModelDownloadStatus) => void
-): Promise<() => void> {
-  const events = await getEventApi();
-  return events.listen<LocalModelDownloadStatus>('local-model-download-progress', (event) => handler(event.payload));
-}
-
-export async function listenLocalRuntimePackProgress(
-  handler: (event: RuntimePackProgressEvent) => void
-): Promise<() => void> {
-  const events = await getEventApi();
-  return events.listen<RuntimePackProgressEvent>('local-runtime-pack-progress', (event) => handler(event.payload));
 }
