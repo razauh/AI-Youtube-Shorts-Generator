@@ -49,12 +49,11 @@ const policy = fs.readFileSync('app/src/lib/legal/policiesContent.ts', 'utf8');
 for (const expected of [
   'AI YouTube Shorts Generator',
   "export const POLICY_LAST_UPDATED_LABEL = 'May 30, 2026';",
-  "export type PolicyTab = 'terms' | 'privacy' | 'compliance' | 'notices' | 'refund';",
+  "export type PolicyTab = 'terms' | 'privacy' | 'deletion' | 'compliance' | 'notices' | 'refund';",
   '16. Prohibited Uses',
   '18. Limitation of Liability',
   'Refunded, charged-back, revoked, disabled, or disputed purchases may lose access',
   'MuAPI',
-  'OpenAI',
   'Gumroad',
   'Cloudflare Workers and D1',
   'YouTube, Google, and other source platforms',
@@ -66,6 +65,15 @@ for (const expected of [
   'license-control-suite',
   'No general telemetry or analytics SDK was identified during repository inspection.',
   'Crash reports are submitted only when an endpoint is configured and the user submits a draft.',
+  'Data Deletion Notice',
+  'backend licensing data handled by the licensing Worker',
+  'request ID, status, message, and lookup token',
+  'does not remove local project history',
+  'deletes device bindings for the license hash',
+  'anonymizes reset requests tied to the license hash',
+  'typing DELETE USER DATA',
+  'US state privacy deletion rights',
+  'Gumroad purchase or support channel',
 ]) {
   if (!policy.includes(expected)) {
     console.error(`[fail] in-app policy content missing expected text: ${expected}`);
@@ -79,8 +87,9 @@ if (lastUpdatedDates.length < 5 || lastUpdatedDates.some((date) => date !== 'Las
   failed = true;
 }
 
-for (const tab of ['terms', 'privacy', 'compliance', 'notices', 'refund']) {
-  if (!policy.includes(`  "${tab}": [`)) {
+for (const tab of ['terms', 'privacy', 'deletion', 'compliance', 'notices', 'refund']) {
+  const pattern = new RegExp(`\\n\\s*${tab}: \\[`);
+  if (!pattern.test(policy)) {
     console.error(`[fail] in-app policy content missing tab: ${tab}`);
     failed = true;
   }

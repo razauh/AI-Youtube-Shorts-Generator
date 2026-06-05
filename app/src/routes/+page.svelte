@@ -1502,6 +1502,7 @@
           <div class="row">
             <button type="button" class:active-tab={policiesTab === 'terms'} on:click={() => (policiesTab = 'terms')}>Terms</button>
             <button type="button" class:active-tab={policiesTab === 'privacy'} on:click={() => (policiesTab = 'privacy')}>Privacy</button>
+            <button type="button" class:active-tab={policiesTab === 'deletion'} on:click={() => (policiesTab = 'deletion')}>Data Deletion</button>
             <button type="button" class:active-tab={policiesTab === 'compliance'} on:click={() => (policiesTab = 'compliance')}>Data Compliance</button>
             <button type="button" class:active-tab={policiesTab === 'notices'} on:click={() => (policiesTab = 'notices')}>Third-Party Notices</button>
             <button type="button" class:active-tab={policiesTab === 'refund'} on:click={() => (policiesTab = 'refund')}>Refund Policy</button>

@@ -350,7 +350,7 @@ describe('test_ui flow parity', () => {
   it('test_policy_content_has_no_release_placeholders_or_stale_product_names', () => {
     const encoded = JSON.stringify(POLICY_SECTIONS);
     expect(encoded).toContain('AI YouTube Shorts Generator');
-    expect(Object.keys(POLICY_SECTIONS).sort()).toEqual(['compliance', 'notices', 'privacy', 'refund', 'terms']);
+    expect(Object.keys(POLICY_SECTIONS).sort()).toEqual(['compliance', 'deletion', 'notices', 'privacy', 'refund', 'terms']);
     for (const tab of Object.keys(POLICY_SECTIONS) as PolicyTab[]) {
       expect(POLICY_SECTIONS[tab].length).toBeGreaterThan(0);
       for (const section of POLICY_SECTIONS[tab]) {
@@ -363,6 +363,27 @@ describe('test_ui flow parity', () => {
     expect(encoded).not.toMatch(/\[(APP NAME|DEVELOPER NAME|LEGAL COMPANY|COMPANY ADDRESS|CONTACT EMAIL|SUPPORT EMAIL|PRIVACY EMAIL|WEBSITE OR SUPPORT URL|JURISDICTION|EFFECTIVE DATE|RETENTION PERIOD|TO BE COMPLETED)\]/);
     expect(encoded).not.toContain('Signal Forge');
     expect(encoded).not.toContain('AI Shorts App');
+  });
+
+  it('test_policy_content_includes_factual_data_deletion_notice', () => {
+    const encoded = JSON.stringify(POLICY_SECTIONS.deletion);
+    for (const expected of [
+      'Data Deletion Notice',
+      'backend licensing data handled by the licensing Worker',
+      'request ID, status, message, and lookup token',
+      'secure storage',
+      'does not remove local project history',
+      'deletes device bindings for the license hash',
+      'anonymizes reset requests tied to the license hash',
+      'setting privacy_deleted_at_ms',
+      'typing DELETE USER DATA',
+      'status endpoint accepts the request ID and lookup token',
+      'US state privacy deletion rights',
+      'Gumroad purchase or support channel'
+    ]) {
+      expect(encoded).toContain(expected);
+    }
+    expect(encoded).not.toMatch(/automatic deletion|automated legal compliance|guaranteed deletion/i);
   });
 
   it('test_policy_content_dates_refunds_services_and_telemetry_are_consistent', () => {
@@ -392,6 +413,8 @@ describe('test_ui flow parity', () => {
 
     expect(encoded).toContain('No general telemetry or analytics SDK was identified during repository inspection.');
     expect(encoded).toContain('Crash reports are submitted only when an endpoint is configured and the user submits a draft.');
+    expect(encoded).toContain("The application's supported generation workflow depends on MuAPI availability.");
+    expect(encoded).toContain('that outage or service change is outside our control and is not our responsibility.');
     expect(encoded).not.toMatch(/automatic telemetry|automatic analytics|automatically uploads crash/i);
   });
 
@@ -548,6 +571,7 @@ describe('test_ui flow parity', () => {
     expect(screen.getByText('Reference documents for use, privacy, data compliance, third-party notices, refunds, and liability.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Terms' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Privacy' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Data Deletion' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Data Compliance' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Third-Party Notices' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Refund Policy' })).toBeTruthy();
@@ -774,6 +798,14 @@ describe('test_ui flow parity', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Privacy' }));
     expect(screen.getByText('Privacy Notice')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Data Deletion' }));
+    expect(screen.getByText('Data Deletion Notice')).toBeTruthy();
+    expect(screen.getByText(/targets backend licensing data handled by the licensing Worker/)).toBeTruthy();
+    expect(screen.getByText(/The lookup token is required to refresh deletion status/)).toBeTruthy();
+    expect(screen.getByText(/does not remove local project history/)).toBeTruthy();
+    expect(screen.getByText(/deletes device bindings for the license hash/)).toBeTruthy();
+    expect(screen.getByText(/typing DELETE USER DATA/)).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Data Compliance' }));
     expect(screen.getAllByText('Data Compliance').length).toBeGreaterThan(0);

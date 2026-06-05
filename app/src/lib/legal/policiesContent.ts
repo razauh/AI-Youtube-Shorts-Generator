@@ -1,4 +1,4 @@
-export type PolicyTab = 'terms' | 'privacy' | 'compliance' | 'notices' | 'refund';
+export type PolicyTab = 'terms' | 'privacy' | 'deletion' | 'compliance' | 'notices' | 'refund';
 
 type PolicySection = {
   heading: string;
@@ -53,6 +53,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       paragraphs: [
         'In API mode, the application may send processing inputs to MuAPI. These inputs may include source URLs, media references, transcript-related data, highlight data, prompt-like processing data, timing data, aspect-ratio settings, and other information needed to generate clips.',
         'MuAPI may perform download, transcription, highlight processing, LLM-based ranking, autocrop, and media-rendering tasks. MuAPI is a third-party service, and its own terms and policies apply.',
+        'The application\'s supported generation workflow depends on MuAPI availability. If MuAPI, its API, or its hosted processing services stop working, become unavailable, change, degrade, rate-limit, suspend access, or discontinue support, that outage or service change is outside our control and is not our responsibility.',
         'We are not responsible for MuAPI downtime, processing failures, incorrect results, hosted output availability, rate limits, account restrictions, billing, policy changes, or media-processing errors.'
       ]
     },
@@ -182,6 +183,80 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
         'Local app storage is used for project history, settings, crash drafts, and status caches. Secure storage is used where available for API key and session material.',
         'Crash reports are submitted only when an endpoint is configured and the user submits a draft.',
         'No general telemetry or analytics SDK was identified during repository inspection.'
+      ]
+    }
+  ],
+  deletion: [
+    {
+      heading: 'Data Deletion Notice',
+      paragraphs: [
+        'Last updated: May 30, 2026',
+        'This notice explains the deletion request flow implemented in AI YouTube Shorts Generator. It is based on the app, Tauri command, admin desktop, Cloudflare Worker, and database behavior identified in the current repository.',
+        'The in-app deletion request targets backend licensing data handled by the licensing Worker. It does not automatically delete local app data on your device, generated clips, exported JSON, crash drafts, logs, MuAPI-held data, Gumroad purchase or payment records, Cloudflare infrastructure records outside the Worker database, YouTube or source-platform records, update-host records, or support records held outside the implemented Worker flow.'
+      ]
+    },
+    {
+      heading: 'Who Can Submit a Request',
+      paragraphs: [
+        'A user can submit a backend licensing-data deletion request from Settings -> Policies -> Data Deletion by entering the license key, optionally entering the purchaser email, and typing DELETE.',
+        'The license key is used to identify the backend license record. If a purchaser email is supplied and the Worker has a stored purchaser email for that license, the email must match before the request is accepted.',
+        'The request is designed for license-related backend data. It is not a general account login or identity-verification system, and purchaser email is used only where the implemented license, reset, deletion, purchase, or support flow requires it.'
+      ]
+    },
+    {
+      heading: 'What The Request Covers',
+      paragraphs: [
+        'The Worker records the request with the scope backend_licensing_data. The implemented admin approval flow previews affected backend license records, device bindings, and reset requests tied to the license hash.',
+        'When an admin approves the request, the Worker deletes device bindings for the license hash, anonymizes reset requests tied to the license hash, disables and anonymizes the license record by clearing purchaser email and setting privacy_deleted_at_ms, sanitizes the completed deletion request by clearing purchaser email and masked license key, and writes an audit event for completion.',
+        'The request can be rejected by an admin, can remain pending while under review, can enter processing, can fail because of Worker storage execution issues, and can be retried by an admin after a failed processing phase.'
+      ]
+    },
+    {
+      heading: 'What The Request Does Not Cover',
+      paragraphs: [
+        'The backend deletion request does not remove local project history, onboarding state, theme preference, cached deletion request status, generated output metadata, exported JSON, locally saved clips or links, crash drafts, logs, configuration files, API key profiles, secure-store entries, or files the user created outside the Worker-backed licensing database.',
+        'To remove local data, uninstalling the app may not be enough on every operating system. Users should also remove local app data, generated outputs, exported JSON files, logs, crash drafts, and any files they saved or shared if they want those local copies deleted.',
+        'The request does not delete data controlled by third-party providers. MuAPI, Gumroad, Cloudflare, YouTube, Google, source platforms, update hosts, and support channels may have their own records, retention periods, legal obligations, deletion procedures, and privacy terms.'
+      ]
+    },
+    {
+      heading: 'Request Tracking and Lookup Token',
+      paragraphs: [
+        'After submission, the Worker returns a request ID, status, message, and lookup token. The app stores the request ID, status, and message in local app storage and attempts to store the lookup token through secure storage.',
+        'The lookup token is required to refresh deletion status. If the lookup token is lost, unavailable, or invalid, the app cannot retrieve status through the implemented status endpoint without another valid token.',
+        'The status endpoint accepts the request ID and lookup token and returns the current status, message, completion time if available, and safe error code if available.'
+      ]
+    },
+    {
+      heading: 'Admin Review and Processing',
+      paragraphs: [
+        'Deletion requests are not processed automatically. The admin desktop lists deletion requests by status, shows the masked license or license hash prefix, purchaser email when available, requested scope, preview counts, timestamps, details, and safe error information.',
+        'An admin can reject a pending request with an optional reason. An admin can approve a pending or failed request only after typing DELETE USER DATA in the admin confirmation dialog.',
+        'Approval records processing phases in Worker request metadata, changes status through approved and processing, performs deletion or anonymization actions, marks completed when successful, and records safe failure details if processing fails.'
+      ]
+    },
+    {
+      heading: 'Records That May Remain',
+      paragraphs: [
+        'Some records may remain after completion where needed for security, audit, fraud prevention, legal obligations, dispute handling, tax or payment records, support history, provider obligations, or to preserve a minimal record that the deletion request was handled.',
+        'The implemented Worker completion flow keeps sanitized deletion request records and audit events. Audit metadata is intended to avoid raw license keys and raw purchaser email in completion events.',
+        'Refunded, charged-back, revoked, disabled, disputed, or privacy-deleted purchases may lose access to the application because the approved deletion flow disables the backend license entitlement.'
+      ]
+    },
+    {
+      heading: 'Privacy Rights and Applicable Law',
+      paragraphs: [
+        'Depending on where the user lives and which law applies, users may have rights to request access, deletion or erasure, correction, portability, restriction, objection, opt-out, appeal, or to lodge a complaint with a regulator. Examples include GDPR-style erasure rights and US state privacy deletion rights.',
+        'The app provides a concrete deletion request mechanism for backend licensing data, but the operator remains responsible for reviewing requests, deciding whether an exception or retention duty applies, responding through the appropriate support or purchase channel, and complying with applicable privacy law.',
+        'The operator should not discriminate against users for exercising applicable privacy rights, except that deleting or anonymizing license records can technically prevent license validation, device binding, reset handling, support lookup, or continued access where those records are needed to provide the licensed app.'
+      ]
+    },
+    {
+      heading: 'How To Use This Notice',
+      paragraphs: [
+        'Use the in-app request form for backend licensing-data deletion. Use the request ID and lookup token to refresh status in the same Policies page.',
+        'For local data, remove local app data and generated files from the device directly. For third-party records, use the relevant provider privacy process or support channel.',
+        'For questions, disputes, appeals, or requests that the in-app flow cannot complete, use the Gumroad purchase or support channel associated with the license unless the operator has provided a separate privacy contact.'
       ]
     }
   ],
