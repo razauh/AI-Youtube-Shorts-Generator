@@ -43,7 +43,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       heading: '4. Third-Party APIs and Services',
       paragraphs: [
-        'The application may use or connect to MuAPI, OpenAI, Gumroad, Cloudflare Workers and D1, YouTube, Google, source platforms, update hosts, and crash-report endpoints if configured.',
+        'The application may use or connect to MuAPI, Gumroad, Cloudflare Workers and D1, YouTube, Google, source platforms, update hosts, and crash-report endpoints if configured.',
         'Third-party APIs and services are controlled by their respective providers. We do not control their availability, pricing, rate limits, account policies, content policies, output quality, security practices, privacy practices, or terms.',
         'You are responsible for complying with all provider terms, policies, usage limits, billing requirements, and content rules.'
       ]
@@ -57,9 +57,9 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       ]
     },
     {
-      heading: '6. OpenAI and AI Processing',
+      heading: '6. AI Processing',
       paragraphs: [
-        'The application may store OpenAI API key profiles for workflows or future features that require OpenAI-backed text generation, title generation, hook generation, scoring, classification, or similar tasks.',
+        'The application may use hosted AI processing through configured API-mode providers for transcription, title generation, hook generation, scoring, classification, or similar tasks.',
         'AI-generated outputs may be inaccurate, incomplete, biased, offensive, misleading, unexpected, duplicative, low quality, legally risky, or unsuitable for your intended use.',
         'You must verify all AI-generated outputs before relying on them or publishing them.'
       ]
@@ -108,7 +108,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       heading: '12. Third-Party Licenses',
       paragraphs: [
         'Third-party libraries, APIs, services, tools, and other components remain governed by their own licenses and terms.',
-        'These may include MuAPI, OpenAI, Gumroad, Cloudflare, YouTube, Google, FFmpeg, Rust crates, Node/pnpm packages, Tauri components, Svelte/Vite tooling, and license-control-suite.',
+        'These may include MuAPI, Gumroad, Cloudflare, YouTube, Google, FFmpeg, Rust crates, Node/pnpm packages, Tauri components, Svelte/Vite tooling, and license-control-suite.',
         'Distributors remain responsible for including exact notices for any binary, package, service contract, or tool they ship.'
       ]
     },
@@ -199,7 +199,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       paragraphs: [
         'Security controls identified or expected include license-gated UI for generation features, device binding and signed access tokens, server-side hashed license keys with hash pepper, admin bearer-token authentication, masked emails/license keys in several UI/API responses, local secure-store use where available, crash-draft redaction for selected secret/license patterns, structured error mapping to avoid exposing raw auth failures, and no general telemetry/analytics SDK identified in inspected code.',
         'Before release, the operator should create an incident response plan covering suspected exposure of Worker secrets, Gumroad tokens, admin tokens, API keys, license keys, access tokens, or D1 data; unauthorized admin access; accidental support log or crash-report disclosure; user notification and regulatory notification timelines under applicable law; and token revocation, secret rotation, forensic preservation, and post-incident remediation.',
-        'Data may move across borders through Cloudflare, Gumroad, MuAPI, OpenAI, update hosts, crash-report endpoints, and support operations.'
+        'Data may move across borders through Cloudflare, Gumroad, MuAPI, update hosts, crash-report endpoints, and support operations.'
       ]
     }
   ],
@@ -208,7 +208,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       heading: 'Third-Party Notices',
       paragraphs: [
         'Last updated: May 30, 2026',
-        'The application uses or may interact with MuAPI, OpenAI, Gumroad, Cloudflare Workers and D1, YouTube, Google, source platforms, update hosts, FFmpeg, Rust, Tauri, and Native Dependencies, Vite, Tauri/Rust desktop app with Svelte UI, and license-control-suite.',
+        'The application uses or may interact with MuAPI, Gumroad, Cloudflare Workers and D1, YouTube, Google, source platforms, update hosts, FFmpeg, Rust, Tauri, and Native Dependencies, Vite, Tauri/Rust desktop app with Svelte UI, and license-control-suite.',
         'Exact license metadata is not shown in this in-app screen. The operator must generate release notices from committed manifests, lockfiles, transitive dependency inventories, full third-party license texts, final production service contracts, and distributed binary contents.'
       ]
     },
@@ -216,7 +216,6 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       heading: 'Provider Terms',
       paragraphs: [
         'MuAPI: used for hosted video and AI/media processing. Verify API terms, privacy/data-use terms, billing terms, content policy, retention behavior, output ownership, and rate limits before release.',
-        'OpenAI: API key profile support may be present for workflows or future features. Verify OpenAI API terms, privacy/data-use terms, model behavior disclaimers, output-use terms, and any required user disclosures before release.',
         'YouTube, Google, and other source platforms: the application can process YouTube URLs through API-based hosted processing. The application is not affiliated with or endorsed by YouTube, Google, TikTok, Instagram, Meta, or other platforms unless separately stated in writing.'
       ]
     }

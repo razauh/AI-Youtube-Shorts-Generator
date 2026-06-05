@@ -374,7 +374,6 @@ describe('test_ui flow parity', () => {
     expect(encoded).toMatch(/Refunded, charged-back, revoked, disabled, or disputed purchases may lose access/);
     for (const expected of [
       'MuAPI',
-      'OpenAI',
       'Gumroad',
       'Cloudflare Workers and D1',
       'YouTube',
@@ -389,6 +388,7 @@ describe('test_ui flow parity', () => {
     ]) {
       expect(encoded).toContain(expected);
     }
+    expect(encoded).not.toContain('OpenAI');
 
     expect(encoded).toContain('No general telemetry or analytics SDK was identified during repository inspection.');
     expect(encoded).toContain('Crash reports are submitted only when an endpoint is configured and the user submits a draft.');
@@ -476,18 +476,20 @@ describe('test_ui flow parity', () => {
     expect(screen.getByRole('tab', { name: 'API Providers', selected: true })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Device Reset' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'MuAPI Access help' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'OpenAI Access help' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'OpenAI Access help' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Device Reset help' })).toBeNull();
 
     expect(screen.getByRole('button', { name: 'MuAPI Access help' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'OpenAI Access help' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'OpenAI Access help' })).toBeNull();
     expect(screen.getByText('Video provider')).toBeTruthy();
-    expect(screen.getByText('LLM provider')).toBeTruthy();
+    expect(screen.queryByText('LLM provider')).toBeNull();
     expect(screen.getByText('MuAPI Configured')).toBeTruthy();
-    expect(screen.getByText('OpenAI Configured')).toBeTruthy();
+    expect(screen.queryByText('OpenAI Configured')).toBeNull();
     expect(screen.getByText('Current MuAPI key')).toBeTruthy();
-    expect(screen.getByText('Current OpenAI key')).toBeTruthy();
-    expect(screen.getAllByText('Active').length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText('Current OpenAI key')).toBeNull();
+    expect(screen.getAllByText('Active').length).toBeGreaterThanOrEqual(1);
+    expect(apiKeyProfiles).toHaveBeenCalledWith('muapi');
+    expect(apiKeyProfiles).not.toHaveBeenCalledWith('openai');
     expect(screen.queryByText('License support')).toBeNull();
     expect(screen.queryByText('Model base')).toBeNull();
     expect(screen.queryByText('Device auto')).toBeNull();
@@ -511,7 +513,13 @@ describe('test_ui flow parity', () => {
     await fireEvent.click(screen.getByRole('tab', { name: 'Configuration' }));
     await fireEvent.click(screen.getByRole('tab', { name: 'API Providers' }));
     expect(screen.getByText('MuAPI Access')).toBeTruthy();
-    expect(screen.getByText('OpenAI Access')).toBeTruthy();
+    expect(screen.queryByText('OpenAI Access')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'OpenAI Access help' })).toBeNull();
+    expect(screen.queryByLabelText('OpenAI profile name')).toBeNull();
+    expect(screen.queryByLabelText('OpenAI key')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add OpenAI Profile' })).toBeNull();
+    expect(screen.queryByLabelText('OpenAI key profiles')).toBeNull();
+    expect(screen.queryByText('Current OpenAI key')).toBeNull();
     expect(screen.queryByText('License Worker')).toBeNull();
     expect(screen.queryByText('Retry attempts')).toBeNull();
     expect(screen.queryByText('licenses.example.test')).toBeNull();
@@ -519,12 +527,9 @@ describe('test_ui flow parity', () => {
     await fireEvent.input(screen.getByLabelText('MuAPI key'), { target: { value: 'mu-secret' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Add MuAPI Profile' }));
     expect(apiKeyProfileAdd).toHaveBeenCalledWith('muapi', 'Client MuAPI', 'mu-secret', true);
-    await fireEvent.input(screen.getByLabelText('OpenAI profile name'), { target: { value: 'Client OpenAI' } });
-    await fireEvent.input(screen.getByLabelText('OpenAI key'), { target: { value: 'openai-secret' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Add OpenAI Profile' }));
-    expect(apiKeyProfileAdd).toHaveBeenCalledWith('openai', 'Client OpenAI', 'openai-secret', true);
     expect(document.body.textContent).not.toContain('mu-secret');
-    expect(document.body.textContent).not.toContain('openai-secret');
+    expect(apiKeyProfileAdd).not.toHaveBeenCalledWith('openai', expect.anything(), expect.anything(), expect.anything());
+    expect(apiKeyProfiles).not.toHaveBeenCalledWith('openai');
 
     await fireEvent.click(screen.getByRole('tab', { name: 'API Providers' }));
     await fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0]);

@@ -77,11 +77,9 @@
   let settingsTab = 'configuration';
   let settingsConfigTab = 'api';
   let policiesTab = 'terms';
-  let apiProfiles = { muapi: null, openai: null };
+  let apiProfiles = { muapi: null };
   let muapiProfileLabel = '';
   let muapiKeyInput = '';
-  let openaiProfileLabel = '';
-  let openaiKeyInput = '';
   let settingsActionStatus = '';
   let settingsActionTarget = '';
   let settingsActionKind = 'success';
@@ -148,11 +146,8 @@
     $authState.lifecycle !== 'reset_rejected' &&
     $authState.lifecycle !== 'reset_expired';
   $: trimmedMuapiKey = muapiKeyInput.trim();
-  $: trimmedOpenaiKey = openaiKeyInput.trim();
   $: trimmedMuapiProfileLabel = muapiProfileLabel.trim();
-  $: trimmedOpenaiProfileLabel = openaiProfileLabel.trim();
   $: canSaveMuapiKey = Boolean(trimmedMuapiKey && trimmedMuapiProfileLabel);
-  $: canSaveOpenaiKey = Boolean(trimmedOpenaiKey && trimmedOpenaiProfileLabel);
   $: activeSetupBlockers = setupStatus.blockersApi;
   $: setupModalBlockerMessages = friendlySetupBlockers(activeSetupBlockers);
   $: isLicensedAppSession = $authState.lifecycle === 'licensed' || $authState.lifecycle === 'licensed_offline_grace';
@@ -267,15 +262,14 @@
     settingsBusy = true;
     settingsError = '';
     try {
-      const [config, context, muapiProfiles, openaiProfiles] = await Promise.all([
+      const [config, context, muapiProfiles] = await Promise.all([
         appConfigSummary(),
         runtimeContext(),
-        apiKeyProfiles('muapi'),
-        apiKeyProfiles('openai')
+        apiKeyProfiles('muapi')
       ]);
       settingsConfig = config;
       settingsContext = context;
-      apiProfiles = { muapi: muapiProfiles, openai: openaiProfiles };
+      apiProfiles = { muapi: muapiProfiles };
       diagnosticsLastCheckedAt = new Date().toISOString();
     } catch (err) {
       settingsError = err instanceof Error ? err.message : 'Unable to load settings status.';
@@ -552,36 +546,6 @@
     await loadSettingsStatus();
   }
 
-  async function saveOpenaiKey() {
-    if (settingsActionBusy) {
-      return;
-    }
-    if (!canSaveOpenaiKey) {
-      settingsActionStatus = 'Enter a profile name and OpenAI key before continuing.';
-      settingsActionTarget = 'openai';
-      settingsActionKind = 'error';
-      return;
-    }
-    settingsActionStatus = '';
-    settingsActionTarget = '';
-    settingsActionKind = 'success';
-    settingsActionBusy = true;
-    try {
-      apiProfiles = {
-        ...apiProfiles,
-        openai: await apiKeyProfileAdd('openai', trimmedOpenaiProfileLabel, trimmedOpenaiKey, true)
-      };
-      openaiKeyInput = '';
-      openaiProfileLabel = '';
-      settingsActionStatus = 'OpenAI profile saved and set active.';
-      settingsActionTarget = 'openai';
-      settingsActionKind = 'success';
-    } finally {
-      settingsActionBusy = false;
-    }
-    await loadSettingsStatus();
-  }
-
   async function activateApiProfile(provider, profileId) {
     if (settingsActionBusy) {
       return;
@@ -595,7 +559,7 @@
         ...apiProfiles,
         [provider]: await apiKeyProfileActivate(provider, profileId)
       };
-      settingsActionStatus = `${provider === 'muapi' ? 'MuAPI' : 'OpenAI'} active profile updated.`;
+      settingsActionStatus = 'MuAPI active profile updated.';
       settingsActionTarget = provider;
       settingsActionKind = 'success';
     } finally {
@@ -617,7 +581,7 @@
         ...apiProfiles,
         [provider]: await apiKeyProfileDelete(provider, profileId)
       };
-      settingsActionStatus = `${provider === 'muapi' ? 'MuAPI' : 'OpenAI'} profile deleted.`;
+      settingsActionStatus = 'MuAPI profile deleted.';
       settingsActionTarget = provider;
       settingsActionKind = 'success';
     } finally {
@@ -1410,59 +1374,6 @@
               {/if}
             </div>
             {#if settingsActionTarget === 'muapi'}
-              <FormStatus message={settingsActionStatus} kind={settingsActionKind} />
-            {/if}
-          </article>
-
-          <article class="panel config-card">
-            <div class="config-card-head">
-              <div>
-                <p class="eyebrow">LLM provider</p>
-                <div class="config-title-row">
-                  <h3>OpenAI Access</h3>
-                  <span class="help-wrap">
-                    <button class="help-button" type="button" aria-label="OpenAI Access help" aria-describedby="help-openai">?</button>
-                    <span id="help-openai" class="help-tooltip" role="tooltip">Store the OpenAI key used for transcript and highlight generation.</span>
-                  </span>
-                </div>
-              </div>
-              <div class="status-chips" aria-label="OpenAI key status">
-                <span class:ok={settingsConfig?.openaiConfigured} class:warn={!settingsConfig?.openaiConfigured}>OpenAI {configuredLabel(settingsConfig?.openaiConfigured)}</span>
-              </div>
-            </div>
-            {#if apiProfiles.openai?.envOverride}
-              <p class="meta warn-text">Environment variable override is active. Saved profiles are available, but runtime will use the environment key.</p>
-            {/if}
-            <form class="form config-form api-profile-form" novalidate on:submit|preventDefault={saveOpenaiKey}>
-              <label>Profile name <input aria-label="OpenAI profile name" autocomplete="off" bind:value={openaiProfileLabel} placeholder="Personal OpenAI" /></label>
-              <label>OpenAI key <input aria-label="OpenAI key" type="password" autocomplete="off" bind:value={openaiKeyInput} /></label>
-              <div class="settings-actions">
-                <button type="submit" disabled={settingsActionBusy || !canSaveOpenaiKey}>Add OpenAI Profile</button>
-              </div>
-            </form>
-            <div class="api-profile-list" aria-label="OpenAI key profiles">
-              {#if apiProfiles.openai?.profiles?.length}
-                {#each apiProfiles.openai.profiles as profile}
-                  <div class="api-profile-row">
-                    <div>
-                      <strong>{profile.label}</strong>
-                      <span class="meta">•••• {profile.lastFour}</span>
-                    </div>
-                    <div class="api-profile-actions">
-                      {#if profile.active}
-                        <span class="profile-active-badge">Active</span>
-                      {:else}
-                        <button class="button-secondary" type="button" on:click={() => activateApiProfile('openai', profile.id)} disabled={settingsActionBusy}>Set active</button>
-                      {/if}
-                      <button class="button-secondary" type="button" on:click={() => deleteApiProfile('openai', profile.id)} disabled={settingsActionBusy}>Delete</button>
-                    </div>
-                  </div>
-                {/each}
-              {:else}
-                <p class="meta">No OpenAI profiles yet. Add a named profile so saving does not silently replace another key.</p>
-              {/if}
-            </div>
-            {#if settingsActionTarget === 'openai'}
               <FormStatus message={settingsActionStatus} kind={settingsActionKind} />
             {/if}
           </article>
