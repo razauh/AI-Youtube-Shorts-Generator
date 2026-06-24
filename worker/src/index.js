@@ -56,6 +56,12 @@ export default {
       });
     }
 
+    if (env?.LICENSE_BACKEND_MODE === "devolens") {
+      if (path === "/v1/license/activate" || path === "/v1/license/validate") {
+        return err("gone", "Endpoint is disabled in Devolens mode.", requestId(), false, 410);
+      }
+    }
+
     if (method === "POST" && path === "/v1/license/activate") {
       return handleActivate(request, env);
     }

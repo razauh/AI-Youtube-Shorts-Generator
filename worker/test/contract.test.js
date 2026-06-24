@@ -1532,3 +1532,32 @@ test('gumroad webhook blocks gumroad license on refund', async () => {
     global.fetch = originalFetch;
   }
 });
+
+test('activate and validate endpoints return 410 Gone in Devolens mode', async () => {
+  const db = new MockD1Database();
+  const env = { DB: db, LICENSE_BACKEND_MODE: 'devolens' };
+
+  const actRes = await call('/v1/license/activate', {
+    method: 'POST',
+    body: {
+      license_key: 'AAAA-BBBB-CCCC-DDDD',
+      device_public_key: 'pubkey',
+      fingerprint: {},
+      app_version: '0.1.0',
+      timestamp_ms: Date.now(),
+    },
+    env,
+  });
+  assert.equal(actRes.status, 410);
+  const actJson = await actRes.json();
+  assert.equal(actJson.error.code, 'gone');
+
+  const valRes = await call('/v1/license/validate', {
+    method: 'POST',
+    body: { access_token: 'some-token' },
+    env,
+  });
+  assert.equal(valRes.status, 410);
+  const valJson = await valRes.json();
+  assert.equal(valJson.error.code, 'gone');
+});

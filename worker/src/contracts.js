@@ -18,6 +18,7 @@ export const ERROR_CODES = new Set([
   "serialization",
   "invalid_transition",
   "bad_request",
+  "gone",
 ]);
 
 export const RESET_STATUS = new Set(["pending", "approved", "rejected", "expired"]);
