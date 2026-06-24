@@ -66,14 +66,16 @@ for (const expected of [
   'No general telemetry or analytics SDK was identified during repository inspection.',
   'Crash reports are submitted only when an endpoint is configured and the user submits a draft.',
   'Data Deletion Notice',
-  'backend licensing data handled by the licensing Worker',
+  'backend licensing data',
   'request ID, status, message, and lookup token',
   'does not remove local project history',
-  'deletes device bindings for the license hash',
-  'anonymizes reset requests tied to the license hash',
+  'deactivates all associated device bindings in Devolens',
+  'For legacy requests submitted during custom worker mode',
   'typing DELETE USER DATA',
   'US state privacy deletion rights',
   'Gumroad purchase or support channel',
+  'Devolens',
+  'Cryptolens',
 ]) {
   if (!policy.includes(expected)) {
     console.error(`[fail] in-app policy content missing expected text: ${expected}`);

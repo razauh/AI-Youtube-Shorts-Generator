@@ -43,7 +43,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       heading: '4. Third-Party APIs and Services',
       paragraphs: [
-        'The application may use or connect to MuAPI, Gumroad, Cloudflare Workers and D1, YouTube, Google, source platforms, update hosts, and crash-report endpoints if configured.',
+        'The application may use or connect to Devolens (Cryptolens), MuAPI, Gumroad, Cloudflare Workers and D1, YouTube, Google, source platforms, update hosts, and crash-report endpoints if configured.',
         'Third-party APIs and services are controlled by their respective providers. We do not control their availability, pricing, rate limits, account policies, content policies, output quality, security practices, privacy practices, or terms.',
         'You are responsible for complying with all provider terms, policies, usage limits, billing requirements, and content rules.'
       ]
@@ -100,7 +100,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       heading: '11. Licensing, Activation, and Device Binding',
       paragraphs: [
-        'The application may require license activation and validation. Licensing may include license keys, device binding, session validation, reset requests, Gumroad purchase verification, purchaser email records, server-side license records, and local license/session/device state.',
+        'The application may require license activation and validation using Devolens (Cryptolens) licensing services. Licensing may include license keys, device binding, session validation, reset requests, Gumroad purchase verification, purchaser email records, server-side license records, and local license/session/device state.',
         'A license may not work if it is invalid, revoked, expired, already bound to another device, blocked, reset-pending, affected by payment issues, or rejected by the licensing backend.',
         'Refund eligibility is handled through the payment provider or support channel and may depend on purchase status, licensing status, dispute status, abuse prevention, and applicable consumer law.'
       ]
@@ -109,7 +109,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       heading: '12. Third-Party Licenses',
       paragraphs: [
         'Third-party libraries, APIs, services, tools, and other components remain governed by their own licenses and terms.',
-        'These may include MuAPI, Gumroad, Cloudflare, YouTube, Google, FFmpeg, Rust crates, Node/pnpm packages, Tauri components, Svelte/Vite tooling, and license-control-suite.',
+        'These may include Devolens (Cryptolens), MuAPI, Gumroad, Cloudflare, YouTube, Google, FFmpeg, Rust crates, Node/pnpm packages, Tauri components, Svelte/Vite tooling, and license-control-suite.',
         'Distributors remain responsible for including exact notices for any binary, package, service contract, or tool they ship.'
       ]
     },
@@ -174,7 +174,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       paragraphs: [
         'You may provide YouTube URLs, generation settings, project names, API keys, license keys, purchaser email for support flows, and deletion request details.',
         'MuAPI may receive source URLs, media references, transcript-related data, prompt-like processing data, timing data, and aspect-ratio settings for API-based processing.',
-        'Gumroad and Cloudflare Workers and D1 may process purchase, license, activation, reset, and deletion request data.'
+        'Gumroad, Devolens (Cryptolens), and Cloudflare Workers and D1 may process purchase, license, activation, reset, and deletion request data. This includes IP addresses, purchaser emails, license keys, and device machine codes needed for activation and license compliance.'
       ]
     },
     {
@@ -192,23 +192,21 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       paragraphs: [
         'Last updated: May 30, 2026',
         'This notice explains the deletion request flow implemented in AI YouTube Shorts Generator. It is based on the app, Tauri command, admin desktop, Cloudflare Worker, and database behavior identified in the current repository.',
-        'The in-app deletion request targets backend licensing data handled by the licensing Worker. It does not automatically delete local app data on your device, generated clips, exported JSON, crash drafts, logs, MuAPI-held data, Gumroad purchase or payment records, Cloudflare infrastructure records outside the Worker database, YouTube or source-platform records, update-host records, or support records held outside the implemented Worker flow.'
+        'The in-app deletion request targets backend licensing data. When the application is operating in Devolens (Cryptolens) mode, the request directly blocks the license key in Devolens to anonymize/delete the associated licensing and device binding data. It does not automatically delete local app data on your device, generated clips, exported JSON, crash drafts, logs, MuAPI-held data, Gumroad purchase or payment records, update-host records, or support records held outside the licensing system.'
       ]
     },
     {
       heading: 'Who Can Submit a Request',
       paragraphs: [
         'A user can submit a backend licensing-data deletion request from Settings -> Policies -> Data Deletion by entering the license key, optionally entering the purchaser email, and typing DELETE.',
-        'The license key is used to identify the backend license record. If a purchaser email is supplied and the Worker has a stored purchaser email for that license, the email must match before the request is accepted.',
-        'The request is designed for license-related backend data. It is not a general account login or identity-verification system, and purchaser email is used only where the implemented license, reset, deletion, purchase, or support flow requires it.'
+        'In Devolens mode, the license key is used to synchronously block and deactivate the license key in Devolens (Cryptolens). The request is designed for license-related backend data and does not require manual administrator review or approval.'
       ]
     },
     {
       heading: 'What The Request Covers',
       paragraphs: [
-        'The Worker records the request with the scope backend_licensing_data. The implemented admin approval flow previews affected backend license records, device bindings, and reset requests tied to the license hash.',
-        'When an admin approves the request, the Worker deletes device bindings for the license hash, anonymizes reset requests tied to the license hash, disables and anonymizes the license record by clearing purchaser email and setting privacy_deleted_at_ms, sanitizes the completed deletion request by clearing purchaser email and masked license key, and writes an audit event for completion.',
-        'The request can be rejected by an admin, can remain pending while under review, can enter processing, can fail because of Worker storage execution issues, and can be retried by an admin after a failed processing phase.'
+        'The deletion request blocks the license key and deactivates all associated device bindings in Devolens. This prevents future activations and validations of the license, effectively deleting the personal device binding records from the active licensing store.',
+        'For legacy requests submitted during custom worker mode, requests are recorded for administrative review where an admin can review, approve, or reject the request.'
       ]
     },
     {
@@ -274,7 +272,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       paragraphs: [
         'Security controls identified or expected include license-gated UI for generation features, device binding and signed access tokens, server-side hashed license keys with hash pepper, admin bearer-token authentication, masked emails/license keys in several UI/API responses, local secure-store use where available, crash-draft redaction for selected secret/license patterns, structured error mapping to avoid exposing raw auth failures, and no general telemetry/analytics SDK identified in inspected code.',
         'Before release, the operator should create an incident response plan covering suspected exposure of Worker secrets, Gumroad tokens, admin tokens, API keys, license keys, access tokens, or D1 data; unauthorized admin access; accidental support log or crash-report disclosure; user notification and regulatory notification timelines under applicable law; and token revocation, secret rotation, forensic preservation, and post-incident remediation.',
-        'Data may move across borders through Cloudflare, Gumroad, MuAPI, update hosts, crash-report endpoints, and support operations.'
+        'Data may move across borders through Devolens (Cryptolens), Cloudflare, Gumroad, MuAPI, update hosts, crash-report endpoints, and support operations.'
       ]
     }
   ],
@@ -283,7 +281,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       heading: 'Third-Party Notices',
       paragraphs: [
         'Last updated: May 30, 2026',
-        'The application uses or may interact with MuAPI, Gumroad, Cloudflare Workers and D1, YouTube, Google, source platforms, update hosts, FFmpeg, Rust, Tauri, and Native Dependencies, Vite, Tauri/Rust desktop app with Svelte UI, and license-control-suite.',
+        'The application uses or may interact with Devolens (Cryptolens), MuAPI, Gumroad, Cloudflare Workers and D1, YouTube, Google, source platforms, update hosts, FFmpeg, Rust, Tauri, and Native Dependencies, Vite, Tauri/Rust desktop app with Svelte UI, and license-control-suite.',
         'Exact license metadata is not shown in this in-app screen. The operator must generate release notices from committed manifests, lockfiles, transitive dependency inventories, full third-party license texts, final production service contracts, and distributed binary contents.'
       ]
     },
