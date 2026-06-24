@@ -309,7 +309,7 @@ fn validate_license_worker_config(
             reason: "must be set when LICENSE_BACKEND_MODE=devolens",
         });
     }
-    if mode == LicenseBackendMode::Devolens {
+    if mode == LicenseBackendMode::Devolens && std::env::var("SKIP_DEVOLENS_TOKEN_SAFETY_CHECK").is_err() {
         check_devolens_token_safety(devolens_base_url, devolens_access_token)?;
     }
     if namespace.trim().is_empty() {

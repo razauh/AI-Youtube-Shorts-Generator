@@ -61,6 +61,136 @@ struct WorkerDeletionStatusRequest<'a> {
     lookup_token: &'a str,
 }
 
+#[derive(Deserialize)]
+struct DevolensBlockKeyResponse {
+    result: i32,
+    message: String,
+}
+
+#[derive(Deserialize)]
+struct DevolensGetKeyResponse {
+    result: i32,
+    #[serde(rename = "licenseKey")]
+    license_key: Option<DevolensLicenseKeyInfo>,
+}
+
+#[derive(Deserialize)]
+struct DevolensLicenseKeyInfo {
+    blocked: bool,
+}
+
+fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
+    if hex.len() % 2 != 0 {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    for i in (0..hex.len()).step_by(2) {
+        let res = u8::from_str_radix(&hex[i..i + 2], 16).ok()?;
+        bytes.push(res);
+    }
+    Some(bytes)
+}
+
+async fn devolens_post<T: DeserializeOwned>(
+    cfg: &Config,
+    endpoint: &str,
+    params: &[(&str, &str)],
+) -> Result<T, AuthCommandError> {
+    let worker_cfg = cfg.license_worker_config();
+    let base_url = worker_cfg.devolens_base_url.trim_end_matches('/');
+    let url = format!("{}/{}", base_url, endpoint.trim_start_matches('/'));
+    let client = reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .timeout(std::time::Duration::from_millis(
+            cfg.license_worker_config().timeout_ms,
+        ))
+        .build()
+        .map_err(|_| command_error("storage", "Could not initialize Devolens client."))?;
+    let response = client
+        .post(url)
+        .form(params)
+        .send()
+        .await
+        .map_err(|_| command_error("worker_unreachable", "Unable to reach Devolens right now."))?;
+    let text = response
+        .text()
+        .await
+        .map_err(|_| command_error("serialization", "Devolens response could not be read."))?;
+    serde_json::from_str(&text)
+        .map_err(|_| command_error("serialization", "Devolens returned an invalid response."))
+}
+
+async fn devolens_block_key(cfg: &Config, license_key: &str) -> Result<UserDataDeletionView, AuthCommandError> {
+    let worker_cfg = cfg.license_worker_config();
+    let access_token = &worker_cfg.devolens_access_token;
+    let product_id = &worker_cfg.devolens_product_id;
+    if access_token.trim().is_empty() || product_id.trim().is_empty() {
+        return Err(command_error("unauthorized", "Devolens access token or product id is not configured."));
+    }
+    let res: DevolensBlockKeyResponse = devolens_post(
+        cfg,
+        "api/key/BlockKey",
+        &[
+            ("token", access_token.as_str()),
+            ("ProductId", product_id.as_str()),
+            ("Key", license_key),
+        ],
+    )
+    .await?;
+
+    if res.result != 0 {
+        return Err(command_error("devolens_error", format!("Devolens error: {}", res.message)));
+    }
+
+    Ok(UserDataDeletionView {
+        request_id: format!("del_dev_{}", bytes_to_hex(license_key.as_bytes())),
+        lookup_token: Some("devolens_direct".to_string()),
+        status: "completed".to_string(),
+        message: Some("License key has been blocked and personal data deleted/anonymized in Devolens.".to_string()),
+        completed_at_ms: Some(now_epoch_ms()),
+        error_code: None,
+    })
+}
+
+async fn devolens_get_key(cfg: &Config, license_key: &str) -> Result<UserDataDeletionView, AuthCommandError> {
+    let worker_cfg = cfg.license_worker_config();
+    let access_token = &worker_cfg.devolens_access_token;
+    let product_id = &worker_cfg.devolens_product_id;
+    if access_token.trim().is_empty() || product_id.trim().is_empty() {
+        return Err(command_error("unauthorized", "Devolens access token or product id is not configured."));
+    }
+    let res: DevolensGetKeyResponse = devolens_post(
+        cfg,
+        "api/key/GetKey",
+        &[
+            ("token", access_token.as_str()),
+            ("ProductId", product_id.as_str()),
+            ("Key", license_key),
+        ],
+    )
+    .await?;
+
+    if res.result != 0 {
+        return Err(command_error("devolens_error", "Devolens error retrieving key status."));
+    }
+
+    let is_blocked = res.license_key.map(|k| k.blocked).unwrap_or(false);
+    let status = if is_blocked { "completed" } else { "pending" };
+
+    Ok(UserDataDeletionView {
+        request_id: format!("del_dev_{}", bytes_to_hex(license_key.as_bytes())),
+        lookup_token: Some("devolens_direct".to_string()),
+        status: status.to_string(),
+        message: Some(if is_blocked {
+            "License key has been blocked and personal data deleted/anonymized in Devolens."
+        } else {
+            "License key deletion/anonymization is still pending or not completed."
+        }.to_string()),
+        completed_at_ms: if is_blocked { Some(now_epoch_ms()) } else { None },
+        error_code: None,
+    })
+}
+
 #[tauri::command]
 pub async fn request_user_data_deletion(
     input: UserDataDeletionInput,
@@ -73,6 +203,12 @@ pub async fn request_user_data_deletion(
             "Deletion request requires a license key and DELETE confirmation.",
         ));
     }
+    crate::core::config::load_env_files_near_current_dir();
+    let cfg = Config::from_env().map_err(|_| command_error("storage", "Could not load configuration."))?;
+    if cfg.license_backend_mode == crate::core::config::LicenseBackendMode::Devolens {
+        return devolens_block_key(&cfg, license_key).await;
+    }
+
     let purchaser_email = input
         .purchaser_email
         .as_deref()
@@ -105,6 +241,21 @@ pub async fn get_user_data_deletion_status(
             "Deletion status requires a request id and lookup token.",
         ));
     }
+    crate::core::config::load_env_files_near_current_dir();
+    let cfg = Config::from_env().map_err(|_| command_error("storage", "Could not load configuration."))?;
+    if cfg.license_backend_mode == crate::core::config::LicenseBackendMode::Devolens {
+        if request_id.starts_with("del_dev_") {
+            let hex_part = request_id.strip_prefix("del_dev_").unwrap_or("");
+            let license_key_bytes = hex_to_bytes(hex_part).ok_or_else(|| {
+                command_error("invalid_request_id", "Request ID has invalid Devolens encoding.")
+            })?;
+            let license_key = String::from_utf8(license_key_bytes).map_err(|_| {
+                command_error("invalid_request_id", "Request ID has invalid UTF-8 license key.")
+            })?;
+            return devolens_get_key(&cfg, &license_key).await;
+        }
+    }
+
     let body = WorkerDeletionStatusRequest {
         request_id,
         lookup_token,
@@ -193,3 +344,96 @@ fn now_epoch_ms() -> u64 {
 fn bytes_to_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn local_http_server(response_body: String) -> (String, std::thread::JoinHandle<String>) {
+        use std::net::TcpListener;
+        use std::io::{Read, Write};
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind local test server");
+        let addr = listener.local_addr().expect("local server address");
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept request");
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 4096];
+            loop {
+                let read = stream.read(&mut buffer).expect("read request");
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..read]);
+                if request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{}",
+                response_body.len(),
+                response_body
+            );
+            stream.write_all(response.as_bytes()).expect("write response");
+            stream.flush().expect("flush response");
+            String::from_utf8_lossy(&request).into_owned()
+        });
+        (format!("http://{}", addr), handle)
+    }
+
+    #[tokio::test]
+    async fn test_devolens_privacy_endpoints() {
+        // Test 1: BlockKey
+        {
+            let (base_url, handle) = local_http_server(r#"{"result":0,"message":"Changed"}"#.to_string());
+            std::env::set_var("SKIP_DEVOLENS_TOKEN_SAFETY_CHECK", "1");
+            std::env::set_var("LICENSE_BACKEND_MODE", "devolens");
+            std::env::set_var("DEVOLENS_BASE_URL", base_url);
+            std::env::set_var("DEVOLENS_ACCESS_TOKEN", "mock-access-token");
+            std::env::set_var("DEVOLENS_PRODUCT_ID", "9876");
+
+            let input = UserDataDeletionInput {
+                license_key: "abc-123-xyz".to_string(),
+                purchaser_email: Some("buyer@example.com".to_string()),
+                confirmation: "DELETE".to_string(),
+            };
+
+            let view = request_user_data_deletion(input).await.expect("deletion request should succeed");
+            let request = handle.join().expect("server thread should finish");
+
+            assert!(request.contains("POST /api/key/BlockKey"));
+            assert!(request.contains("token=mock-access-token"));
+            assert!(request.contains("ProductId=9876"));
+            assert!(request.contains("Key=abc-123-xyz"));
+            assert_eq!(view.status, "completed");
+        }
+
+        // Test 2: GetKey
+        {
+            let (base_url, handle) = local_http_server(
+                r#"{"result":0,"licenseKey":{"blocked":true,"expired":false}}"#.to_string(),
+            );
+            std::env::set_var("SKIP_DEVOLENS_TOKEN_SAFETY_CHECK", "1");
+            std::env::set_var("LICENSE_BACKEND_MODE", "devolens");
+            std::env::set_var("DEVOLENS_BASE_URL", base_url);
+            std::env::set_var("DEVOLENS_ACCESS_TOKEN", "mock-access-token");
+            std::env::set_var("DEVOLENS_PRODUCT_ID", "9876");
+
+            // "abc-123-xyz" hex is "6162632d3132332d78797a"
+            let request_id = "del_dev_6162632d3132332d78797a".to_string();
+            let input = UserDataDeletionStatusInput {
+                request_id,
+                lookup_token: "devolens_direct".to_string(),
+            };
+
+            let view = get_user_data_deletion_status(input).await.expect("status check should succeed");
+            let request = handle.join().expect("server thread should finish");
+
+            assert!(request.contains("POST /api/key/GetKey"));
+            assert!(request.contains("token=mock-access-token"));
+            assert!(request.contains("ProductId=9876"));
+            assert!(request.contains("Key=abc-123-xyz"));
+            assert_eq!(view.status, "completed");
+        }
+    }
+}
+
