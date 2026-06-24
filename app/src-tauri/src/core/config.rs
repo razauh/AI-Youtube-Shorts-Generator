@@ -27,6 +27,7 @@ pub struct Config {
     pub devolens_base_url: String,
     pub devolens_access_token: String,
     pub devolens_product_id: String,
+    pub devolens_offline_grace_period_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -43,6 +44,7 @@ pub struct LicenseWorkerConfig {
     pub devolens_base_url: String,
     pub devolens_access_token: String,
     pub devolens_product_id: String,
+    pub devolens_offline_grace_period_ms: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,6 +111,8 @@ impl Config {
             .to_string();
         let devolens_access_token = read_env_or_secure("DEVOLENS_ACCESS_TOKEN", "");
         let devolens_product_id = read_env_trimmed("DEVOLENS_PRODUCT_ID", "");
+        let devolens_offline_grace_period_ms =
+            parse_u64_env("DEVOLENS_OFFLINE_GRACE_PERIOD_MS", "86400000")?;
 
         validate_license_worker_config(
             license_backend_mode,
@@ -142,6 +146,7 @@ impl Config {
             devolens_base_url,
             devolens_access_token,
             devolens_product_id,
+            devolens_offline_grace_period_ms,
         })
     }
 
@@ -160,6 +165,7 @@ impl Config {
             devolens_base_url: self.devolens_base_url.clone(),
             devolens_access_token: self.devolens_access_token.clone(),
             devolens_product_id: self.devolens_product_id.clone(),
+            devolens_offline_grace_period_ms: self.devolens_offline_grace_period_ms,
         }
     }
 

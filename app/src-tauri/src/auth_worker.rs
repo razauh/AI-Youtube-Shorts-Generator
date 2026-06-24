@@ -2,8 +2,9 @@ use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 use license_control_suite::core::{
     AccessToken, ActivationOutcome, ActivationRequest, AuthError, BoundDeviceSummary,
-    DeviceId, DeviceResetRequest, DeviceResetStatus, EntitlementStatus, LicenseKey, MaskedLicenseKey,
-    PurchaseEmail, ResetRequestId, ValidationOutcome, WorkerClient,
+    DeviceFingerprint, DeviceId, DevicePublicKey, DeviceResetRequest, DeviceResetStatus,
+    EntitlementStatus, LicenseKey, MaskedLicenseKey, PurchaseEmail, ResetRequestId,
+    ValidationOutcome, WorkerClient,
 };
 use license_control_suite::modules::user_reg::auth_licensing_tauri::HttpWorkerClient;
 use serde::Deserialize;
@@ -238,6 +239,7 @@ pub struct DevolensWorkerClient {
     base_url: String,
     access_token: String,
     product_id: String,
+    devolens_offline_grace_period_ms: u64,
     client: reqwest::Client,
 }
 
@@ -259,6 +261,7 @@ impl DevolensWorkerClient {
             base_url: config.devolens_base_url.trim_end_matches('/').to_string(),
             access_token: config.devolens_access_token.trim().to_string(),
             product_id: config.devolens_product_id.trim().to_string(),
+            devolens_offline_grace_period_ms: config.devolens_offline_grace_period_ms,
             client,
         })
     }
@@ -307,6 +310,29 @@ impl DevolensWorkerClient {
             )
             .await?;
         parse_devolens_activation_response(response).await
+    }
+
+    fn validate_session_offline(&self, device_id: &str, timestamp_ms: &str) -> Result<ValidationOutcome, AuthError> {
+        let token_timestamp_ms = timestamp_ms.parse::<i64>().map_err(|_| AuthError::ReauthRequired)?;
+        let now = current_time_ms();
+        let grace_period = self.devolens_offline_grace_period_ms as i64;
+        let clock_skew = 300_000; // 5 minutes clock skew tolerance
+
+        if token_timestamp_ms >= now - grace_period - clock_skew && token_timestamp_ms <= now + clock_skew {
+            let masked_license_key = MaskedLicenseKey::new("••••-OFFLINE")?;
+            let bound_device = BoundDeviceSummary {
+                device_id: DeviceId::new(device_id)?,
+                public_key: DevicePublicKey::new(device_id)?,
+                fingerprint: DeviceFingerprint::new("linux", "linux", "x86_64", None).unwrap(),
+            };
+            Ok(ValidationOutcome::Active {
+                masked_license_key,
+                bound_device,
+                token_expires_at_ms: token_timestamp_ms + grace_period,
+            })
+        } else {
+            Ok(ValidationOutcome::ReauthRequired)
+        }
     }
 }
 
@@ -368,7 +394,7 @@ impl WorkerClient for DevolensWorkerClient {
             return Err(AuthError::ReauthRequired);
         }
 
-        let response = self
+        let response_result = self
             .post_form(
                 "api/key/Validate",
                 &[
@@ -377,9 +403,24 @@ impl WorkerClient for DevolensWorkerClient {
                     ("SessionToken", token_str),
                 ],
             )
-            .await?;
+            .await;
 
-        let validation = parse_devolens_validation_response(response).await?;
+        let response = match response_result {
+            Ok(res) => res,
+            Err(AuthError::WorkerUnreachable) => {
+                return self.validate_session_offline(device_id, timestamp_ms);
+            }
+            Err(err) => return Err(err),
+        };
+
+        let validation = match parse_devolens_validation_response(response).await {
+            Ok(val) => val,
+            Err(AuthError::WorkerUnreachable) => {
+                return self.validate_session_offline(device_id, timestamp_ms);
+            }
+            Err(err) => return Err(err),
+        };
+
         if !validation.is_success() || !validation.license_is_active() {
             return Ok(ValidationOutcome::Revoked);
         }

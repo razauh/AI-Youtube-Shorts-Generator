@@ -73,6 +73,7 @@ fn worker_config(mode: LicenseBackendMode, base_url: String) -> LicenseWorkerCon
         devolens_base_url: DEFAULT_DEVOLENS_BASE_URL.to_string(),
         devolens_access_token: String::new(),
         devolens_product_id: String::new(),
+        devolens_offline_grace_period_ms: 86400000,
     }
 }
 
@@ -725,4 +726,127 @@ async fn test_devolens_error_mapping() {
         let _request = handle.join().unwrap();
         assert_eq!(result.unwrap_err(), AuthError::Unauthorized);
     }
+}
+
+#[tokio::test]
+async fn test_devolens_offline_grace_valid() {
+    let now = current_time_ms();
+    let token_timestamp = now - 3600 * 1000; // 1 hour ago
+    let device_id = "device-123";
+    let token_secret = "devolens-token";
+
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(device_id.as_bytes());
+    hasher.update(b":");
+    hasher.update(token_timestamp.to_string().as_bytes());
+    hasher.update(b":");
+    hasher.update(token_secret.as_bytes());
+    let sig = hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect::<String>();
+    let signed_token = format!("devolens:{}:{}:{}", device_id, token_timestamp, sig);
+    let access_token = AccessToken::new(signed_token).unwrap();
+
+    let mut cfg = worker_config(LicenseBackendMode::Devolens, "http://127.0.0.1:1".to_string());
+    cfg.devolens_access_token = token_secret.to_string();
+    cfg.devolens_product_id = "1234".to_string();
+    cfg.devolens_offline_grace_period_ms = 86400000; // 24 hours
+    let worker = build_worker_client(&cfg).unwrap();
+
+    let outcome = worker.validate_session(access_token).await.unwrap();
+    match outcome {
+        ValidationOutcome::Active { masked_license_key, bound_device, .. } => {
+            assert_eq!(masked_license_key.as_str(), "••••-OFFLINE");
+            assert_eq!(bound_device.device_id.as_str(), device_id);
+        }
+        _ => panic!("Expected ValidationOutcome::Active, got {:?}", outcome),
+    }
+}
+
+#[tokio::test]
+async fn test_devolens_offline_grace_expired() {
+    let now = current_time_ms();
+    let token_timestamp = now - 25 * 3600 * 1000; // 25 hours ago
+    let device_id = "device-123";
+    let token_secret = "devolens-token";
+
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(device_id.as_bytes());
+    hasher.update(b":");
+    hasher.update(token_timestamp.to_string().as_bytes());
+    hasher.update(b":");
+    hasher.update(token_secret.as_bytes());
+    let sig = hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect::<String>();
+    let signed_token = format!("devolens:{}:{}:{}", device_id, token_timestamp, sig);
+    let access_token = AccessToken::new(signed_token).unwrap();
+
+    let mut cfg = worker_config(LicenseBackendMode::Devolens, "http://127.0.0.1:1".to_string());
+    cfg.devolens_access_token = token_secret.to_string();
+    cfg.devolens_product_id = "1234".to_string();
+    cfg.devolens_offline_grace_period_ms = 86400000; // 24 hours
+    let worker = build_worker_client(&cfg).unwrap();
+
+    let outcome = worker.validate_session(access_token).await.unwrap();
+    assert_eq!(outcome, ValidationOutcome::ReauthRequired);
+}
+
+#[tokio::test]
+async fn test_devolens_offline_clock_skew() {
+    let now = current_time_ms();
+    let token_secret = "devolens-token";
+    let device_id = "device-123";
+
+    // 1. Future token within 5 mins clock skew
+    {
+        let token_timestamp = now + 120 * 1000; // 2 minutes in the future
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(device_id.as_bytes());
+        hasher.update(b":");
+        hasher.update(token_timestamp.to_string().as_bytes());
+        hasher.update(b":");
+        hasher.update(token_secret.as_bytes());
+        let sig = hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect::<String>();
+        let signed_token = format!("devolens:{}:{}:{}", device_id, token_timestamp, sig);
+        let access_token = AccessToken::new(signed_token).unwrap();
+
+        let mut cfg = worker_config(LicenseBackendMode::Devolens, "http://127.0.0.1:1".to_string());
+        cfg.devolens_access_token = token_secret.to_string();
+        cfg.devolens_product_id = "1234".to_string();
+        cfg.devolens_offline_grace_period_ms = 86400000;
+        let worker = build_worker_client(&cfg).unwrap();
+
+        let outcome = worker.validate_session(access_token).await.unwrap();
+        match outcome {
+            ValidationOutcome::Active { .. } => {}
+            _ => panic!("Expected ValidationOutcome::Active for clock skew, got {:?}", outcome),
+        }
+    }
+
+    // 2. Future token outside 5 mins clock skew
+    {
+        let token_timestamp = now + 360 * 1000; // 6 minutes in the future
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(device_id.as_bytes());
+        hasher.update(b":");
+        hasher.update(token_timestamp.to_string().as_bytes());
+        hasher.update(b":");
+        hasher.update(token_secret.as_bytes());
+        let sig = hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect::<String>();
+        let signed_token = format!("devolens:{}:{}:{}", device_id, token_timestamp, sig);
+        let access_token = AccessToken::new(signed_token).unwrap();
+
+        let mut cfg = worker_config(LicenseBackendMode::Devolens, "http://127.0.0.1:1".to_string());
+        cfg.devolens_access_token = token_secret.to_string();
+        cfg.devolens_product_id = "1234".to_string();
+        cfg.devolens_offline_grace_period_ms = 86400000;
+        let worker = build_worker_client(&cfg).unwrap();
+
+        let outcome = worker.validate_session(access_token).await.unwrap();
+        assert_eq!(outcome, ValidationOutcome::ReauthRequired);
+    }
+}
+
+fn current_time_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+        .unwrap_or(0)
 }
