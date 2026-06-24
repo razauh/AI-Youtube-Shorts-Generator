@@ -76,6 +76,7 @@ fn cfg(base: String) -> Config {
         devolens_base_url: shorts_tauri_app::core::config::DEFAULT_DEVOLENS_BASE_URL.to_string(),
         devolens_access_token: String::new(),
         devolens_product_id: String::new(),
+        devolens_offline_grace_period_ms: 86400000,
     }
 }
 

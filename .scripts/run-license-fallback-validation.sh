@@ -19,6 +19,7 @@ run_step() {
   ) 2>&1 | tee "${log_file}"
 }
 
+run_step "security-audit" bash .scripts/security-audit.sh
 run_step "rust-fallback-tests" cargo test --locked --manifest-path app/src-tauri/Cargo.toml fallback
 run_step "rust-resilient-store-tests" cargo test --locked --manifest-path app/src-tauri/Cargo.toml resilient_secret_store
 run_step "rust-devolens-auth-worker-tests" cargo test --locked --manifest-path app/src-tauri/Cargo.toml --test auth_worker_tests --test config_tests

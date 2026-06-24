@@ -369,13 +369,11 @@ describe('test_ui flow parity', () => {
     const encoded = JSON.stringify(POLICY_SECTIONS.deletion);
     for (const expected of [
       'Data Deletion Notice',
-      'backend licensing data handled by the licensing Worker',
+      'The in-app deletion request targets backend licensing data.',
       'request ID, status, message, and lookup token',
       'secure storage',
       'does not remove local project history',
-      'deletes device bindings for the license hash',
-      'anonymizes reset requests tied to the license hash',
-      'setting privacy_deleted_at_ms',
+      'blocks the license key and deactivates all associated device bindings in Devolens',
       'typing DELETE USER DATA',
       'status endpoint accepts the request ID and lookup token',
       'US state privacy deletion rights',
@@ -801,10 +799,10 @@ describe('test_ui flow parity', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Data Deletion' }));
     expect(screen.getByText('Data Deletion Notice')).toBeTruthy();
-    expect(screen.getByText(/targets backend licensing data handled by the licensing Worker/)).toBeTruthy();
+    expect(screen.getByText(/targets backend licensing data/)).toBeTruthy();
     expect(screen.getByText(/The lookup token is required to refresh deletion status/)).toBeTruthy();
     expect(screen.getByText(/does not remove local project history/)).toBeTruthy();
-    expect(screen.getByText(/deletes device bindings for the license hash/)).toBeTruthy();
+    expect(screen.getByText(/blocks the license key and deactivates all associated device bindings in Devolens/)).toBeTruthy();
     expect(screen.getByText(/typing DELETE USER DATA/)).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Data Compliance' }));
