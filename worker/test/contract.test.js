@@ -1425,3 +1425,110 @@ test('gumroad webhook replays stored response for identical sale payload', async
     global.fetch = originalFetch;
   }
 });
+
+test('gumroad webhook provisions gumroad license to devolens', async () => {
+  const originalFetch = global.fetch;
+  const db = new MockD1Database();
+  const fetchRequests = [];
+
+  global.fetch = async (url, options) => {
+    fetchRequests.push({ url, options });
+    if (url.includes('api.gumroad.com')) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          sale: {
+            id: 'sale_9xy123',
+            product_id: 'prod_123',
+            email: 'buyer@example.com',
+            license_key: 'GUMROAD-VAL-KEY',
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    if (url.includes('/api/key/CreateKey')) {
+      return new Response(JSON.stringify({ result: 0 }), { status: 200 });
+    }
+    return new Response(JSON.stringify({}), { status: 200 });
+  };
+
+  try {
+    const env = {
+      DB: db,
+      GUMROAD_ACCESS_TOKEN: 'token_123',
+      HASH_PEPPER: 'pepper_123',
+      DEVOLENS_ACCESS_TOKEN: 'devolens_tok',
+      DEVOLENS_PRODUCT_ID: 'dev_prod',
+    };
+    const res = await call('/v1/license/webhooks/gumroad', {
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: { sale_id: 'sale_9xy123', product_id: 'prod_123', email: 'buyer@example.com' },
+      env,
+    });
+    assert.equal(res.status, 200);
+
+    const createKeyRequest = fetchRequests.find(r => r.url.includes('/api/key/CreateKey'));
+    assert.ok(createKeyRequest);
+    assert.equal(createKeyRequest.options.method, 'POST');
+    assert.ok(createKeyRequest.options.body.includes('token=devolens_tok'));
+    assert.ok(createKeyRequest.options.body.includes('ProductId=dev_prod'));
+    assert.ok(createKeyRequest.options.body.includes('Key=GUMROAD-VAL-KEY'));
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('gumroad webhook blocks gumroad license on refund', async () => {
+  const originalFetch = global.fetch;
+  const db = new MockD1Database();
+  const fetchRequests = [];
+
+  global.fetch = async (url, options) => {
+    fetchRequests.push({ url, options });
+    if (url.includes('api.gumroad.com')) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          sale: {
+            id: 'sale_9xy123',
+            product_id: 'prod_123',
+            email: 'buyer@example.com',
+            license_key: 'GUMROAD-VAL-KEY',
+            refunded: true,
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    if (url.includes('/api/key/BlockKey')) {
+      return new Response(JSON.stringify({ result: 0 }), { status: 200 });
+    }
+    return new Response(JSON.stringify({}), { status: 200 });
+  };
+
+  try {
+    const env = {
+      DB: db,
+      GUMROAD_ACCESS_TOKEN: 'token_123',
+      HASH_PEPPER: 'pepper_123',
+      DEVOLENS_ACCESS_TOKEN: 'devolens_tok',
+      DEVOLENS_PRODUCT_ID: 'dev_prod',
+    };
+    const res = await call('/v1/license/webhooks/gumroad', {
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: { sale_id: 'sale_9xy123', product_id: 'prod_123', email: 'buyer@example.com' },
+      env,
+    });
+    assert.equal(res.status, 409); // refunded/disputed is 409
+
+    const blockKeyRequest = fetchRequests.find(r => r.url.includes('/api/key/BlockKey'));
+    assert.ok(blockKeyRequest);
+    assert.equal(blockKeyRequest.options.method, 'POST');
+    assert.ok(blockKeyRequest.options.body.includes('token=devolens_tok'));
+    assert.ok(blockKeyRequest.options.body.includes('ProductId=dev_prod'));
+    assert.ok(blockKeyRequest.options.body.includes('Key=GUMROAD-VAL-KEY'));
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

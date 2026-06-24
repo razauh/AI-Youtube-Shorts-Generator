@@ -1453,6 +1453,48 @@ async function handleGumroadWebhook(request, env) {
   });
 
   if (!verification.ok) {
+    if (verification.code === "invalid_transition" && verification.license_key) {
+      const normalizedLicenseKey = normalizeLicenseKey(verification.license_key);
+      const licenseKeyHash = await sha256Hex(`${env?.HASH_PEPPER || ""}:${normalizedLicenseKey}`);
+
+      if (env.DEVOLENS_ACCESS_TOKEN && env.DEVOLENS_PRODUCT_ID) {
+        const baseUrl = env.DEVOLENS_BASE_URL || "https://api.cryptolens.ph";
+        const devolensUrl = new URL(`${baseUrl}/api/key/BlockKey`);
+
+        const form = new URLSearchParams();
+        form.append("token", env.DEVOLENS_ACCESS_TOKEN);
+        form.append("ProductId", env.DEVOLENS_PRODUCT_ID);
+        form.append("Key", normalizedLicenseKey);
+
+        try {
+          await fetch(devolensUrl.toString(), {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            body: form.toString(),
+          });
+        } catch (err) {
+          // Ignore network errors on deactivation to avoid blocking the webhook flow
+        }
+      }
+
+      const now = Date.now();
+      try {
+        await updateLicenseEntitlementStatus(env.DB, licenseKeyHash, "disabled", now);
+        await writeAuditEvent(
+          env.DB,
+          "license_disabled",
+          "gumroad",
+          JSON.stringify({
+            sale_id: String(body.sale_id),
+            reason: "refunded_or_disputed",
+          }),
+          now,
+        );
+      } catch (e) {
+        // Ignore DB error to allow response propagation
+      }
+    }
+
     return err(
       verification.code,
       verification.message,
@@ -1475,6 +1517,37 @@ async function handleGumroadWebhook(request, env) {
   const now = Date.now();
   const normalizedLicenseKey = normalizeLicenseKey(verification.sale.license_key);
   const licenseKeyHash = await sha256Hex(`${env?.HASH_PEPPER || ""}:${normalizedLicenseKey}`);
+
+  if (env.DEVOLENS_ACCESS_TOKEN && env.DEVOLENS_PRODUCT_ID) {
+    const baseUrl = env.DEVOLENS_BASE_URL || "https://api.cryptolens.ph";
+    const devolensUrl = new URL(`${baseUrl}/api/key/CreateKey`);
+
+    const form = new URLSearchParams();
+    form.append("token", env.DEVOLENS_ACCESS_TOKEN);
+    form.append("ProductId", env.DEVOLENS_PRODUCT_ID);
+    form.append("Key", normalizedLicenseKey);
+
+    let devolensRes;
+    try {
+      devolensRes = await fetch(devolensUrl.toString(), {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: form.toString(),
+      });
+    } catch (err) {
+      return err("worker_unreachable", "Failed to contact Devolens for key creation.", rid, true, 503);
+    }
+
+    if (!devolensRes.ok) {
+      return err("worker_unreachable", "Devolens key creation returned HTTP error.", rid, true, 503);
+    }
+
+    const devolensData = await devolensRes.json();
+    if (devolensData.result !== 0) {
+      return err("worker_unreachable", devolensData.message || "Devolens key creation failed.", rid, false, 502);
+    }
+  }
+
   const response = ok({
     accepted: true,
     provider: "gumroad",
@@ -1619,6 +1692,7 @@ async function verifyGumroadSale({ saleId, productId, email, token }) {
       message: "Sale is refunded or disputed and is not eligible for activation.",
       retryable: false,
       status: 409,
+      license_key: sale.license_key,
     };
   }
 
