@@ -565,3 +565,27 @@ async fn test_devolens_access_token_integrity() {
     let result_3 = worker.validate_session(forged_token_3).await;
     assert_eq!(result_3.unwrap_err(), AuthError::ReauthRequired);
 }
+
+#[tokio::test]
+async fn devolens_activation_machine_limit_returns_device_already_bound() {
+    let response_body = r#"{
+      "result": 1,
+      "message": "Machine limit reached."
+    }"#.to_string();
+
+    let (base_url, handle) = local_http_server(response_body);
+    let mut cfg = worker_config(LicenseBackendMode::Devolens, String::new());
+    cfg.devolens_base_url = base_url;
+    cfg.devolens_access_token = "devolens-token".to_string();
+    cfg.devolens_product_id = "1234".to_string();
+    let worker = build_worker_client(&cfg).expect("devolens worker should build");
+
+    let result = worker.activate(activation_request()).await;
+    let _request = handle.join().expect("server thread should finish");
+
+    assert_eq!(result.unwrap_err(), AuthError::DeviceAlreadyBound);
+
+    // Verify command mapping matches the frontend's expected error code
+    let cmd_err = license_control_suite::modules::user_reg::auth_licensing_tauri::AuthCommandError::from(AuthError::DeviceAlreadyBound);
+    assert_eq!(cmd_err.code, "device_already_bound");
+}
