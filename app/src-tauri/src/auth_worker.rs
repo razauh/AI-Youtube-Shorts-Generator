@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use sha2::{Digest, Sha256};
 use license_control_suite::core::{
     AccessToken, ActivationOutcome, ActivationRequest, AuthError, BoundDeviceSummary,
     DeviceId, DeviceResetRequest, DeviceResetStatus, EntitlementStatus, LicenseKey, MaskedLicenseKey,
@@ -276,6 +277,19 @@ impl DevolensWorkerClient {
             .map_err(|_| AuthError::WorkerUnreachable)
     }
 
+    fn compute_token_signature(&self, device_id: &str, timestamp_ms: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(device_id.as_bytes());
+        hasher.update(b":");
+        hasher.update(timestamp_ms.as_bytes());
+        hasher.update(b":");
+        hasher.update(self.access_token.as_bytes());
+        hasher.finalize()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>()
+    }
+
     async fn activate_with_devolens(
         &self,
         request: &ActivationRequest,
@@ -310,12 +324,16 @@ impl WorkerClient for DevolensWorkerClient {
             return Err(AuthError::ReauthRequired);
         }
 
+        let signature = self.compute_token_signature(device_id.as_str(), &request.timestamp_ms.to_string());
+        let signed_token = format!(
+            "devolens:{}:{}:{}",
+            device_id.as_str(),
+            request.timestamp_ms,
+            signature
+        );
+
         Ok(ActivationOutcome {
-            access_token: AccessToken::new(format!(
-                "devolens:{}:{}",
-                device_id.as_str(),
-                request.timestamp_ms
-            ))?,
+            access_token: AccessToken::new(signed_token)?,
             masked_license_key: request.license_key.masked(),
             bound_device: BoundDeviceSummary {
                 device_id,
@@ -333,6 +351,21 @@ impl WorkerClient for DevolensWorkerClient {
         let token_str = token.expose_secret();
         if !token_str.starts_with("devolens:") {
             return Ok(ValidationOutcome::ReauthRequired);
+        }
+
+        let parts: Vec<&str> = token_str.split(':').collect();
+        if parts.len() != 4 {
+            return Err(AuthError::ReauthRequired);
+        }
+
+        let device_id = parts[1];
+        let timestamp_ms = parts[2];
+        let signature = parts[3];
+
+        let expected_signature = self.compute_token_signature(device_id, timestamp_ms);
+
+        if signature != expected_signature {
+            return Err(AuthError::ReauthRequired);
         }
 
         let response = self

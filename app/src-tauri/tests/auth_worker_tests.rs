@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use sha2::Digest;
 use license_control_suite::core::{
     AccessToken, ActivationOutcome, ActivationRequest, AuthError, BoundDeviceSummary,
     DeviceFingerprint, DeviceId, DevicePublicKey, DeviceResetRequest, DeviceResetStatus,
@@ -478,8 +479,16 @@ async fn devolens_session_validation_returns_active() {
     cfg.devolens_product_id = "1234".to_string();
     let worker = build_worker_client(&cfg).expect("devolens worker should build");
 
+    let payload = "test-device-id:123456";
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(payload.as_bytes());
+    hasher.update(b":");
+    hasher.update(b"devolens-token");
+    let sig = hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect::<String>();
+    let signed_token = format!("devolens:{}:{}", payload, sig);
+
     let status = worker
-        .validate_session(AccessToken::new("devolens:test-device-id:123456").unwrap())
+        .validate_session(AccessToken::new(signed_token.clone()).unwrap())
         .await
         .expect("devolens validation should succeed");
 
@@ -490,7 +499,7 @@ async fn devolens_session_validation_returns_active() {
         .to_ascii_lowercase()
         .contains("content-type: application/x-www-form-urlencoded"));
     assert!(request.contains("ProductId=1234"));
-    assert!(request.contains("SessionToken=devolens%3Atest-device-id%3A123456"));
+    assert!(request.contains(&format!("SessionToken={}", signed_token.replace(":", "%3A"))));
 
     match status {
         ValidationOutcome::Active { masked_license_key, bound_device, token_expires_at_ms } => {
@@ -516,12 +525,43 @@ async fn devolens_session_validation_returns_revoked() {
     cfg.devolens_product_id = "1234".to_string();
     let worker = build_worker_client(&cfg).expect("devolens worker should build");
 
+    let payload = "test-device-id:123456";
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(payload.as_bytes());
+    hasher.update(b":");
+    hasher.update(b"devolens-token");
+    let sig = hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect::<String>();
+    let signed_token = format!("devolens:{}:{}", payload, sig);
+
     let status = worker
-        .validate_session(AccessToken::new("devolens:test-device-id:123456").unwrap())
+        .validate_session(AccessToken::new(signed_token).unwrap())
         .await
         .expect("devolens validation should succeed");
 
     let _request = handle.join().expect("server thread should finish");
 
     assert_eq!(status, ValidationOutcome::Revoked);
+}
+
+#[tokio::test]
+async fn test_devolens_access_token_integrity() {
+    let mut cfg = worker_config(LicenseBackendMode::Devolens, String::new());
+    cfg.devolens_access_token = "devolens-token".to_string();
+    cfg.devolens_product_id = "1234".to_string();
+    let worker = build_worker_client(&cfg).expect("devolens worker should build");
+
+    // 1. Forged token with invalid signature
+    let forged_token_1 = AccessToken::new("devolens:test-device-id:123456:invalid-signature").unwrap();
+    let result_1 = worker.validate_session(forged_token_1).await;
+    assert_eq!(result_1.unwrap_err(), AuthError::ReauthRequired);
+
+    // 2. Token missing devolens prefix
+    let forged_token_2 = AccessToken::new("test-device-id:123456").unwrap();
+    let status_2 = worker.validate_session(forged_token_2).await.unwrap();
+    assert_eq!(status_2, ValidationOutcome::ReauthRequired);
+
+    // 3. Forged token with altered device id or invalid format
+    let forged_token_3 = AccessToken::new("devolens:other-device:123456:some-sig").unwrap();
+    let result_3 = worker.validate_session(forged_token_3).await;
+    assert_eq!(result_3.unwrap_err(), AuthError::ReauthRequired);
 }
