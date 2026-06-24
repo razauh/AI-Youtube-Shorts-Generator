@@ -589,3 +589,44 @@ async fn devolens_activation_machine_limit_returns_device_already_bound() {
     let cmd_err = license_control_suite::modules::user_reg::auth_licensing_tauri::AuthCommandError::from(AuthError::DeviceAlreadyBound);
     assert_eq!(cmd_err.code, "device_already_bound");
 }
+
+#[tokio::test]
+async fn test_request_device_reset_calls_devolens() {
+    let response_body = r#"{
+      "result": 0,
+      "message": ""
+    }"#.to_string();
+
+    let (base_url, handle) = local_http_server(response_body);
+    let mut cfg = worker_config(LicenseBackendMode::Devolens, String::new());
+    cfg.devolens_base_url = base_url;
+    cfg.devolens_access_token = "devolens-token".to_string();
+    cfg.devolens_product_id = "1234".to_string();
+    let worker = build_worker_client(&cfg).expect("devolens worker should build");
+
+    let req = DeviceResetRequest {
+        license_key: Some(LicenseKey::new("SECRET-LICENSE").unwrap()),
+        masked_license_key: None,
+        purchaser_email: None,
+        device_public_key: DevicePublicKey::new("public").unwrap(),
+        fingerprint: fingerprint(),
+        app_version: "0.1.0".to_string(),
+        timestamp_ms: 123456,
+    };
+
+    let status = worker.request_device_reset(req).await.expect("deactivate should succeed");
+    let request = handle.join().expect("server thread should finish");
+
+    assert!(request.starts_with("POST /api/key/Deactivate "));
+    assert!(request.contains("ProductId=1234"));
+    assert!(request.contains("Key=SECRET-LICENSE"));
+    assert!(request.contains("MachineCode="));
+
+    match status {
+        DeviceResetStatus::Approved { request_id, decided_at_ms } => {
+            assert_eq!(request_id.as_str(), "reset-123456");
+            assert_eq!(decided_at_ms, 123456);
+        }
+        _ => panic!("Expected Approved reset status"),
+    }
+}

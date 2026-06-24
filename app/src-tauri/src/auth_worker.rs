@@ -401,16 +401,62 @@ impl WorkerClient for DevolensWorkerClient {
 
     async fn request_device_reset(
         &self,
-        _request: DeviceResetRequest,
+        request: DeviceResetRequest,
     ) -> Result<DeviceResetStatus, AuthError> {
-        Err(AuthError::InvalidResetRequest)
+        let Some(ref license_key) = request.license_key else {
+            return Err(AuthError::InvalidResetRequest);
+        };
+        let device_id = DeviceId::from_public_key(&request.device_public_key);
+        let response = self
+            .post_form(
+                "api/key/Deactivate",
+                &[
+                    ("token", self.access_token.as_str()),
+                    ("ProductId", self.product_id.as_str()),
+                    ("Key", license_key.expose_secret()),
+                    ("MachineCode", device_id.as_str()),
+                ],
+            )
+            .await?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|_| AuthError::WorkerUnreachable)?;
+
+        if !status.is_success() {
+            return Err(AuthError::InvalidResetRequest);
+        }
+
+        let parsed: DevolensActivationResponse = serde_json::from_str(&body)
+            .map_err(|err| AuthError::Serialization(err.to_string()))?;
+
+        if !parsed.is_success() {
+            return Err(AuthError::InvalidResetRequest);
+        }
+
+        let request_id = ResetRequestId::new(format!("reset-{}", request.timestamp_ms))
+            .map_err(|err| AuthError::Serialization(err.to_string()))?;
+
+        Ok(DeviceResetStatus::Approved {
+            request_id,
+            decided_at_ms: request.timestamp_ms,
+        })
     }
 
     async fn get_device_reset_status(
         &self,
-        _request_id: ResetRequestId,
+        request_id: ResetRequestId,
     ) -> Result<DeviceResetStatus, AuthError> {
-        Err(AuthError::ResetRequestNotFound)
+        if request_id.as_str().starts_with("reset-") {
+            Ok(DeviceResetStatus::Approved {
+                request_id,
+                decided_at_ms: 0,
+            })
+        } else {
+            Err(AuthError::ResetRequestNotFound)
+        }
     }
 }
 
