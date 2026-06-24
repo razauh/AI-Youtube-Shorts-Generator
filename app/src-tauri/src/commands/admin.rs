@@ -345,6 +345,23 @@ fn command_error(
     }
 }
 
+fn check_devolens_mode() -> Result<(), AdminCommandError> {
+    use crate::core::config::{Config, LicenseBackendMode};
+    let cfg = Config::from_env().map_err(|err| {
+        command_error("storage", format!("Could not load application configuration: {err}"), None, false)
+    })?;
+    if cfg.license_backend_mode == LicenseBackendMode::Devolens {
+        return Err(command_error(
+            "devolens_mode_active",
+            "Admin features are not available when LICENSE_BACKEND_MODE=devolens. Please manage licenses directly via the Devolens dashboard.",
+            None,
+            false,
+        ));
+    }
+    Ok(())
+}
+
+
 fn validate_base_url(value: &str) -> Result<String, AdminCommandError> {
     let trimmed = value.trim().trim_end_matches('/').to_string();
     if trimmed.is_empty() {
@@ -459,6 +476,7 @@ where
     T: DeserializeOwned,
     B: Serialize + ?Sized,
 {
+    check_devolens_mode()?;
     let config = config_from_store()?;
     let url = format!("{}{}", config.base_url, path);
     let client = reqwest::Client::builder()
