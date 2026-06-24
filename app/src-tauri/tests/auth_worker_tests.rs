@@ -630,3 +630,99 @@ async fn test_request_device_reset_calls_devolens() {
         _ => panic!("Expected Approved reset status"),
     }
 }
+
+#[tokio::test]
+async fn test_devolens_error_mapping() {
+    // 1. Blocked Key
+    {
+        let response_body = r#"{
+          "result": 0,
+          "message": "",
+          "licenseKey": {
+            "blocked": true,
+            "expired": false
+          }
+        }"#.to_string();
+        let (base_url, handle) = local_http_server(response_body);
+        let mut cfg = worker_config(LicenseBackendMode::Devolens, String::new());
+        cfg.devolens_base_url = base_url;
+        cfg.devolens_access_token = "devolens-token".to_string();
+        cfg.devolens_product_id = "1234".to_string();
+        let worker = build_worker_client(&cfg).unwrap();
+        let result = worker.activate(activation_request()).await;
+        let _request = handle.join().unwrap();
+        assert_eq!(result.unwrap_err(), AuthError::InvalidLicenseKey);
+    }
+
+    // 2. Expired Key
+    {
+        let response_body = r#"{
+          "result": 0,
+          "message": "",
+          "licenseKey": {
+            "blocked": false,
+            "expired": true
+          }
+        }"#.to_string();
+        let (base_url, handle) = local_http_server(response_body);
+        let mut cfg = worker_config(LicenseBackendMode::Devolens, String::new());
+        cfg.devolens_base_url = base_url;
+        cfg.devolens_access_token = "devolens-token".to_string();
+        cfg.devolens_product_id = "1234".to_string();
+        let worker = build_worker_client(&cfg).unwrap();
+        let result = worker.activate(activation_request()).await;
+        let _request = handle.join().unwrap();
+        assert_eq!(result.unwrap_err(), AuthError::InvalidLicenseKey);
+    }
+
+    // 3. Machine limit reached
+    {
+        let response_body = r#"{
+          "result": 1,
+          "message": "Machine limit reached."
+        }"#.to_string();
+        let (base_url, handle) = local_http_server(response_body);
+        let mut cfg = worker_config(LicenseBackendMode::Devolens, String::new());
+        cfg.devolens_base_url = base_url;
+        cfg.devolens_access_token = "devolens-token".to_string();
+        cfg.devolens_product_id = "1234".to_string();
+        let worker = build_worker_client(&cfg).unwrap();
+        let result = worker.activate(activation_request()).await;
+        let _request = handle.join().unwrap();
+        assert_eq!(result.unwrap_err(), AuthError::DeviceAlreadyBound);
+    }
+
+    // 4. Invalid key
+    {
+        let response_body = r#"{
+          "result": 1,
+          "message": "The key is invalid."
+        }"#.to_string();
+        let (base_url, handle) = local_http_server(response_body);
+        let mut cfg = worker_config(LicenseBackendMode::Devolens, String::new());
+        cfg.devolens_base_url = base_url;
+        cfg.devolens_access_token = "devolens-token".to_string();
+        cfg.devolens_product_id = "1234".to_string();
+        let worker = build_worker_client(&cfg).unwrap();
+        let result = worker.activate(activation_request()).await;
+        let _request = handle.join().unwrap();
+        assert_eq!(result.unwrap_err(), AuthError::InvalidLicenseKey);
+    }
+
+    // 5. Unauthorized / access token permissions
+    {
+        let response_body = r#"{
+          "result": 1,
+          "message": "Unable to verify the key. Access token does not have permission to verify the product."
+        }"#.to_string();
+        let (base_url, handle) = local_http_server(response_body);
+        let mut cfg = worker_config(LicenseBackendMode::Devolens, String::new());
+        cfg.devolens_base_url = base_url;
+        cfg.devolens_access_token = "devolens-token".to_string();
+        cfg.devolens_product_id = "1234".to_string();
+        let worker = build_worker_client(&cfg).unwrap();
+        let result = worker.activate(activation_request()).await;
+        let _request = handle.join().unwrap();
+        assert_eq!(result.unwrap_err(), AuthError::Unauthorized);
+    }
+}

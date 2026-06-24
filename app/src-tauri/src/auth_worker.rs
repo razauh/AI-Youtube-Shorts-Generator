@@ -321,7 +321,7 @@ impl WorkerClient for DevolensWorkerClient {
             return Err(AuthError::InvalidLicenseKey);
         }
         if !activation.license_is_active() {
-            return Err(AuthError::ReauthRequired);
+            return Err(AuthError::InvalidLicenseKey);
         }
 
         let signature = self.compute_token_signature(device_id.as_str(), &request.timestamp_ms.to_string());
@@ -618,6 +618,11 @@ async fn parse_devolens_activation_response(
         return match parsed.message() {
             Some(message) if message.to_ascii_lowercase().contains("machine") => {
                 Err(AuthError::DeviceAlreadyBound)
+            }
+            Some(message) if message.to_ascii_lowercase().contains("permission")
+                || message.to_ascii_lowercase().contains("verify the key") =>
+            {
+                Err(AuthError::Unauthorized)
             }
             _ => Err(AuthError::InvalidLicenseKey),
         };
