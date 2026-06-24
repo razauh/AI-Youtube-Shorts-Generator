@@ -5,6 +5,7 @@ use std::path::Path;
 
 pub const PRODUCTION_LICENSE_WORKER_BASE_URL: &str =
     "https://license-worker.demandscout.workers.dev";
+pub const DEFAULT_DEVOLENS_BASE_URL: &str = "https://api.cryptolens.io";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
@@ -23,6 +24,9 @@ pub struct Config {
     pub license_worker_retry_backoff_ms: u64,
     pub license_worker_circuit_breaker_failure_threshold: u32,
     pub license_worker_circuit_breaker_cooldown_ms: u64,
+    pub devolens_base_url: String,
+    pub devolens_access_token: String,
+    pub devolens_product_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -36,12 +40,16 @@ pub struct LicenseWorkerConfig {
     pub retry_backoff_ms: u64,
     pub circuit_breaker_failure_threshold: u32,
     pub circuit_breaker_cooldown_ms: u64,
+    pub devolens_base_url: String,
+    pub devolens_access_token: String,
+    pub devolens_product_id: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LicenseBackendMode {
     Reference,
     Hosted,
+    Devolens,
     Mock,
 }
 
@@ -50,6 +58,7 @@ impl LicenseBackendMode {
         match value.trim().to_ascii_lowercase().as_str() {
             "reference" => Ok(Self::Reference),
             "hosted" => Ok(Self::Hosted),
+            "devolens" => Ok(Self::Devolens),
             "mock" => Ok(Self::Mock),
             _ => Err(ConfigError::InvalidLicenseBackendMode {
                 value: value.to_string(),
@@ -61,6 +70,7 @@ impl LicenseBackendMode {
         match self {
             Self::Reference => "reference",
             Self::Hosted => "hosted",
+            Self::Devolens => "devolens",
             Self::Mock => "mock",
         }
     }
@@ -94,10 +104,18 @@ impl Config {
             parse_u32_env("LICENSE_WORKER_CIRCUIT_FAILURE_THRESHOLD", "3")?;
         let license_worker_circuit_breaker_cooldown_ms =
             parse_u64_env("LICENSE_WORKER_CIRCUIT_COOLDOWN_MS", "30000")?;
+        let devolens_base_url = read_env_trimmed("DEVOLENS_BASE_URL", DEFAULT_DEVOLENS_BASE_URL)
+            .trim_end_matches('/')
+            .to_string();
+        let devolens_access_token = read_env_or_secure("DEVOLENS_ACCESS_TOKEN", "");
+        let devolens_product_id = read_env_trimmed("DEVOLENS_PRODUCT_ID", "");
 
         validate_license_worker_config(
             license_backend_mode,
             &license_worker_base_url,
+            &devolens_base_url,
+            &devolens_access_token,
+            &devolens_product_id,
             &license_storage_namespace,
             &license_keychain_service,
             license_worker_timeout_ms,
@@ -121,6 +139,9 @@ impl Config {
             license_worker_retry_backoff_ms,
             license_worker_circuit_breaker_failure_threshold,
             license_worker_circuit_breaker_cooldown_ms,
+            devolens_base_url,
+            devolens_access_token,
+            devolens_product_id,
         })
     }
 
@@ -136,6 +157,9 @@ impl Config {
             circuit_breaker_failure_threshold: self
                 .license_worker_circuit_breaker_failure_threshold,
             circuit_breaker_cooldown_ms: self.license_worker_circuit_breaker_cooldown_ms,
+            devolens_base_url: self.devolens_base_url.clone(),
+            devolens_access_token: self.devolens_access_token.clone(),
+            devolens_product_id: self.devolens_product_id.clone(),
         }
     }
 
@@ -248,6 +272,9 @@ fn parse_u32_env(var_name: &'static str, default: &'static str) -> Result<u32, C
 fn validate_license_worker_config(
     mode: LicenseBackendMode,
     base_url: &str,
+    devolens_base_url: &str,
+    devolens_access_token: &str,
+    devolens_product_id: &str,
     namespace: &str,
     keychain_service: &str,
     timeout_ms: u64,
@@ -261,6 +288,29 @@ fn validate_license_worker_config(
             var_name: "LICENSE_WORKER_BASE_URL",
             reason: "must start with http:// or https://",
         });
+    }
+    if mode == LicenseBackendMode::Devolens
+        && !(devolens_base_url.starts_with("http://") || devolens_base_url.starts_with("https://"))
+    {
+        return Err(ConfigError::InvalidConfigValue {
+            var_name: "DEVOLENS_BASE_URL",
+            reason: "must start with http:// or https://",
+        });
+    }
+    if mode == LicenseBackendMode::Devolens && devolens_access_token.trim().is_empty() {
+        return Err(ConfigError::InvalidConfigValue {
+            var_name: "DEVOLENS_ACCESS_TOKEN",
+            reason: "must be set when LICENSE_BACKEND_MODE=devolens",
+        });
+    }
+    if mode == LicenseBackendMode::Devolens && devolens_product_id.trim().is_empty() {
+        return Err(ConfigError::InvalidConfigValue {
+            var_name: "DEVOLENS_PRODUCT_ID",
+            reason: "must be set when LICENSE_BACKEND_MODE=devolens",
+        });
+    }
+    if mode == LicenseBackendMode::Devolens {
+        check_devolens_token_safety(devolens_base_url, devolens_access_token)?;
     }
     if namespace.trim().is_empty() {
         return Err(ConfigError::InvalidConfigValue {
@@ -294,3 +344,59 @@ fn validate_license_worker_config(
     }
     Ok(())
 }
+
+fn check_devolens_token_safety(
+    devolens_base_url: &str,
+    devolens_access_token: &str,
+) -> Result<(), ConfigError> {
+    if devolens_access_token.trim().is_empty() {
+        return Ok(());
+    }
+
+    let url = format!("{}/api/product/GetProducts", devolens_base_url.trim_end_matches('/'));
+    let token = devolens_access_token.trim().to_string();
+
+    let handle = std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| e.to_string())?;
+        
+        rt.block_on(async {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(5))
+                .build()
+                .map_err(|e| e.to_string())?;
+            
+            let response = client
+                .post(&url)
+                .form(&[("token", &token)])
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+                
+            let text = response.text().await.map_err(|e| e.to_string())?;
+            Ok::<String, String>(text)
+        })
+    });
+
+    match handle.join() {
+        Ok(Ok(response_text)) => {
+            if response_text.contains("\"result\":0") || response_text.contains("\"result\": 0") {
+                return Err(ConfigError::InvalidConfigValue {
+                    var_name: "DEVOLENS_ACCESS_TOKEN",
+                    reason: "Token has management scopes (CreateKey/BlockKey/GetKeys/GetProducts). Client token must only have Activate/Deactivate.",
+                });
+            }
+        }
+        Ok(Err(err)) => {
+            eprintln!("Warning: Devolens token safety check failed to run: {}", err);
+        }
+        Err(_) => {
+            eprintln!("Warning: Devolens token safety check thread panicked.");
+        }
+    }
+
+    Ok(())
+}
+

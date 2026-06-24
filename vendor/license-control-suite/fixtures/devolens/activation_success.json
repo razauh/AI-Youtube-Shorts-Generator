@@ -1,0 +1,9 @@
+{
+  "result": 0,
+  "message": "",
+  "licenseKey": {
+    "blocked": false,
+    "expired": false
+  },
+  "expires_at_ms": 1813833600000
+}

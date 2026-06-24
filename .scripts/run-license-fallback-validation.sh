@@ -16,11 +16,13 @@ run_step() {
   (
     cd "${ROOT_DIR}"
     "$@"
-  ) >"${log_file}" 2>&1
+  ) 2>&1 | tee "${log_file}"
 }
 
 run_step "rust-fallback-tests" cargo test --locked --manifest-path app/src-tauri/Cargo.toml fallback
 run_step "rust-resilient-store-tests" cargo test --locked --manifest-path app/src-tauri/Cargo.toml resilient_secret_store
+run_step "rust-devolens-auth-worker-tests" cargo test --locked --manifest-path app/src-tauri/Cargo.toml --test auth_worker_tests --test config_tests
+run_step "rust-devolens-token-safety-baseline-test" cargo test --locked --manifest-path vendor/license-control-suite/Cargo.toml --test devolens_token_safety
 run_step "frontend-policy-tests" pnpm --dir app run test -- src/tests/ui_flow.test.ts
 
 echo "[pass] license fallback validation completed"

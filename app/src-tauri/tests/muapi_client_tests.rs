@@ -73,6 +73,9 @@ fn cfg(base: String) -> Config {
         license_worker_retry_backoff_ms: 150,
         license_worker_circuit_breaker_failure_threshold: 3,
         license_worker_circuit_breaker_cooldown_ms: 30_000,
+        devolens_base_url: shorts_tauri_app::core::config::DEFAULT_DEVOLENS_BASE_URL.to_string(),
+        devolens_access_token: String::new(),
+        devolens_product_id: String::new(),
     }
 }
 

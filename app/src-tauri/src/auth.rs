@@ -880,6 +880,9 @@ mod tests {
             retry_backoff_ms: 0,
             circuit_breaker_failure_threshold: 3,
             circuit_breaker_cooldown_ms: 30_000,
+            devolens_base_url: crate::core::config::DEFAULT_DEVOLENS_BASE_URL.to_string(),
+            devolens_access_token: String::new(),
+            devolens_product_id: String::new(),
         };
         let state = build_auth_state_from_parts(&worker_config, &root, "0.1.0");
 

@@ -1,528 +1,501 @@
 # MVP Completeness Audit
 
-## 1. Executive Summary
+## 1. Purpose
 
-Verdict: **MVP mostly complete with non-blocking gaps and manual decisions**.
+This audit evaluates whether the production MVP is complete, usable, integrated, and release-ready across the customer desktop app, admin desktop app, Tauri command boundary, Rust/MuAPI pipeline, licensing/auth integration, Cloudflare Worker, updater, legal/privacy content, secure storage, diagnostics, legacy Python separation, and packaging/runtime bundle surface.
 
-The current product source supports an API-based MuAPI MVP: licensed desktop access, MuAPI generation, output JSON, hosted clip links, updater wiring for the customer app, user deletion/reset flows, admin desktop review flows, Worker-backed license/device/reset/deletion/Gumroad contracts, and focused test fixtures/scripts. The main release blockers are not broad missing implementation; they are unresolved product/security decisions and documentation gaps around admin updater support, deletion notice packaging, MuAPI retry semantics, and release-readiness proof.
+## 2. Audit Scope
 
-No tests, builds, validation scripts, dependency installs, deployments, or Graphify regeneration were run for this documentation-only audit.
+Production/runtime files inspected:
 
-## 2. Scope
+- Customer app: `app/src/main.js`, `app/src/App.svelte`, `app/src/routes/+page.svelte`, `app/src/design-tokens.css`, `app/src/lib/components/FormStatus.svelte`, `app/src/lib/components/ThemedSelect.svelte`, `app/src/lib/stores/authState.ts`, `app/src/lib/stores/runState.ts`
+- Customer clients/contracts: `app/src/lib/api/*.ts`, `app/src/lib/authContracts.ts`, `app/src/lib/contracts.ts`
+- Admin app: `app/src/admin/*`, `app/src-tauri/src/bin/admin_desktop.rs`, `app/src-tauri/tauri.admin.conf.json`, `app/src-tauri/capabilities/admin.json`
+- Tauri shell/commands: `app/src-tauri/src/main.rs`, `app/src-tauri/src/lib.rs`, `app/src-tauri/src/commands/*.rs`, `app/src-tauri/tauri.conf.json`, `app/src-tauri/capabilities/default.json`
+- Rust generation: `app/src-tauri/src/core/*.rs`, `app/src-tauri/src/core/api_mode/*.rs`, `app/src-tauri/src/core/network/client.rs`
+- Auth/licensing: `app/src-tauri/src/auth.rs`, `app/src-tauri/src/auth_worker.rs`, selected production vendor modules under `vendor/license-control-suite/src/modules/user_reg/` and `vendor/license-control-suite/src/modules/auth_core/`
+- Worker: `worker/src/index.js`, `worker/src/contracts.js`, `worker/src/store.js`, `worker/wrangler.toml`, `worker/migrations/*.sql`
+- Storage/support/legal/legacy/packaging production docs and source named in the task.
 
-This audit covers:
+## 3. Method
 
-- Frontend app and admin UI under `app/src/`.
-- Tauri Rust commands, capabilities, auth, runtime, and API-mode pipeline under `app/src-tauri/`.
-- Cloudflare Worker licensing service under `worker/`.
-- License-control-suite integration under `vendor/license-control-suite/`.
-- Python legacy API pipeline under `python_legacy/`.
-- Packaging docs and validation scripts under `packaging/`, `.scripts/`, `tests/`, and `docs/`.
-- Existing Graphify artifacts under `graphify-out/`.
+I used existing `graphify-out` artifacts as the structural starting point:
 
-This audit does not cover uncommitted behavior after running test/build commands, production cloud state, real Gumroad/Cloudflare secrets, live MuAPI behavior, or signed release artifact inspection.
+- `graphify-out/GRAPH_REPORT.md` reported 1,930 nodes and 4,742 edges.
+- `graphify-out/MERGED_GRAPH_REPORT.md` reported merged app/worker/vendor/docs/packaging scopes and highlighted command, Worker, auth, generation, runtime, and admin communities.
+- `graphify-out/.graphify_detect.json` showed the corpus includes tests, so Graphify was used only as a navigation aid.
 
-## 3. Methodology
+I then verified every material claim against production source with direct file inspection and source search. Where Graphify output was stale or ambiguous, current source files were treated as controlling.
 
-Evidence was gathered through read-only source inspection:
+## 4. README Usage Limitation
 
-- `git status --short` to preserve current dirty state.
-- `rg --files`, `find`, `sed`, and `rg` for source and Graphify inspection.
-- Existing Graphify reports from 2026-06-04 were used as structural triage only.
-- Direct source files were treated as authoritative when Graphify inferred edges or stale relationships.
+Project `README.md` was not used as source of truth for MVP completeness. Packaging README files were inspected only as secondary documentation evidence for packaging/runtime documentation mismatch checks.
 
-## 4. Evidence Inventory
+## 5. Test Exclusion Statement
 
-Primary Graphify evidence:
+Tests, fixtures, snapshots, golden files, parity/regression directories, UI tests, contract tests, updater config tests, and test scripts were excluded from the audit evidence and verdict. No finding below relies on test implementation or test coverage.
 
-- `graphify-out/GRAPH_REPORT.md`
-- `graphify-out/MERGED_GRAPH_REPORT.md`
-- `graphify-out/graph.json`
-- `graphify-out/merged-graph.json`
-- `graphify-out/scopes/app/GRAPH_REPORT.md`
-- `graphify-out/scopes/worker/GRAPH_REPORT.md`
-- `graphify-out/scopes/tests/GRAPH_REPORT.md`
-- `graphify-out/scopes/packaging/GRAPH_REPORT.md`
-- `graphify-out/scopes/vendor/GRAPH_REPORT.md`
+## 6. Executive Summary
 
-Primary source evidence:
+**MVP INCOMPLETE**
 
-- `app/src/routes/+page.svelte`
-- `app/src/lib/api/tauriClient.ts`
-- `app/src/lib/api/authClient.ts`
-- `app/src/lib/api/runtimeClient.ts`
-- `app/src/lib/api/updaterClient.ts`
-- `app/src/admin/lib/adminClient.ts`
-- `app/src-tauri/src/main.rs`
-- `app/src-tauri/src/bin/admin_desktop.rs`
-- `app/src-tauri/src/commands/*.rs`
-- `app/src-tauri/tauri.conf.json`
-- `app/src-tauri/tauri.admin.conf.json`
-- `app/src-tauri/capabilities/default.json`
-- `app/src-tauri/capabilities/admin.json`
-- `app/src-tauri/src/core/api_mode/*.rs`
-- `worker/src/index.js`
-- `worker/src/contracts.js`
-- `worker/src/store.js`
-- `worker/migrations/*.sql`
-- `worker/test/contract.test.js`
-- `packaging/*/README.md`
-- `.scripts/run-*.sh`
+What appears to work end-to-end:
 
-## 5. Existing Dirty Worktree
+- Customer shell boots through `app/src/main.js` -> `App.svelte` -> `routes/+page.svelte`.
+- Licensed customer UI is gated behind auth state and includes activation, reset, MuAPI setup, generation, progress, output links, library, policies, deletion request, diagnostics, crash draft, and customer updater controls.
+- Customer generation command path is connected: Svelte route -> `tauriClient.ts` -> `generate_shorts_stream` -> Rust auth gate -> Rust API pipeline -> MuAPI stages.
+- Admin app is a separate entry point/binary/config and connects to admin Tauri commands and Worker admin routes.
+- Worker routes exist for activation, validation, reset request/status, Gumroad webhook, user data deletion, admin listing, admin reset decisions, admin deletion decisions, license disabling, and customer update checks.
 
-Existing dirty files observed before edits:
+What is missing or incomplete:
 
-- Modified: `.gitignore`
-- Modified: `app/src/lib/legal/policiesContent.ts`
-- Modified: `app/src/tests/ui_flow.test.ts`
-- Untracked: `.scripts/run-policy-muapi-liability-validation.sh`
+- Worker activation does not enforce the one-active-device/device-bound contract expected by the desktop auth UI and reset flow.
+- Pipeline can report generation success when every clip render failed and no usable clip URL exists.
+- Runtime secure-store fallback writes plaintext API/admin/deletion secrets into app-data fallback files when OS keychain storage fails.
+- `app/src/DELETION_NOTICE.md` from the required policy inventory is missing.
+- Admin updater support is absent while customer updater support is present.
+- Several stale/deprecated or over-broad command/storage surfaces remain exposed.
 
-These files were not modified by this audit. The only intended new file is this report.
+Release blockers:
 
-## 6. Graphify Structural Summary
+- `MVP-CRIT-001`: device binding/reset contract is not enforced by the Worker.
+- `MVP-CRIT-002`: successful generation does not guarantee usable generated clips.
 
-Graphify identifies the codebase as a large, multi-surface system. The merged report shows 2008 nodes, 3908 edges, and 50 communities. Major clusters map to:
+Deferrable:
 
-- Customer app generation, auth, settings, updater, privacy, and secure storage.
-- Worker license, reset, deletion, Gumroad, update, and admin routes.
-- License-control-suite auth/admin/shared-contract modules.
-- MuAPI pipeline and parity fixtures.
-- Packaging and validation scripts.
+- Packaging README polish, stale OpenAI configuration leftovers, unguarded migration rerun behavior, and cleanup of unused frontend storage abstractions can be deferred if the release explicitly accepts the risk.
 
-Graphify also flags inferred edges around generic functions like `invoke()`, `fetch()`, `ok()`, and `err()`. Those edges were not accepted blindly; the audit verified relevant claims against source files.
+Needs manual decision:
 
-## 7. MVP Architecture Assumption
+- Whether admin desktop requires the same updater mechanism as the customer app for MVP.
+- Whether API/admin/deletion secrets may ever fall back to plaintext local files.
+- Whether OpenAI config/profile support is intentionally reserved for future providers or should be removed from MVP.
+- Whether advanced runtime filesystem/machine-secret commands are intended customer command surface.
 
-This audit assumes the MVP architecture is **API-based MuAPI generation**, not local-model or bundled local-processing generation.
+## 7. MVP Status Matrix
+
+| Area | Status | Evidence | Main gaps | Priority |
+| --- | --- | --- | --- | --- |
+| Customer desktop app | Partial | `app/src/main.js`, `app/src/App.svelte`, `app/src/routes/+page.svelte`, `app/src/lib/stores/*.ts` | UI is connected, but success can contain no usable clips; crash redaction is narrow. | Critical |
+| Customer API clients | Partial | `app/src/lib/api/tauriClient.ts`, `authClient.ts`, `runtimeClient.ts`, `updaterClient.ts` | Runtime client exposes unused/broad filesystem and machine-secret commands; OpenAI provider contract remains without UI workflow. | Medium |
+| Admin desktop app | Partial | `app/src/admin/AdminApp.svelte`, `adminClient.ts`, `admin_desktop.rs`, `tauri.admin.conf.json` | Core admin workflow exists; admin updater is absent; detail modal can show full sanitized objects but depends on Worker masking. | High |
+| Tauri desktop shell and command boundary | Partial | `app/src-tauri/src/main.rs`, `src/bin/admin_desktop.rs`, `commands/*.rs`, capabilities JSON | Customer registers deprecated/unused generation and broad runtime commands; admin/customer command surfaces are separate. | Medium |
+| Rust generation / MuAPI pipeline | Partial | `core/pipeline.rs`, `api_mode/*.rs`, `core/contracts.rs` | End-to-end path exists; all failed clips still produce `ok: true`; no hard validation that at least one rendered clip URL exists. | Critical |
+| Licensing/auth desktop integration | Partial | `auth.rs`, `auth_worker.rs`, `commands/auth.rs`, `authState.ts` | Desktop expects device-bound errors and reset lifecycle; Worker does not enforce device-bound activation. | Critical |
+| License Worker service | Partial | `worker/src/index.js`, `store.js`, `contracts.js`, migrations | Routes/schema exist; device binding policy missing; token/idempotency primitives are weak for security-sensitive MVP. | Critical |
+| Updater | Partial | `updaterClient.ts`, `tauri.conf.json`, `tauri.admin.conf.json`, `worker/src/index.js` | Customer updater wired; admin updater not wired/configured; update endpoint depends on external manifest config. | High |
+| Policies/legal/privacy/refund | Partial | `policiesContent.ts`, `routes/+page.svelte`; missing `app/src/DELETION_NOTICE.md` | In-app text exists, but required deletion notice file is missing and secure-storage claims need manual reconciliation. | High |
+| Secure/local storage | Partial | `commands/runtime.rs`, `auth.rs`, `app/src/storage/*.ts` | Runtime secure fallback writes plaintext; machine secret command is exposed; frontend storage abstractions appear unused. | High |
+| Crash/support diagnostics | Partial | `support/crashDraft.ts`, `routes/+page.svelte` | Draft generation/UI exists; redaction misses emails, API keys, tokens, local paths/usernames, and machine IDs. | High |
+| Legacy Python pipeline | Complete for separation / Needs review for retention | `python_legacy/main.py`, `python_legacy/shorts_generator/pipeline.py`; source search | Not wired into production customer app; retained as legacy/reference. Retention/removal needs product decision. | Low |
+| Packaging/runtime bundles | Partial | `packaging/*/README.md`, `tauri.conf.json`, source search | Docs say no local runtime bundles for API-only release; packaging docs are sparse and reference excluded smoke scripts as validation. | Medium |
+
+## 8. Critical Blockers
+
+### MVP-CRIT-001
+
+- **MVP area:** Licensing/auth desktop integration; License Worker service
+- **Classification:** worker / backend
+- **File path:** `worker/src/index.js`; `worker/src/store.js`; `app/src/lib/stores/authState.ts`; `app/src-tauri/src/auth_worker.rs`
+- **Function/component/type/command/config/string involved:** `handleActivate`, `upsertDeviceBinding`, `device_already_bound`, `device_bound_elsewhere`
+- **What is missing or incomplete:** Activation does not check for an existing active binding for the same license on another device before upserting the new `device_id`.
+- **Why it matters for MVP completeness:** The desktop app has a device-bound-elsewhere lifecycle and reset request workflow, and the auth adapter maps `AuthError::DeviceAlreadyBound` to `device_already_bound`. The Worker currently allows multiple active devices for one license, so the main license-enforcement behavior is incomplete.
+- **Evidence from code or Graphify:** Graphify identified auth and reset communities around activation/reset. Source verification shows `handleActivate` validates license status and writes `upsertDeviceBinding` but performs no active-binding-by-license conflict check (`worker/src/index.js:346`, `worker/src/index.js:403`). `upsertDeviceBinding` keys only by `device_id` and updates that row (`worker/src/store.js:134`). The frontend explicitly handles `device_bound_elsewhere` on activation errors (`app/src/lib/stores/authState.ts:387`). The Rust auth worker includes a `DeviceAlreadyBound` contract code (`app/src-tauri/src/auth_worker.rs:50`).
+- **Recommended action:** Add a Worker query for active device bindings by `license_key_hash`; allow same `device_id`, reject different active device with `device_already_bound`, and keep reset approval deactivating prior bindings.
+- **Priority:** Critical
+- **Risk level:** High
+- **Confidence:** High
+
+### MVP-CRIT-002
+
+- **MVP area:** Rust generation / MuAPI pipeline; Customer desktop app
+- **Classification:** backend / frontend
+- **File path:** `app/src-tauri/src/core/api_mode/clipper.rs`; `app/src-tauri/src/core/pipeline.rs`; `app/src/routes/+page.svelte`
+- **Function/component/type/command/config/string involved:** `crop_highlights`, `generate_shorts_with_progress`, `runState.onSuccess`, project `status = 'exported'`
+- **What is missing or incomplete:** Clip rendering failures are stored per-short with `clip_url: null`, but the pipeline still returns `PipelineSuccess` even if all clips failed. The UI then marks the run/project as successful/exported.
+- **Why it matters for MVP completeness:** The expected MVP flow ends with generated clips/output. A successful run with zero usable clip URLs is not release-ready behavior unless explicitly treated as partial failure.
+- **Evidence from code or Graphify:** Graphify highlighted `crop_highlights` and `PipelineSuccess` as core generation nodes. Source verification shows `crop_highlights` catches each `crop_clip` error and pushes a short with `clip_url = null` and `error` (`app/src-tauri/src/core/api_mode/clipper.rs:77`). `generate_shorts_with_progress` deserializes those values and returns `Ok(PipelineSuccess)` without requiring any usable clip URL (`app/src-tauri/src/core/pipeline.rs:273`). The route sets `status = envelope.ok ? 'exported' : 'draft'` and calls `runState.onSuccess` for any `ok` envelope (`app/src/routes/+page.svelte:831`, `app/src/routes/+page.svelte:846`).
+- **Recommended action:** Treat zero successful clip URLs as a failure or explicit partial-success state; surface retry guidance and do not mark the project exported unless at least one generated clip is usable.
+- **Priority:** Critical
+- **Risk level:** High
+- **Confidence:** High
+
+## 9. High-Priority Incomplete Items
+
+### MVP-HIGH-001
+
+- **MVP area:** Secure/local storage
+- **Classification:** backend / frontend / admin
+- **File path:** `app/src-tauri/src/commands/runtime.rs`; `app/src/routes/+page.svelte`; `app/src-tauri/src/commands/admin.rs`
+- **Function/component/type/command/config/string involved:** `secure_store_save`, `save_secure_fallback`, `api_key_profile_add`, `admin_config_save`, `USER_DATA_DELETION_LOOKUP_TOKEN`
+- **What is missing or incomplete:** Runtime secure storage falls back to writing plaintext values to `secure-fallback/{key}.secret` when keychain operations fail.
+- **Why it matters for MVP completeness:** MuAPI keys, admin API tokens, and deletion lookup tokens are sensitive. Plaintext fallback contradicts a secure-by-default MVP posture and needs an explicit product/security decision.
+- **Evidence from code or Graphify:** `secure_store_save` falls back to `save_secure_fallback` on keychain error (`app/src-tauri/src/commands/runtime.rs:756`). `save_secure_fallback` writes the raw value directly (`app/src-tauri/src/commands/runtime.rs:333`). API key profiles store secrets through this path (`app/src-tauri/src/commands/runtime.rs:811`), admin config stores the admin token through it (`app/src-tauri/src/commands/admin.rs:571`), and deletion lookup tokens use `secureStoreSave` in the customer route (`app/src/routes/+page.svelte:437`).
+- **Recommended action:** Encrypt runtime secure fallback or fail closed for secrets when OS credential storage is unavailable. Decide whether Linux/keychain-unavailable fallback is allowed for MVP.
+- **Priority:** High
+- **Risk level:** High
+- **Confidence:** High
+
+### MVP-HIGH-002
+
+- **MVP area:** Secure/local storage; Tauri command boundary
+- **Classification:** backend / frontend
+- **File path:** `app/src-tauri/src/main.rs`; `app/src-tauri/src/commands/runtime.rs`; `app/src/lib/api/runtimeClient.ts`
+- **Function/component/type/command/config/string involved:** `runtime_machine_secret`, `runtimeMachineSecret`
+- **What is missing or incomplete:** A command returning the runtime machine secret is registered and exported to frontend code, but no production UI flow uses it.
+- **Why it matters for MVP completeness:** Exposing a machine secret over the general frontend command boundary is unnecessary attack surface for a production MVP.
+- **Evidence from code or Graphify:** The customer Tauri handler registers `runtime_machine_secret` (`app/src-tauri/src/main.rs:32`), the command returns `get_or_create_machine_secret()` (`app/src-tauri/src/commands/runtime.rs:663`), and the frontend exports `runtimeMachineSecret()` (`app/src/lib/api/runtimeClient.ts:75`). Source search found no production caller beyond the export/registration.
+- **Recommended action:** Remove or restrict the command unless a production feature requires it. If needed, document threat model and scope.
+- **Priority:** High
+- **Risk level:** High
+- **Confidence:** High
+
+### MVP-HIGH-003
+
+- **MVP area:** Policies, legal, privacy, refund text
+- **Classification:** docs / frontend
+- **File path:** `app/src/DELETION_NOTICE.md`; `app/src/lib/legal/policiesContent.ts`; `app/src/routes/+page.svelte`
+- **Function/component/type/command/config/string involved:** required `DELETION_NOTICE.md`; `POLICY_SECTIONS.deletion`
+- **What is missing or incomplete:** The required inventory file `app/src/DELETION_NOTICE.md` does not exist. The in-app deletion notice exists in `policiesContent.ts`.
+- **Why it matters for MVP completeness:** The required production policy surface is partly missing as a file artifact. Release packaging/support may expect the standalone deletion notice.
+- **Evidence from code or Graphify:** File inspection returned `No such file or directory` for `app/src/DELETION_NOTICE.md`. In-app deletion content is present under `POLICY_SECTIONS.deletion` (`app/src/lib/legal/policiesContent.ts:189`) and rendered in the Policies tab (`app/src/routes/+page.svelte:1503`).
+- **Recommended action:** Create the standalone deletion notice or remove it from the MVP inventory after a manual product decision.
+- **Priority:** High
+- **Risk level:** Medium
+- **Confidence:** High
+
+### MVP-HIGH-004
+
+- **MVP area:** Updater; Admin desktop app
+- **Classification:** admin / config
+- **File path:** `app/src-tauri/src/bin/admin_desktop.rs`; `app/src-tauri/tauri.admin.conf.json`; `app/src-tauri/capabilities/admin.json`; `app/src/admin/AdminApp.svelte`
+- **Function/component/type/command/config/string involved:** Tauri updater plugin/config, admin maintenance UI
+- **What is missing or incomplete:** The customer app wires the updater plugin and update UI, but the admin app does not register the updater plugin, does not configure updater endpoints, and has no admin update UI.
+- **Why it matters for MVP completeness:** If admin desktop is part of the release surface, its update/security patch path is incomplete compared with the customer app.
+- **Evidence from code or Graphify:** Customer main registers `tauri_plugin_updater` (`app/src-tauri/src/main.rs:8`) and customer config includes updater `pubkey`/`endpoints` (`app/src-tauri/tauri.conf.json:51`). Admin binary registers only admin commands (`app/src-tauri/src/bin/admin_desktop.rs:4`), admin config has no `plugins.updater` block (`app/src-tauri/tauri.admin.conf.json:60`), and admin capability has only `core:default` (`app/src-tauri/capabilities/admin.json:13`).
+- **Recommended action:** Decide whether admin updates are required for MVP. If yes, add updater plugin/config/UI for admin; if no, document the manual admin update path.
+- **Priority:** High
+- **Risk level:** Medium
+- **Confidence:** High
+
+### MVP-HIGH-005
+
+- **MVP area:** Crash/support diagnostics
+- **Classification:** frontend
+- **File path:** `app/src/support/crashDraft.ts`; `app/src/routes/+page.svelte`
+- **Function/component/type/command/config/string involved:** `redactSensitiveText`, `submitPendingCrashDraft`
+- **What is missing or incomplete:** Crash draft redaction only covers one license-like hex pattern, `license_key`, and generic `secret`; it does not redact emails, API keys, access tokens, admin tokens, local paths/usernames, device IDs, or machine identifiers.
+- **Why it matters for MVP completeness:** The app lets users submit crash drafts to a configured endpoint, and support diagnostics must not leak sensitive data.
+- **Evidence from code or Graphify:** Crash drafts are created from window errors and unhandled rejections (`app/src/routes/+page.svelte:623`) and can be posted to `VITE_CRASH_REPORT_ENDPOINT` (`app/src/routes/+page.svelte:645`). Redaction is limited to three regex replacements (`app/src/support/crashDraft.ts:18`).
+- **Recommended action:** Expand redaction for emails, common token/API key names, bearer tokens, license formats, device IDs, local user paths, and known secret keys before enabling crash submission in production.
+- **Priority:** High
+- **Risk level:** High
+- **Confidence:** High
+
+### MVP-HIGH-006
+
+- **MVP area:** License Worker service
+- **Classification:** worker / security
+- **File path:** `worker/src/index.js`; `worker/src/store.js`
+- **Function/component/type/command/config/string involved:** `issueAccessToken`, `verifyAccessToken`, `stableHash`
+- **What is missing or incomplete:** Worker token signing uses `sha256(secret:payload)` and direct string comparison; idempotency payload hashing uses a non-cryptographic 32-bit hash with a comment saying it is scaffold behavior.
+- **Why it matters for MVP completeness:** Licensing is security-sensitive. Token signing and idempotency hashing should be robust and clearly production-grade.
+- **Evidence from code or Graphify:** Access token issue/verify uses `sha256Hex(`${secret}:${payloadB64}`)` and `signature !== expected` (`worker/src/index.js:1860`). `stableHash` is a simple rolling hash and the comment says “Swap with stronger canonical hashing in production implementation” (`worker/src/store.js:29`).
+- **Recommended action:** Replace token signature with WebCrypto HMAC-SHA-256 and constant-time verification where possible; replace idempotency hash with canonical JSON plus SHA-256.
+- **Priority:** High
+- **Risk level:** High
+- **Confidence:** High
+
+## 10. Medium/Low-Priority Gaps
+
+### MVP-MED-001
+
+- **MVP area:** Customer API clients; Secure/local storage
+- **Classification:** frontend / backend
+- **File path:** `app/src/lib/api/runtimeClient.ts`; `app/src-tauri/src/commands/runtime.rs`; `app/src/storage/*.ts`
+- **Function/component/type/command/config/string involved:** runtime filesystem commands, frontend storage abstractions
+- **What is missing or incomplete:** Many runtime filesystem APIs and frontend storage abstractions are exported but not used by the production customer UI.
+- **Why it matters for MVP completeness:** Unused command surface increases review and maintenance burden for a security-sensitive desktop app.
+- **Evidence from code or Graphify:** Runtime client exports read/write/append/remove/list/rename/chmod/size APIs (`app/src/lib/api/runtimeClient.ts:79`). Customer Tauri registers those commands (`app/src-tauri/src/main.rs:33`). Source search found no production callers outside exports/registration.
+- **Recommended action:** Remove unused commands/exports or document the production feature that requires them.
+- **Priority:** Medium
+- **Risk level:** Medium
+- **Confidence:** Medium
+
+### MVP-MED-002
+
+- **MVP area:** Tauri command boundary
+- **Classification:** backend
+- **File path:** `app/src-tauri/src/main.rs`; `app/src-tauri/src/commands/generate.rs`; `app/src/lib/api/tauriClient.ts`
+- **Function/component/type/command/config/string involved:** `generate_shorts`, `generate_shorts_with_events`, `generate_shorts_stream`
+- **What is missing or incomplete:** Customer frontend uses only `generate_shorts_stream`, but `generate_shorts` and `generate_shorts_with_events` remain registered.
+- **Why it matters for MVP completeness:** Deprecated/alternate generation commands should be removed or justified before release to reduce behavioral variants.
+- **Evidence from code or Graphify:** Frontend invokes only `generate_shorts_stream` (`app/src/lib/api/tauriClient.ts:61`). Main registers three generation commands (`app/src-tauri/src/main.rs:25`), and the command file exposes all three (`app/src-tauri/src/commands/generate.rs:299`).
+- **Recommended action:** Keep only the production command or document why the alternate commands remain supported.
+- **Priority:** Medium
+- **Risk level:** Medium
+- **Confidence:** High
+
+### MVP-MED-003
+
+- **MVP area:** Customer API clients; Removed local-processing leftovers
+- **Classification:** frontend / backend
+- **File path:** `app/src-tauri/src/core/config.rs`; `app/src-tauri/src/commands/runtime.rs`; `app/src/lib/api/runtimeClient.ts`; `app/src/routes/+page.svelte`
+- **Function/component/type/command/config/string involved:** `OPENAI_API_KEY`, `OPENAI_MODEL`, provider `'openai'`
+- **What is missing or incomplete:** OpenAI provider configuration remains in runtime/config contracts even though the current UI supports only MuAPI profiles and the Rust generation path uses MuAPI `gpt-5-mini` through MuAPI.
+- **Why it matters for MVP completeness:** This is a stale or future-provider contract surface that can confuse setup and policy claims.
+- **Evidence from code or Graphify:** Config reads `OPENAI_API_KEY` and `OPENAI_MODEL` (`app/src-tauri/src/core/config.rs:77`), runtime provider normalization accepts `openai` (`app/src-tauri/src/commands/runtime.rs:189`), and frontend type allows `'openai'` (`app/src/lib/api/runtimeClient.ts:27`). The customer UI only loads/saves MuAPI profiles (`app/src/routes/+page.svelte:265` and `app/src/routes/+page.svelte:536`).
+- **Recommended action:** Mark OpenAI provider support as reserved/future or remove it from the MVP runtime surface.
+- **Priority:** Medium
+- **Risk level:** Low
+- **Confidence:** High
+
+### MVP-MED-004
+
+- **MVP area:** License Worker service
+- **Classification:** worker
+- **File path:** `worker/src/index.js`; `worker/wrangler.toml`
+- **Function/component/type/command/config/string involved:** `/readyz`, `GUMROAD_ACCESS_TOKEN`, `UPDATE_MANIFEST_URL`
+- **What is missing or incomplete:** Readiness reports `gumroad_ok` but does not include Gumroad readiness in the final `secrets.ok` gate.
+- **Why it matters for MVP completeness:** Gumroad webhook purchase ingestion is part of the licensing MVP. `/readyz` can report ready even when Gumroad purchase verification cannot work.
+- **Evidence from code or Graphify:** `/readyz` computes `gumroad_ok` (`worker/src/index.js:155`) but sets `checks.secrets.ok = checks.secrets.core_ok && checks.secrets.admin_ok` (`worker/src/index.js:156`). `wrangler.toml` configures the Worker but secret presence is runtime-only (`worker/wrangler.toml:5`).
+- **Recommended action:** Include Gumroad readiness in `/readyz` or add a separate readiness status that clearly states purchase ingestion is unavailable.
+- **Priority:** Medium
+- **Risk level:** Medium
+- **Confidence:** High
+
+### MVP-MED-005
+
+- **MVP area:** Packaging/runtime bundles
+- **Classification:** packaging / docs
+- **File path:** `packaging/linux/README.md`, `packaging/macos/README.md`, `packaging/windows/README.md`
+- **Function/component/type/command/config/string involved:** local runtime/model bundles; smoke validation text
+- **What is missing or incomplete:** Packaging docs correctly say local runtime/model bundles are not packaged for API-only release, but they are sparse and rely on excluded smoke test scripts for validation instructions.
+- **Why it matters for MVP completeness:** Production release packaging needs clear non-test operational packaging notes, including updater artifacts, signing/notarization expectations, and runtime asset absence.
+- **Evidence from code or Graphify:** Packaging READMEs state “Local runtime/model bundles are not packaged for the API-only release path” (`packaging/linux/README.md:7`, `packaging/macos/README.md:21`, `packaging/windows/README.md:36`) and point smoke validation to test scripts (`packaging/linux/README.md:12`).
+- **Recommended action:** Add production packaging checklist separate from test scripts. Keep the API-only/no-local-runtime statement.
+- **Priority:** Medium
+- **Risk level:** Low
+- **Confidence:** High
+
+### MVP-LOW-001
+
+- **MVP area:** License Worker service
+- **Classification:** worker / config
+- **File path:** `worker/migrations/0002_add_masked_license_key_to_reset_requests.sql`
+- **Function/component/type/command/config/string involved:** `ALTER TABLE reset_requests ADD COLUMN masked_license_key TEXT`
+- **What is missing or incomplete:** Migration 0002 is not idempotent if manually replayed against a DB where the column already exists.
+- **Why it matters for MVP completeness:** Cloudflare migration tracking should prevent duplicate application, but manual recovery/replay is less forgiving.
+- **Evidence from code or Graphify:** The migration is a plain `ALTER TABLE ... ADD COLUMN` (`worker/migrations/0002_add_masked_license_key_to_reset_requests.sql:1`).
+- **Recommended action:** Document migration replay limitations or use guarded migration strategy where D1 supports it.
+- **Priority:** Low
+- **Risk level:** Low
+- **Confidence:** Medium
+
+## 11. Component-by-Component Audit
+
+Customer app bootstraps correctly through `main.js` and `App.svelte`. The main route is the actual app, not a placeholder, and it connects to auth, runtime, generation, updater, deletion, legal, and diagnostics flows. The main production incompleteness is not route existence; it is the behavior of downstream generation/auth/storage contracts.
+
+Customer API clients mostly map to registered Tauri commands. Contract shapes for generation and auth are coherent at the TypeScript/Rust boundary. The primary concern is excess exported/runtime command surface and stale/future provider fields.
+
+Admin app has a real MVP operations console with setup, overview, reset queue, deletion queue, licenses, device bindings, audit events, idempotency records, decisions, and license disabling. It is separated from the customer app by entry point, binary, Tauri config, and capabilities. Admin update strategy needs manual decision.
+
+Tauri command boundary is functional but broad. Customer and admin commands are separated by binary, but customer registers more commands than the current UI uses.
+
+Rust generation is API-only in current source. Graphify output still references removed local-mode nodes, but current production source search did not find active `local_mode`, `python_runtime`, `tool_resolver`, or runtime pack modules under `app/src-tauri/src/core`.
+
+Worker implementation is broad and integrated, but device-binding enforcement and security primitives are not release-ready.
+
+## 12. Frontend Customer App Findings
+
+- See `MVP-CRIT-002` for successful UI state with no usable clips.
+- See `MVP-HIGH-005` for insufficient crash draft redaction.
+- Positive evidence: `FormStatus` and `ThemedSelect` are used in production route forms (`app/src/routes/+page.svelte:3`, `app/src/routes/+page.svelte:1109`, `app/src/routes/+page.svelte:1126`). Design tokens are imported by `main.js` (`app/src/main.js:1`) and used throughout route CSS through `var(--...)`.
+
+## 13. Customer API Client Findings
+
+- See `MVP-MED-001` and `MVP-MED-003`.
+- Positive evidence: auth client command names match Rust commands (`app/src/lib/api/authClient.ts:30`; `app/src-tauri/src/commands/auth.rs:7`). Generation stream command matches Rust registration (`app/src/lib/api/tauriClient.ts:61`; `app/src-tauri/src/main.rs:27`). Updater client is connected to customer diagnostics UI (`app/src/routes/+page.svelte:670`).
+
+## 14. Admin App Findings
+
+- See `MVP-HIGH-004`.
+- Positive evidence: admin frontend calls admin client functions for overview/list/decision flows (`app/src/admin/AdminApp.svelte:156`), client command names match Rust command names (`app/src/admin/lib/adminClient.ts:35`), and admin binary registers only admin commands (`app/src-tauri/src/bin/admin_desktop.rs:5`).
+
+## 15. Tauri Command Boundary Findings
+
+- See `MVP-HIGH-002`, `MVP-MED-001`, and `MVP-MED-002`.
+- Positive evidence: customer main registers auth, privacy, file picker, generation, health, runtime, secure-store, and API profile commands (`app/src-tauri/src/main.rs:15`). Admin binary is separate (`app/src-tauri/src/bin/admin_desktop.rs:3`).
+
+## 16. Rust Generation / MuAPI Pipeline Findings
+
+- See `MVP-CRIT-002`.
+- Positive evidence: pipeline enforces `mode == "api"` (`app/src-tauri/src/core/pipeline.rs:111`), calls download/transcribe/highlights/clip stages in order (`app/src-tauri/src/core/pipeline.rs:129`, `app/src-tauri/src/core/pipeline.rs:151`, `app/src-tauri/src/core/pipeline.rs:198`, `app/src-tauri/src/core/pipeline.rs:250`), and MuAPI client submits/polls hosted jobs (`app/src-tauri/src/core/api_mode/muapi.rs:251`).
+
+## 17. Licensing/Auth Findings
+
+- See `MVP-CRIT-001`.
+- Positive evidence: desktop auth state covers unauthenticated, licensed, offline grace, reauth, device-bound, reset pending/approved/rejected/expired, and error states (`app/src/lib/stores/authState.ts:11`). Rust auth state is built with vendor `AuthService`, keychain-backed secrets, encrypted license-session fallback for auth service secrets, and device identity provider (`app/src-tauri/src/auth.rs:320`).
+
+## 18. License Worker Findings
+
+- See `MVP-CRIT-001`, `MVP-HIGH-006`, and `MVP-MED-004`.
+- Positive evidence: Worker routes exist for all required high-level operations (`worker/src/index.js:59` through `worker/src/index.js:114`), admin endpoints require bearer token (`worker/src/index.js:1733`), and D1 migrations define licenses, device bindings, reset requests, idempotency records, audit events, and deletion requests (`worker/migrations/0001_init.sql:1`, `worker/migrations/0003_user_data_deletion_requests.sql:1`).
+
+## 19. Updater Findings
+
+- See `MVP-HIGH-004`.
+- Positive evidence: customer config includes updater `pubkey` and endpoint (`app/src-tauri/tauri.conf.json:51`), customer binary registers updater plugin (`app/src-tauri/src/main.rs:8`), customer UI exposes check/install controls (`app/src/routes/+page.svelte:1440`), and Worker serves `/updates/{target}/{arch}/{current_version}` (`worker/src/index.js:50`).
+
+## 20. Legal/Privacy/Policy Findings
+
+- See `MVP-HIGH-003`.
+- Positive evidence: in-app policies cover terms, privacy, deletion, compliance, notices, and refund (`app/src/lib/legal/policiesContent.ts:10`) and are accessible from Settings -> Policies (`app/src/routes/+page.svelte:1498`).
+
+## 21. Secure Storage Findings
+
+- See `MVP-HIGH-001` and `MVP-HIGH-002`.
+- Positive evidence: auth/session-specific fallback in `auth.rs` is encrypted and does not include raw license keys in the fallback structure (`app/src-tauri/src/auth.rs:47`, `app/src-tauri/src/auth.rs:140`). Runtime secure-store fallback is the separate plaintext-risk surface.
+
+## 22. Crash/Support Diagnostics Findings
+
+- See `MVP-HIGH-005`.
+- Positive evidence: crash drafts are user-initiated for submission and are locally dismissible (`app/src/routes/+page.svelte:645`, `app/src/routes/+page.svelte:639`).
+
+## 23. Legacy Python Pipeline Findings
+
+Status: complete for separation, needs manual retention decision.
 
 Evidence:
 
-- `README.md` describes API-based generation through MuAPI.
-- `app/src/routes/+page.svelte` initializes `mode = 'api'`.
-- `app/src/lib/api/tauriClient.ts` types `GenerateRequest.mode` as `'api'`.
-- Packaging READMEs state local runtime/model bundles are not packaged for the API-only release path.
-- `docs/local-processing-removal-audit.md` separately concluded the active app path is API mode only.
-
-## 8. MVP Status Matrix
-
-| Area | Status | Evidence | Notes |
-| --- | --- | --- | --- |
-| Customer license gate | Complete | `app/src/routes/+page.svelte`, `app/src/lib/stores/authState.ts`, `app/src-tauri/src/commands/generate.rs` | Main app UI and generation require licensed or offline-grace state. |
-| License activation/session | Complete | `app/src/lib/api/authClient.ts`, `app/src-tauri/src/commands/auth.rs`, `vendor/license-control-suite/` | Uses existing auth service and secure persistence patterns. |
-| Device reset | Complete | `app/src/routes/+page.svelte`, `worker/src/index.js`, `worker/test/contract.test.js` | Customer request/status and admin approve/reject exist. |
-| User data deletion | Mostly complete | `app/src/routes/+page.svelte`, `worker/src/index.js`, `worker/migrations/0003_user_data_deletion_requests.sql` | Source flow exists; standalone deletion notice file is missing. |
-| MuAPI generation | Mostly complete | `app/src-tauri/src/core/api_mode/muapi.rs`, `app/src-tauri/src/core/pipeline.rs` | Functional path exists; explicit 429/5xx retry policy remains a TODO/manual decision. |
-| Output JSON | Complete | `app/src/lib/api/tauriClient.ts`, `app/src-tauri/src/commands/generate.rs` | Output path picker and atomic JSON write are wired. |
-| Hosted clip library/actions | Complete | `app/src/routes/+page.svelte` | Open/copy actions are for remote clip URLs. |
-| API key profiles | Complete | `app/src/lib/api/runtimeClient.ts`, `app/src-tauri/src/commands/runtime.rs` | MuAPI/OpenAI profile wrappers and secure-store commands exist. |
-| Crash draft | Complete with manual endpoint | `app/src/routes/+page.svelte`, `app/src/support/crashDraft.ts` | User-initiated only; endpoint is env-configured. |
-| Customer updater | Complete pending release validation | `app/src-tauri/tauri.conf.json`, `app/src/lib/api/updaterClient.ts`, `worker/src/index.js` | Tauri updater plugin and Worker update endpoint exist. |
-| Admin updater | Needs manual decision | `app/src-tauri/tauri.admin.conf.json`, `app/src-tauri/src/bin/admin_desktop.rs` | Admin config has no updater plugin/endpoints. |
-| Admin desktop | Complete | `app/src/admin/lib/adminClient.ts`, `app/src-tauri/src/bin/admin_desktop.rs`, `app/src-tauri/src/commands/admin.rs` | Admin command surface and Worker calls exist. |
-| Worker licensing | Complete with production validation needed | `worker/src/index.js`, `worker/src/store.js`, `worker/test/contract.test.js` | Routes, D1 helpers, and contract tests exist. |
-| Gumroad ingestion | Complete with live-secret validation needed | `worker/src/index.js`, `worker/README.md` | Server-to-server sale verification is documented. |
-| Packaging docs | Mostly complete | `packaging/linux/README.md`, `packaging/macos/README.md`, `packaging/windows/README.md` | API-only path is documented. |
-| Validation scripts | Complete | `.scripts/run-*.sh` | Manual execution required by repo policy. |
-
-## 9. Customer End-to-End Flow
-
-Expected MVP path:
-
-1. Customer activates Gumroad license.
-2. App reaches licensed or offline-grace state.
-3. Customer configures MuAPI profile.
-4. Customer submits YouTube URL and generation settings.
-5. Tauri command starts API-mode generation and emits progress.
-6. MuAPI stages download/transcribe/highlight/clip.
-7. App records project result, hosted clip URLs, and optional output JSON.
+- Legacy CLI accepts only `--mode api` (`python_legacy/main.py:18`).
+- Legacy pipeline is API/MuAPI-based and not called by customer Tauri source (`python_legacy/shorts_generator/pipeline.py:76`).
+- Current production source search found no active app packaging/runtime call into `python_legacy`.
 
-Evidence:
+Recommended action:
 
-- `app/src/routes/+page.svelte` imports auth, runtime, generation, updater, crash, and legal clients.
-- `isLicensedAppSession` controls the authenticated shell.
-- `submitGenerate` calls `runGenerateAndStream`.
-- `app/src/lib/api/tauriClient.ts` invokes `generate_shorts_stream`.
-- `app/src-tauri/src/main.rs` registers `generate_shorts_stream`.
-- `app/src-tauri/src/commands/generate.rs` checks auth state before generation and writes optional output JSON.
+- Keep `python_legacy` as explicit reference/parity code or move it out of production release artifacts. Do not present it as the active desktop runtime.
 
-## 10. Frontend UI Verification
+## 24. Packaging/Runtime Bundle Findings
 
-The customer frontend is MVP-capable:
+- See `MVP-MED-005`.
+- Positive evidence: Tauri customer bundle has empty `resources` (`app/src-tauri/tauri.conf.json:49`), and packaging docs say no local runtime/model bundles are packaged for API-only release.
 
-- License activation and reset states are represented.
-- Generator, library, settings, diagnostics, policies, updater, deletion, and crash-draft UI are present.
-- Settings load `appConfigSummary`, `runtimeContext`, and MuAPI profiles.
-- Setup blockers focus on MuAPI configuration.
-- Deletion status lookup token is stored through secure store rather than ordinary local storage.
+## 25. Removed Local-Processing Leftovers
 
-Risk note: local project history remains in local storage, which is acceptable for current MVP assumptions but should remain documented as user data.
+Current production source does not show active local-processing runtime code under `app/src-tauri/src/core`; Graphify’s merged report contains stale local-mode nodes from older graph output or excluded/non-current files. Source search found no active `local_mode`, `python_runtime`, `tool_resolver`, `process_supervisor`, runtime pack, `yt-dlp`, or `ffmpeg` production Rust modules in the current tree.
 
-## 11. Frontend-To-Tauri Contract Verification
-
-Frontend command wrappers match registered customer commands:
-
-- `activate_license`
-- `validate_session`
-- `request_device_reset`
-- `get_device_reset_status`
-- `request_user_data_deletion`
-- `get_user_data_deletion_status`
-- `clear_local_session`
-- `get_auth_state`
-- `pick_output_json_path`
-- `generate_shorts_stream`
-- `cancel_generate_run`
-- `app_config_summary`
-- `runtime_context`
-- secure store and API key profile commands
+Remaining stale/future-provider leftovers:
 
-Evidence:
+- OpenAI provider config and runtime profile support remain despite MuAPI-only UI and pipeline. See `MVP-MED-003`.
+- CSS class names containing `model-*` remain in `app/src/routes/+page.svelte`, but source search did not find active local-model behavior tied to those names.
 
-- Wrappers: `app/src/lib/api/authClient.ts`, `app/src/lib/api/tauriClient.ts`, `app/src/lib/api/runtimeClient.ts`
-- Registration: `app/src-tauri/src/main.rs`
+## 26. End-to-End MVP Flow Verification
 
-No frontend wrapper was found for a local video picker or local-model generation mode.
+### Customer flow
 
-## 12. Tauri Command And Capability Verification
+Status: **Partial**
 
-Customer Tauri app:
+Flow check:
 
-- Registers auth, privacy, file picker, generation, health, runtime, secure-store, and API key profile commands.
-- Registers Tauri updater plugin.
-- Uses `app/src-tauri/capabilities/default.json`, which grants `core:default` and `updater:default`.
+- Open app: complete (`main.js` -> `App.svelte` -> route).
+- Authenticate/validate license: integrated, but backend device-bound semantics are incomplete.
+- Configure required inputs: partial; MuAPI profile setup exists.
+- Start API-based generation: complete at command level.
+- Track progress/status: partial; progress events exist, but cancellation only takes effect at stage boundaries.
+- Receive generated clips/output: partial; all clip failures can still be reported as success.
+- Handle failure/retry: partial; error panel exists, but retry UX is generic.
+- Access support/privacy/legal/update actions: partial; actions exist, but crash redaction and deletion notice artifact are incomplete.
 
-Admin Tauri app:
+### Admin flow
 
-- Registers admin config, overview, list, reset decision, deletion decision, and disable-license commands.
-- Uses `app/src-tauri/capabilities/admin.json`, which grants `core:default`.
-- Does not register updater plugin.
+Status: **Partial**
 
-This separation is security-appropriate, but admin update policy remains unresolved.
+Flow check:
 
-## 13. Rust Pipeline Verification
+- Open admin app: complete.
+- Access admin functions: complete after base URL/token setup.
+- View licenses/devices/audit events: complete at route/client level.
+- Approve/reject reset requests: complete at route/client level.
+- Approve deletion requests: complete at route/client level.
+- Call worker/admin endpoints safely: partial; bearer auth exists, but admin updater/manual update path needs decision and Worker security primitives need hardening.
 
-The Rust generation command path is MVP-capable:
+### Worker flow
 
-- `GenerateShortsCommand` accepts URL, clip count, aspect ratio, format, language, output JSON, and mode.
-- `generate_shorts_stream` emits `generate-progress` events.
-- `generation_auth_error` rejects generation unless auth state is licensed or offline grace.
-- `run_generate_with_sink` calls `generate_shorts_with_progress_live`.
-- Output JSON uses `write_result_json_atomic`.
-- Cancellation and timeout paths produce safe error envelopes.
+Status: **Partial**
 
-Relevant files:
+Flow check:
 
-- `app/src-tauri/src/commands/generate.rs`
-- `app/src-tauri/src/core/pipeline.rs`
-- `app/src-tauri/src/core/contracts.rs`
-- `app/src-tauri/src/runtime/fs_output.rs`
+- Receive activation/validation/reset/webhook/deletion/admin request: complete route table.
+- Validate request: partial; request shape checks exist, device binding policy missing.
+- Read/write D1 state: complete schema/helpers for current routes.
+- Return stable contract response: partial; envelope shape is stable, but token/hash primitives need hardening.
+- Support desktop/admin clients: partial; route paths match, but auth policy mismatch blocks MVP release.
 
-## 14. MuAPI Integration Verification
+## 27. Recommended Completion Plan
 
-MuAPI client source supports:
+### Critical before MVP release
 
-- API key header construction.
-- Submit endpoint POST returning request ID.
-- Poll result endpoint.
-- Status-change progress emission.
-- Timeout handling.
-- Transport retry on timeout/connect errors.
+- `worker/src/index.js`, `worker/src/store.js`: enforce one active device per license in `handleActivate`; return `device_already_bound` for different active device. Risk: high. Suggested validation: manual activation on device A then device B, reset approval, reactivation.
+- `app/src-tauri/src/core/pipeline.rs`, `app/src-tauri/src/core/api_mode/clipper.rs`, `app/src/routes/+page.svelte`: convert zero successful clip URLs into failure or partial-success UX. Risk: high. Suggested validation: MuAPI autocrop failure simulation or controlled provider failure.
 
-Risk: `app/src-tauri/src/core/api_mode/muapi.rs` has a TODO: `decide explicit retry policy for 429/5xx parity-extension`. Current source returns API errors immediately for client/server status failures instead of a documented 429/5xx retry/backoff policy.
+### High priority before public release
 
-## 15. Licensing And Auth Verification
+- `app/src-tauri/src/commands/runtime.rs`: remove plaintext secure fallback or encrypt it; fail closed for API/admin/deletion secrets if keychain unavailable. Risk: high. Suggested validation: keychain unavailable scenario and saved profile/admin token inspection.
+- `app/src-tauri/src/main.rs`, `app/src-tauri/src/commands/runtime.rs`, `app/src/lib/api/runtimeClient.ts`: remove or restrict `runtime_machine_secret`. Risk: high. Suggested validation: command inventory review.
+- `app/src/DELETION_NOTICE.md`: create standalone deletion notice or remove from release inventory by manual decision. Risk: medium. Suggested validation: packaging/docs inventory check.
+- `app/src-tauri/src/bin/admin_desktop.rs`, `app/src-tauri/tauri.admin.conf.json`, `app/src/admin/AdminApp.svelte`: decide and implement/document admin updater path. Risk: medium. Suggested validation: admin update/manual update QA.
+- `app/src/support/crashDraft.ts`: expand redaction before enabling crash submission endpoint. Risk: high. Suggested validation: crash draft redaction samples with tokens/emails/paths.
+- `worker/src/index.js`, `worker/src/store.js`: replace token/idempotency crypto primitives. Risk: high. Suggested validation: activation/validation compatibility check and replay/idempotency checks.
 
-Licensing integration is MVP-capable:
+### Medium priority after MVP
 
-- Customer auth commands are routed through Tauri wrappers.
-- License-control-suite provides auth core, Tauri persistence, admin domain, shared contracts, and downstream harnesses.
-- `app/src-tauri/src/commands/generate.rs` enforces license state before generation.
-- Worker activation validates license state and persists device binding.
-- Worker validation checks signed token, active license, and active device binding.
+- `app/src/lib/api/runtimeClient.ts`, `app/src-tauri/src/commands/runtime.rs`: remove unused runtime filesystem exports/commands or document production need.
+- `app/src-tauri/src/main.rs`, `app/src-tauri/src/commands/generate.rs`: remove or intentionally support unused generation commands.
+- `app/src-tauri/src/core/config.rs`, `app/src-tauri/src/commands/runtime.rs`, `app/src/lib/api/runtimeClient.ts`: remove or reserve OpenAI provider config.
+- `worker/src/index.js`: include Gumroad readiness in `/readyz` or expose purchase-ingestion readiness separately.
 
-Sensitive handling observed:
+### Low priority / cleanup
 
-- Worker hashes license keys with `HASH_PEPPER` and SHA-256.
-- Frontend tests include assertions that plaintext license material is not persisted in local storage.
-- UI error mapping uses safe user-facing messages.
+- `worker/migrations/0002_add_masked_license_key_to_reset_requests.sql`: document non-idempotent replay behavior.
+- `packaging/*/README.md`: expand non-test packaging/release notes.
 
-## 16. Worker Contract Verification
+### Needs manual product decision
 
-Worker routes cover MVP licensing/service operations:
+- Is admin desktop part of the same auto-update release channel as customer desktop?
+- Is plaintext local fallback ever acceptable for API keys/admin tokens/deletion lookup tokens?
+- Is OpenAI provider support future scope or stale MVP scope?
+- Should advanced runtime filesystem/machine-secret commands remain in customer build?
+- Should `python_legacy` ship with production source artifacts or be moved to reference-only archival location?
 
-- `GET /health`
-- `GET /readyz`
-- `GET /updates/:target/:arch/:current_version`
-- `POST /v1/license/activate`
-- `POST /v1/license/validate`
-- `POST /v1/license/reset/request`
-- `POST /v1/license/reset/status`
-- `POST /v1/privacy/delete/request`
-- `POST /v1/privacy/delete/status`
-- Admin overview/list/reset/deletion/disable routes
-- `POST /v1/license/webhooks/gumroad`
-
-Worker D1 helpers cover licenses, device bindings, resets, deletion requests, idempotency records, audit events, and admin listing.
-
-Risk: `worker/src/store.js` uses `stableHash()` for idempotency payload matching and comments that it is deterministic scaffold behavior. License secrecy is not directly affected because license key hashes use SHA-256 with `HASH_PEPPER`, but idempotency hashing should be upgraded or explicitly accepted before production.
-
-## 17. Admin Desktop Verification
-
-Admin frontend and Tauri contracts are MVP-capable:
-
-- `app/src/admin/lib/adminClient.ts` invokes admin config, overview, license list, device binding list, audit list, idempotency list, reset list, deletion list, reset approve/reject, deletion approve/reject, and disable-license commands.
-- `app/src-tauri/src/bin/admin_desktop.rs` registers corresponding commands.
-- Admin app has a separate Tauri config and window label.
-- Admin capability is separate from the customer default capability.
-
-Manual decision: whether admin desktop requires the same updater lifecycle as the customer app.
-
-## 18. User Data Deletion Verification
-
-Implemented flow:
-
-- Customer submits license key, optional purchaser email, and `DELETE` confirmation.
-- Worker creates a deletion request and lookup token.
-- Customer can refresh status with request ID and lookup token.
-- Admin can list, approve, or reject deletion requests.
-- Approval can disable/anonymize backend licensing data and record summary metadata.
-
-Evidence:
-
-- `app/src/routes/+page.svelte`
-- `app/src/lib/api/authClient.ts`
-- `app/src-tauri/src/commands/privacy.rs`
-- `worker/src/index.js`
-- `worker/src/store.js`
-- `worker/migrations/0003_user_data_deletion_requests.sql`
-- `.scripts/run-user-data-deletion-validation.sh`
-
-Gap: `app/src/DELETION_NOTICE.md` is missing from the current filesystem. If release expectations require a standalone deletion notice artifact, MVP is incomplete until it is restored or the requirement is removed.
-
-## 19. Updater Verification
-
-Customer updater:
-
-- `app/src-tauri/src/main.rs` registers `tauri_plugin_updater`.
-- `app/src-tauri/capabilities/default.json` includes `updater:default`.
-- `app/src-tauri/tauri.conf.json` sets `createUpdaterArtifacts`, updater pubkey, and Worker update endpoint.
-- `app/src/lib/api/updaterClient.ts` uses the official Tauri updater plugin.
-- `worker/src/index.js` implements `/updates/:target/:arch/:current_version`.
-- `.scripts/generate-customer-updater-manifest.mjs` intentionally filters customer artifacts only.
-
-Admin updater:
-
-- `app/src-tauri/src/bin/admin_desktop.rs` does not register updater plugin.
-- `app/src-tauri/tauri.admin.conf.json` has no updater config.
-- `app/src-tauri/capabilities/admin.json` has no updater permission.
-
-Classification: needs manual product decision, not proven defect.
-
-## 20. Packaging And Release Verification
-
-Packaging docs currently align with the API-only MVP:
-
-- `packaging/linux/README.md` states local runtime/model bundles are not packaged for the API-only release path.
-- macOS and Windows packaging docs should be kept consistent with that statement.
-- `app/package.json` has separate customer/admin Tauri dev and build scripts.
-- Root `package.json` uses pnpm scripts and includes customer/admin bundle scripts.
-- `.scripts/validate-release-ci-config.sh` checks customer/admin release artifact expectations and customer updater config.
-
-Release validation still requires manual execution. No release workflow, signing, or artifact command was run.
-
-## 21. Python Legacy Verification
-
-Python legacy remains documented as a CLI/API-mode pipeline:
-
-- `README.md` lists `python_legacy/` as Python CLI and API-mode pipeline.
-- `python_legacy/shorts_generator/muapi.py` includes MuAPI submit/poll retry behavior.
-- Parity and characterization tests exist under `tests/`.
-
-This is compatible with the API-based MVP assumption. It should not be treated as evidence of local desktop processing unless local runtime/model source paths are restored.
-
-## 22. Test And Fixture Coverage
-
-Observed coverage areas:
-
-- Frontend boot and UI flow tests under `app/src/tests/` and `app/tests/`.
-- Auth state and storage tests.
-- Admin frontend tests.
-- Updater client tests.
-- Rust command/config/MuAPI/auth/updater/pipeline tests under `app/src-tauri/tests/`.
-- Worker contract tests under `worker/test/contract.test.js`.
-- License Worker fixture parity under `tests/parity/`.
-- Golden pipeline fixtures under `tests/fixtures/`.
-- License-control-suite regression, baseline, IPC, integration, and contract tests.
-
-Coverage appears broad enough for MVP, but this audit did not run it.
-
-## 23. Validation Plan
-
-Manual commands the user should run from the repository root:
+## 28. Validation Plan
+
+Per repository instructions, this audit did not run tests, builds, lints, package installs, or validation scripts.
+
+Manual production validation categories for the user to run after fixes:
+
+- Frontend type checking for customer/admin app.
+- Customer frontend production build.
+- Admin frontend production build.
+- Rust/Tauri customer build.
+- Rust/Tauri admin build.
+- Worker syntax/build/deployment dry-run validation.
+- Search validation for stale removed-feature references.
+- Manual QA for customer activation, device-bound rejection, reset approval, MuAPI profile setup, successful generation, clip-render failure, output JSON write, updater check, deletion request/status, crash draft redaction, and policies.
+- Manual QA for admin setup, overview, licenses, devices, audit events, reset decisions, deletion approval/retry, and license disabling.
+
+Exact commands were not executed by the agent. Suggested manual commands, adjusted to the repository's existing script/pnpm policy:
 
 ```bash
-pnpm --dir app run test
+pnpm --dir app run check
 pnpm --dir app run build
-pnpm --dir worker run test
-cargo test --manifest-path app/src-tauri/Cargo.toml --locked
-bash .scripts/run-updater-endpoint-validation.sh
-bash .scripts/run-admin-desktop-validation.sh
-bash .scripts/run-customer-onboarding-validation.sh
-bash .scripts/run-user-data-deletion-validation.sh
-bash .scripts/run-remove-local-processing-validation.sh
-bash .scripts/run-policy-muapi-liability-validation.sh
-bash .scripts/validate-release-ci-config.sh
+cargo check --locked
 ```
 
-Do not run deploy/sign/release commands until secrets, release target, and signing behavior are explicitly approved.
+Run only the repository-approved Worker/admin/customer validation scripts that are relevant to the changed area. Do not run dependency installation as part of validation.
 
-## 24. Findings
+## 29. Final Verdict
 
-### MVP-AUD-001
+**MVP INCOMPLETE**
 
-- MVP area: User data deletion/legal notice
-- Classification: Missing artifact
-- File path: `app/src/DELETION_NOTICE.md`
-- Symbol/string/config: standalone deletion notice file
-- Missing/incomplete behavior: The file is absent from the current filesystem, while deletion flow exists in UI, Tauri, Worker, migrations, and validation script.
-- MVP impact: Users/operators may lack a standalone inspectable deletion notice if release packaging or policy expects one.
-- Source or Graphify evidence: `find app/src ...` found only `app/src/lib/legal`; deletion implementation exists in `app/src/routes/+page.svelte`, `worker/src/index.js`, and `.scripts/run-user-data-deletion-validation.sh`.
-- Recommended action: Restore `app/src/DELETION_NOTICE.md` or document that in-app policy text replaces it.
-- Priority: High
-- Risk: Compliance/support ambiguity
-- Confidence: High
-
-### MVP-AUD-002
-
-- MVP area: Admin updater/release lifecycle
-- Classification: Needs manual decision
-- File path: `app/src-tauri/tauri.admin.conf.json`, `app/src-tauri/src/bin/admin_desktop.rs`, `app/src-tauri/capabilities/admin.json`
-- Symbol/string/config: updater plugin, `plugins.updater`, `updater:default`
-- Missing/incomplete behavior: Customer app has updater plugin/config/capability; admin app does not.
-- MVP impact: Admin desktop may require manual reinstall/update unless intentionally excluded.
-- Source or Graphify evidence: Customer config contains updater endpoint and pubkey; admin config has no updater section; admin main registers no updater plugin.
-- Recommended action: Decide whether admin app ships with updater support. If yes, add a scoped admin updater design and tests. If no, document manual admin update policy.
-- Priority: Medium
-- Risk: Operational drift or unsupported admin installs
-- Confidence: High
-
-### MVP-AUD-003
-
-- MVP area: MuAPI resilience
-- Classification: Risk/manual decision
-- File path: `app/src-tauri/src/core/api_mode/muapi.rs`
-- Symbol/string/config: `TODO: decide explicit retry policy for 429/5xx parity-extension`
-- Missing/incomplete behavior: Timeout/connect retries exist; explicit 429/5xx retry/backoff behavior is not documented or implemented.
-- MVP impact: Rate limits or transient server failures may fail immediately instead of following a deliberate retry policy.
-- Source or Graphify evidence: `MuApiClient::submit` and `fetch_result` return API errors for client/server statuses; Graphify app community identifies MuAPI client as core pipeline node.
-- Recommended action: Decide accepted MVP behavior. If retries are required, define 429/5xx retry count, backoff, max wait, progress messaging, and tests.
-- Priority: Medium
-- Risk: User-visible generation failures under provider throttling/outage
-- Confidence: High
-
-### MVP-AUD-004
-
-- MVP area: Worker idempotency
-- Classification: Production-hardening risk
-- File path: `worker/src/store.js`
-- Symbol/string/config: `stableHash()`
-- Missing/incomplete behavior: Idempotency payload matching uses a deterministic scaffold hash.
-- MVP impact: Idempotency collision resistance is weaker than expected for production-grade request replay protection.
-- Source or Graphify evidence: `stableHash()` comment says scaffold behavior; Worker route handlers use it for activation, reset, deletion, admin decisions, disable, and webhook idempotency payload hashes.
-- Recommended action: Replace with SHA-256 over canonical JSON or explicitly accept current risk for MVP with compensating tests.
-- Priority: Medium
-- Risk: Replay/idempotency integrity weakness
-- Confidence: Medium
-
-### MVP-AUD-005
-
-- MVP area: Release readiness proof
-- Classification: Unverified
-- File path: `.scripts/run-*.sh`, `app/src-tauri/tests/*`, `worker/test/contract.test.js`
-- Symbol/string/config: manual validation commands
-- Missing/incomplete behavior: Test/build/validation status is unknown in this audit because repo policy prohibits agents from running validation commands.
-- MVP impact: Source appears mostly complete, but release cannot be declared ready until manual validation passes.
-- Source or Graphify evidence: Broad test and validation scripts exist; none were executed for this report.
-- Recommended action: Run the manual validation plan in section 23 and attach results before release decision.
-- Priority: High
-- Risk: Hidden regression
-- Confidence: High
-
-### MVP-AUD-006
-
-- MVP area: Worker admin route documentation
-- Classification: Documentation gap
-- File path: `worker/README.md`
-- Symbol/string/config: admin routes list
-- Missing/incomplete behavior: README lists privacy admin routes but omits several implemented admin routes such as overview, licenses, device bindings, audit events, idempotency records, reset lists/decisions, and license disable.
-- MVP impact: Operator documentation understates the admin API surface.
-- Source or Graphify evidence: `worker/src/index.js` implements the routes; `worker/README.md` route list is shorter.
-- Recommended action: Update Worker README route inventory after confirming public/admin documentation expectations.
-- Priority: Low
-- Risk: Operator confusion
-- Confidence: High
-
-### MVP-AUD-007
-
-- MVP area: Third-party notices
-- Classification: Needs manual completion
-- File path: `app/src/lib/legal/policiesContent.ts`
-- Symbol/string/config: `Third-Party Notices`
-- Missing/incomplete behavior: In-app notice states exact license metadata is not shown and operator must generate release notices from final inventories.
-- MVP impact: Release may be incomplete if shipped binaries lack final third-party notice artifacts.
-- Source or Graphify evidence: Policy text explicitly says exact license metadata is not shown in-app.
-- Recommended action: Generate and include final third-party license notices for distributed dependencies and binary contents.
-- Priority: Medium
-- Risk: Licensing/compliance gap
-- Confidence: High
-
-### MVP-AUD-008
-
-- MVP area: Live service readiness
-- Classification: Unverified external dependency
-- File path: `worker/README.md`, `worker/src/index.js`, `app/src-tauri/tauri.conf.json`
-- Symbol/string/config: Gumroad verification, Cloudflare D1/secrets, updater manifest URL, MuAPI credentials
-- Missing/incomplete behavior: Source supports these flows, but live secrets, D1 migrations, Worker deployment, update manifest, and MuAPI account availability were not verified.
-- MVP impact: Local source can be complete while production service setup is incomplete.
-- Source or Graphify evidence: Worker readiness checks require D1 and secrets; updater config points to Worker update route; no cloud-state command was run.
-- Recommended action: Perform a separate production readiness runbook with approved secrets and non-agent deployment validation.
-- Priority: High
-- Risk: Production launch failure
-- Confidence: High
-
-## 25. Completion Plan
-
-1. Resolve MVP-AUD-001 by restoring or formally replacing the deletion notice artifact.
-2. Resolve MVP-AUD-002 with a product decision on admin updater support.
-3. Resolve MVP-AUD-003 by documenting or implementing MuAPI 429/5xx retry behavior.
-4. Resolve MVP-AUD-004 by replacing Worker idempotency hash or approving current MVP risk.
-5. Run the validation plan and record pass/fail evidence.
-6. Update Worker admin route documentation.
-7. Generate final third-party notices for release artifacts.
-8. Complete production readiness checks for Cloudflare, Gumroad, updater manifest, and MuAPI credentials.
-
-## 26. Manual Decisions Required
-
-- Should the admin desktop receive automatic updater support, or is manual admin update acceptable for MVP?
-- Is `app/src/DELETION_NOTICE.md` required as a standalone file, or does in-app policy text satisfy the release requirement?
-- Should MuAPI 429/5xx errors retry in MVP, and with what backoff/limits?
-- Is Worker `stableHash()` acceptable for MVP idempotency, or must it be replaced before launch?
-- Are exact third-party notices required inside the app, bundled beside installers, or both?
-- What production readiness evidence is required before declaring launch-ready?
-
-## 27. Commands Not Run
-
-The following categories were intentionally not run:
-
-- No `pnpm install`, `npm`, `npx`, `cargo update`, `pip install`, or dependency-changing command.
-- No tests, builds, linters, format checks, validation scripts, or Tauri bundling.
-- No dev server, Tauri GUI, browser GUI, deployment, Wrangler deploy, release publication, signing, or updater publication.
-- No destructive cleanup commands.
-- No Graphify regeneration.
-
-## 28. Final Verdict
-
-**MVP mostly complete with non-blocking gaps and manual decisions.**
-
-The source tree has the core MVP implementation for an API-based, license-gated MuAPI desktop product. The strongest evidenced blockers are release/process readiness, not missing core generation or licensing code. The MVP should not be called release-ready until the deletion notice decision, admin updater decision, MuAPI retry decision, Worker idempotency hardening decision, final notices, and manual validation results are closed.
+The production application is substantially integrated and much of the MVP surface is present, but release readiness is blocked by two critical production gaps: Worker activation does not enforce the device-binding/reset contract, and generation can succeed without producing any usable clip. High-priority security and release-readiness gaps also remain around runtime secure-storage fallback, exposed machine-secret command surface, crash redaction, admin updater strategy, missing standalone deletion notice, and Worker crypto/idempotency primitives.

@@ -1,0 +1,52 @@
+Get Started
+Introduction
+Build, automate, and manage software licensing with Devolens (formerly Cryptolens).
+
+​
+Start building
+Getting started guide
+Create your first product, issue a license key, and add license verification to your application.
+API reference
+Review the Web API endpoints used to create keys, verify licenses, manage customers, and automate workflows.
+Libraries and platforms
+Find SDKs and platform-specific guidance for .NET, Python, Java, Node.js, C++, Go, and more.
+AI-assisted integration and MCP
+Integrate with coding agents using Devolens skills and llms.txt files, or connect MCP clients to query analytics and manage licensing with scoped permissions.
+Before publishing your integration, review the troubleshooting guide and the checklist before publishing.
+​
+Choose a licensing model
+Licensing models
+Compare node-locked, floating, subscription, usage-based, trial, and user-based licensing models.
+Examples
+Review common implementation patterns such as key verification, offline licensing, trials, and key generation.
+​
+Production readiness
+For platform reliability and customer proof points, see Why Choose Devolens.
+Security and compliance
+Review privacy, GDPR, data protection, and security guidance for production licensing workflows.
+License server and offline licensing
+Support enterprise customers that need licensing in offline, on-premise, or restricted network environments.
+Checklist before publishing
+Verify expiry handling, activation behavior, access-token scope, and production configuration before launch.
+Migration guidance
+Plan a gradual transition from an internal licensing system or another provider without disrupting customers.
+​
+Automate operations
+Payment processing and providers
+Connect payments to license creation, renewals, customer updates, and subscription workflows.
+Zapier and n8n integration
+Automate workflows such as payment success to license creation, CRM updates, and expiry reminders.
+Customer portal
+Let customers manage licenses, view purchases, and access self-service licensing workflows.
+Reseller portal
+Invite resellers who can issue licenses and manage customers from their own portal.
+​
+Manage in the dashboard
+Control Panel and Web UI
+Manage products, licenses, customers, account access, templates, and dashboard settings.
+KPI dashboards
+Track license activity, usage trends, and customer behavior from the Devolens dashboard.
+Anomaly detection
+Detect unusual usage patterns and investigate suspicious or failing license activity.
+Messaging API
+Send update notices, announcements, and in-app messages to selected users or all users.

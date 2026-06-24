@@ -1,10 +1,11 @@
 use async_trait::async_trait;
 use license_control_suite::core::{
     AccessToken, ActivationOutcome, ActivationRequest, AuthError, BoundDeviceSummary,
-    DeviceResetRequest, DeviceResetStatus, EntitlementStatus, LicenseKey, MaskedLicenseKey,
+    DeviceId, DeviceResetRequest, DeviceResetStatus, EntitlementStatus, LicenseKey, MaskedLicenseKey,
     PurchaseEmail, ResetRequestId, ValidationOutcome, WorkerClient,
 };
 use license_control_suite::modules::user_reg::auth_licensing_tauri::HttpWorkerClient;
+use serde::Deserialize;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -192,7 +193,7 @@ impl LicenseWorkerReadiness {
         Self {
             backend_mode: config.backend_mode,
             contract_adapter_enabled: true,
-            provider_adapter_enabled: false,
+            provider_adapter_enabled: config.backend_mode == LicenseBackendMode::Devolens,
             webhook_verifier_enabled: false,
             idempotency_enabled: true,
             durable_store_enabled: false,
@@ -214,11 +215,335 @@ pub fn build_worker_client(
                 WorkerClientPolicy::from_config(config),
             )))
         }
+        LicenseBackendMode::Devolens => {
+            let devolens = DevolensWorkerClient::with_timeout(
+                config,
+                Duration::from_millis(config.timeout_ms),
+            )?;
+            Ok(Arc::new(PolicyWorkerClient::new(
+                Arc::new(devolens),
+                WorkerClientPolicy::from_config(config),
+            )))
+        }
         LicenseBackendMode::Mock => Ok(Arc::new(PolicyWorkerClient::new(
             Arc::new(MockLicenseWorkerClient),
             WorkerClientPolicy::from_config(config),
         ))),
     }
+}
+
+#[derive(Clone)]
+pub struct DevolensWorkerClient {
+    base_url: String,
+    access_token: String,
+    product_id: String,
+    client: reqwest::Client,
+}
+
+impl DevolensWorkerClient {
+    pub fn with_timeout(
+        config: &LicenseWorkerConfig,
+        timeout: Duration,
+    ) -> Result<Self, AuthError> {
+        if config.devolens_access_token.trim().is_empty()
+            || config.devolens_product_id.trim().is_empty()
+        {
+            return Err(AuthError::Unauthorized);
+        }
+        let client = reqwest::Client::builder()
+            .timeout(timeout)
+            .build()
+            .map_err(|err| AuthError::Storage(err.to_string()))?;
+        Ok(Self {
+            base_url: config.devolens_base_url.trim_end_matches('/').to_string(),
+            access_token: config.devolens_access_token.trim().to_string(),
+            product_id: config.devolens_product_id.trim().to_string(),
+            client,
+        })
+    }
+
+    async fn post_form(
+        &self,
+        endpoint: &str,
+        params: &[(&str, &str)],
+    ) -> Result<reqwest::Response, AuthError> {
+        let url = format!("{}/{}", self.base_url, endpoint.trim_start_matches('/'));
+        self.client
+            .post(url)
+            .form(params)
+            .send()
+            .await
+            .map_err(|_| AuthError::WorkerUnreachable)
+    }
+
+    async fn activate_with_devolens(
+        &self,
+        request: &ActivationRequest,
+        machine_code: &str,
+    ) -> Result<DevolensActivationResponse, AuthError> {
+        let response = self
+            .post_form(
+                "api/key/Activate",
+                &[
+                    ("token", self.access_token.as_str()),
+                    ("ProductId", self.product_id.as_str()),
+                    ("Key", request.license_key.expose_secret()),
+                    ("MachineCode", machine_code),
+                ],
+            )
+            .await?;
+        parse_devolens_activation_response(response).await
+    }
+}
+
+#[async_trait]
+impl WorkerClient for DevolensWorkerClient {
+    async fn activate(&self, request: ActivationRequest) -> Result<ActivationOutcome, AuthError> {
+        let device_id = DeviceId::from_public_key(&request.device_public_key);
+        let activation = self
+            .activate_with_devolens(&request, device_id.as_str())
+            .await?;
+        if !activation.is_success() {
+            return Err(AuthError::InvalidLicenseKey);
+        }
+        if !activation.license_is_active() {
+            return Err(AuthError::ReauthRequired);
+        }
+
+        Ok(ActivationOutcome {
+            access_token: AccessToken::new(format!(
+                "devolens:{}:{}",
+                device_id.as_str(),
+                request.timestamp_ms
+            ))?,
+            masked_license_key: request.license_key.masked(),
+            bound_device: BoundDeviceSummary {
+                device_id,
+                public_key: request.device_public_key,
+                fingerprint: request.fingerprint,
+            },
+            entitlement: EntitlementStatus::Active,
+            token_expires_at_ms: activation
+                .expires_at_ms
+                .unwrap_or(request.timestamp_ms + 86_400_000),
+        })
+    }
+
+    async fn validate_session(&self, token: AccessToken) -> Result<ValidationOutcome, AuthError> {
+        let token_str = token.expose_secret();
+        if !token_str.starts_with("devolens:") {
+            return Ok(ValidationOutcome::ReauthRequired);
+        }
+
+        let response = self
+            .post_form(
+                "api/key/Validate",
+                &[
+                    ("token", self.access_token.as_str()),
+                    ("ProductId", self.product_id.as_str()),
+                    ("SessionToken", token_str),
+                ],
+            )
+            .await?;
+
+        let validation = parse_devolens_validation_response(response).await?;
+        if !validation.is_success() || !validation.license_is_active() {
+            return Ok(ValidationOutcome::Revoked);
+        }
+
+        let Some(masked_str) = validation.masked_license_key.as_ref() else {
+            return Ok(ValidationOutcome::ReauthRequired);
+        };
+        let Some(bound) = validation.bound_device.as_ref() else {
+            return Ok(ValidationOutcome::ReauthRequired);
+        };
+
+        let masked_license_key = MaskedLicenseKey::new(masked_str)?;
+        Ok(ValidationOutcome::Active {
+            masked_license_key,
+            bound_device: bound.clone(),
+            token_expires_at_ms: validation.token_expires_at_ms.unwrap_or(0),
+        })
+    }
+
+    async fn request_device_reset(
+        &self,
+        _request: DeviceResetRequest,
+    ) -> Result<DeviceResetStatus, AuthError> {
+        Err(AuthError::InvalidResetRequest)
+    }
+
+    async fn get_device_reset_status(
+        &self,
+        _request_id: ResetRequestId,
+    ) -> Result<DeviceResetStatus, AuthError> {
+        Err(AuthError::ResetRequestNotFound)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DevolensActivationResponse {
+    #[serde(rename = "result")]
+    pub result: Option<i64>,
+    #[serde(rename = "Result")]
+    pub result_pascal: Option<i64>,
+    #[serde(rename = "message")]
+    pub message: Option<String>,
+    #[serde(rename = "Message")]
+    pub message_pascal: Option<String>,
+    #[serde(rename = "licenseKey")]
+    pub license_key: Option<DevolensLicenseKey>,
+    #[serde(rename = "LicenseKey")]
+    pub license_key_pascal: Option<DevolensLicenseKey>,
+    #[serde(default)]
+    pub expires_at_ms: Option<i64>,
+}
+
+impl DevolensActivationResponse {
+    pub fn is_success(&self) -> bool {
+        self.result.or(self.result_pascal).unwrap_or(1) == 0
+    }
+
+    pub fn license_is_active(&self) -> bool {
+        let Some(license) = self.license_key.as_ref().or(self.license_key_pascal.as_ref()) else {
+            return self.is_success();
+        };
+        if license.blocked().unwrap_or(false) {
+            return false;
+        }
+        if let Some(expired) = license.expired() {
+            return !expired;
+        }
+        true
+    }
+
+    pub fn message(&self) -> Option<&str> {
+        self.message
+            .as_deref()
+            .or(self.message_pascal.as_deref())
+            .filter(|value| !value.trim().is_empty())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DevolensLicenseKey {
+    #[serde(rename = "blocked")]
+    pub blocked: Option<bool>,
+    #[serde(rename = "Blocked")]
+    pub blocked_pascal: Option<bool>,
+    #[serde(rename = "expired")]
+    pub expired: Option<bool>,
+    #[serde(rename = "Expired")]
+    pub expired_pascal: Option<bool>,
+}
+
+impl DevolensLicenseKey {
+    pub fn blocked(&self) -> Option<bool> {
+        self.blocked.or(self.blocked_pascal)
+    }
+
+    pub fn expired(&self) -> Option<bool> {
+        self.expired.or(self.expired_pascal)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DevolensValidationResponse {
+    #[serde(rename = "result")]
+    pub result: Option<i64>,
+    #[serde(rename = "Result")]
+    pub result_pascal: Option<i64>,
+    #[serde(rename = "message")]
+    pub message: Option<String>,
+    #[serde(rename = "Message")]
+    pub message_pascal: Option<String>,
+    #[serde(rename = "licenseKey")]
+    pub license_key: Option<DevolensLicenseKey>,
+    #[serde(rename = "LicenseKey")]
+    pub license_key_pascal: Option<DevolensLicenseKey>,
+    #[serde(rename = "maskedLicenseKey")]
+    pub masked_license_key: Option<String>,
+    #[serde(rename = "boundDevice")]
+    pub bound_device: Option<BoundDeviceSummary>,
+    #[serde(rename = "tokenExpiresAtMs")]
+    pub token_expires_at_ms: Option<i64>,
+}
+
+impl DevolensValidationResponse {
+    pub fn is_success(&self) -> bool {
+        self.result.or(self.result_pascal).unwrap_or(1) == 0
+    }
+
+    pub fn license_is_active(&self) -> bool {
+        let Some(license) = self.license_key.as_ref().or(self.license_key_pascal.as_ref()) else {
+            return self.is_success();
+        };
+        if license.blocked().unwrap_or(false) {
+            return false;
+        }
+        if let Some(expired) = license.expired() {
+            return !expired;
+        }
+        true
+    }
+
+    pub fn message(&self) -> Option<&str> {
+        self.message
+            .as_deref()
+            .or(self.message_pascal.as_deref())
+            .filter(|value| !value.trim().is_empty())
+    }
+}
+
+async fn parse_devolens_validation_response(
+    response: reqwest::Response,
+) -> Result<DevolensValidationResponse, AuthError> {
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|_| AuthError::WorkerUnreachable)?;
+    if !status.is_success() {
+        return match status {
+            reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => {
+                Err(AuthError::Unauthorized)
+            }
+            reqwest::StatusCode::BAD_REQUEST => Err(AuthError::InvalidLicenseKey),
+            _ => Err(AuthError::WorkerUnreachable),
+        };
+    }
+    serde_json::from_str::<DevolensValidationResponse>(&body)
+        .map_err(|err| AuthError::Serialization(err.to_string()))
+}
+
+async fn parse_devolens_activation_response(
+    response: reqwest::Response,
+) -> Result<DevolensActivationResponse, AuthError> {
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|_| AuthError::WorkerUnreachable)?;
+    if !status.is_success() {
+        return match status {
+            reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => {
+                Err(AuthError::Unauthorized)
+            }
+            reqwest::StatusCode::BAD_REQUEST => Err(AuthError::InvalidLicenseKey),
+            _ => Err(AuthError::WorkerUnreachable),
+        };
+    }
+    let parsed = serde_json::from_str::<DevolensActivationResponse>(&body)
+        .map_err(|err| AuthError::Serialization(err.to_string()))?;
+    if !parsed.is_success() {
+        return match parsed.message() {
+            Some(message) if message.to_ascii_lowercase().contains("machine") => {
+                Err(AuthError::DeviceAlreadyBound)
+            }
+            _ => Err(AuthError::InvalidLicenseKey),
+        };
+    }
+    Ok(parsed)
 }
 
 #[derive(Clone)]
