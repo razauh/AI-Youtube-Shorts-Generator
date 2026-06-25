@@ -105,6 +105,7 @@ scripts/graphify_split_merge.py
 !/.scripts/run-customer-onboarding-validation.sh
 !/.scripts/run-customer-csp-validation.sh
 !/.scripts/run-routes-inventory-validation.sh
+!/.scripts/run-d1-schema-validation.sh
 app/.scripts/
 .opencode/
 app/.opencode/

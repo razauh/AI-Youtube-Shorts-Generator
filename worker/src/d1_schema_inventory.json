@@ -1,0 +1,583 @@
+[
+  {
+    "table": "licenses",
+    "classification": "deprecate",
+    "retention_rule": "Local cache only. Devolens is the final authority for entitlements.",
+    "compatibility_rule": "Retain read-only fallback access for legacy client compatibility.",
+    "columns": [
+      {
+        "name": "license_key_hash",
+        "classification": "migrate",
+        "retention_rule": "Retain for local license mapping and verification caching.",
+        "compatibility_rule": "Read-only access during migration fallback.",
+        "caller_mapping": [
+          "getLicenseByHash",
+          "listLicensesByHashPrefix",
+          "updateLicenseEntitlementStatus",
+          "anonymizeLicenseForPrivacyDeletion",
+          "listAdminLicenses",
+          "writeVerifiedGumroadSale",
+          "getDeletionPreviewByLicenseHash",
+          "listAdminDeviceBindings"
+        ]
+      },
+      {
+        "name": "purchaser_email",
+        "classification": "delete_later",
+        "retention_rule": "Remove completely after migration. Anonymize/nullify upon user privacy request.",
+        "compatibility_rule": "Must be masked in support/admin UI lookups.",
+        "caller_mapping": [
+          "getLicenseByHash",
+          "listLicensesByHashPrefix",
+          "listAdminLicenses",
+          "anonymizeLicenseForPrivacyDeletion",
+          "writeVerifiedGumroadSale"
+        ]
+      },
+      {
+        "name": "entitlement_status",
+        "classification": "deprecate",
+        "retention_rule": "Local entitlement status cache only.",
+        "compatibility_rule": "Mirror Devolens state; read-only fallback.",
+        "caller_mapping": [
+          "getLicenseByHash",
+          "listLicensesByHashPrefix",
+          "updateLicenseEntitlementStatus",
+          "listAdminLicenses",
+          "anonymizeLicenseForPrivacyDeletion",
+          "writeVerifiedGumroadSale"
+        ]
+      },
+      {
+        "name": "provider",
+        "classification": "keep",
+        "retention_rule": "Store indefinitely as audit/mapping metadata for purchases.",
+        "compatibility_rule": "Immutable after creation.",
+        "caller_mapping": [
+          "getLicenseByHash",
+          "listLicensesByHashPrefix",
+          "listAdminLicenses",
+          "writeVerifiedGumroadSale"
+        ]
+      },
+      {
+        "name": "provider_sale_id",
+        "classification": "keep",
+        "retention_rule": "Store indefinitely as audit/mapping metadata for purchases.",
+        "compatibility_rule": "Immutable after creation.",
+        "caller_mapping": [
+          "getLicenseByHash",
+          "listLicensesByHashPrefix",
+          "listAdminLicenses",
+          "writeVerifiedGumroadSale"
+        ]
+      },
+      {
+        "name": "updated_at_ms",
+        "classification": "keep",
+        "retention_rule": "Timestamp tracking cache modifications.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "getLicenseByHash",
+          "listLicensesByHashPrefix",
+          "updateLicenseEntitlementStatus",
+          "listAdminLicenses",
+          "anonymizeLicenseForPrivacyDeletion",
+          "writeVerifiedGumroadSale"
+        ]
+      },
+      {
+        "name": "privacy_deleted_at_ms",
+        "classification": "keep",
+        "retention_rule": "Timestamp of privacy deletion completion.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "anonymizeLicenseForPrivacyDeletion"
+        ]
+      }
+    ]
+  },
+  {
+    "table": "device_bindings",
+    "classification": "deprecate",
+    "retention_rule": "Local cache only. Devolens is the final authority for device registration.",
+    "compatibility_rule": "Retain read-only fallback access during compatibility window.",
+    "columns": [
+      {
+        "name": "device_id",
+        "classification": "deprecate",
+        "retention_rule": "Device identifier cache. Delete on request.",
+        "compatibility_rule": "Keep read-only during migration window.",
+        "caller_mapping": [
+          "listAdminDeviceBindings"
+        ]
+      },
+      {
+        "name": "license_key_hash",
+        "classification": "deprecate",
+        "retention_rule": "License mapping reference cache.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "deactivateDeviceBindingsByLicenseHash",
+          "deleteDeviceBindingsByLicenseHash",
+          "listAdminDeviceBindings",
+          "getDeletionPreviewByLicenseHash"
+        ]
+      },
+      {
+        "name": "public_key",
+        "classification": "deprecate",
+        "retention_rule": "Cryptographic verify key.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "listAdminDeviceBindings"
+        ]
+      },
+      {
+        "name": "fingerprint_json",
+        "classification": "delete_later",
+        "retention_rule": "Remove completely after migration. Exposes hardware fingerprints.",
+        "compatibility_rule": "Mask in administrative interfaces.",
+        "caller_mapping": [
+          "listAdminDeviceBindings"
+        ]
+      },
+      {
+        "name": "status",
+        "classification": "deprecate",
+        "retention_rule": "Local status cache.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "deactivateDeviceBindingsByLicenseHash",
+          "listAdminDeviceBindings"
+        ]
+      },
+      {
+        "name": "updated_at_ms",
+        "classification": "keep",
+        "retention_rule": "Timestamp tracking cache modifications.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "deactivateDeviceBindingsByLicenseHash",
+          "listAdminDeviceBindings"
+        ]
+      }
+    ]
+  },
+  {
+    "table": "reset_requests",
+    "classification": "delete_later",
+    "retention_rule": "Support reset requests will be deprecated in favor of client deactivation.",
+    "compatibility_rule": "Keep read-only until legacy clients upgrade.",
+    "columns": [
+      {
+        "name": "request_id",
+        "classification": "delete_later",
+        "retention_rule": "Retain only during migration window.",
+        "compatibility_rule": "Read-only fallback access.",
+        "caller_mapping": [
+          "getResetRequest",
+          "updateResetRequestStatus",
+          "listResetRequestsByStatus"
+        ]
+      },
+      {
+        "name": "license_key_hash",
+        "classification": "delete_later",
+        "retention_rule": "Retain only during migration window.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "getResetRequest",
+          "anonymizeResetRequestsByLicenseHash",
+          "listResetRequestsByStatus",
+          "getDeletionPreviewByLicenseHash"
+        ]
+      },
+      {
+        "name": "purchaser_email",
+        "classification": "delete_later",
+        "retention_rule": "Retain only during migration window. Nullify upon deletion request.",
+        "compatibility_rule": "Mask in support/admin lookups.",
+        "caller_mapping": [
+          "getResetRequest",
+          "anonymizeResetRequestsByLicenseHash",
+          "listResetRequestsByStatus"
+        ]
+      },
+      {
+        "name": "status",
+        "classification": "delete_later",
+        "retention_rule": "Retain only during migration window.",
+        "compatibility_rule": "Read-only fallback access.",
+        "caller_mapping": [
+          "getResetRequest",
+          "updateResetRequestStatus",
+          "listResetRequestsByStatus"
+        ]
+      },
+      {
+        "name": "created_at_ms",
+        "classification": "delete_later",
+        "retention_rule": "Retain only during migration window.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "getResetRequest",
+          "listResetRequestsByStatus"
+        ]
+      },
+      {
+        "name": "updated_at_ms",
+        "classification": "delete_later",
+        "retention_rule": "Retain only during migration window.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "getResetRequest",
+          "updateResetRequestStatus",
+          "anonymizeResetRequestsByLicenseHash",
+          "listResetRequestsByStatus"
+        ]
+      },
+      {
+        "name": "masked_license_key",
+        "classification": "delete_later",
+        "retention_rule": "Retain only during migration window.",
+        "compatibility_rule": "Read-only fallback access.",
+        "caller_mapping": [
+          "getResetRequest",
+          "anonymizeResetRequestsByLicenseHash",
+          "listResetRequestsByStatus"
+        ]
+      }
+    ]
+  },
+  {
+    "table": "idempotency_records",
+    "classification": "keep",
+    "retention_rule": "Required for Gumroad webhook processing retry safety. Apply TTL/auto-pruning (e.g. 7 days).",
+    "compatibility_rule": "N/A",
+    "columns": [
+      {
+        "name": "op",
+        "classification": "keep",
+        "retention_rule": "Essential for operation-specific idempotency mapping.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "getD1Idempotent",
+          "putD1Idempotent",
+          "listAdminIdempotencyRecords"
+        ]
+      },
+      {
+        "name": "idempotency_key",
+        "classification": "keep",
+        "retention_rule": "Essential.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "getD1Idempotent",
+          "putD1Idempotent",
+          "listAdminIdempotencyRecords"
+        ]
+      },
+      {
+        "name": "payload_hash",
+        "classification": "keep",
+        "retention_rule": "Essential.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "getD1Idempotent",
+          "putD1Idempotent",
+          "listAdminIdempotencyRecords"
+        ]
+      },
+      {
+        "name": "response_status",
+        "classification": "keep",
+        "retention_rule": "Essential.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "getD1Idempotent",
+          "putD1Idempotent",
+          "listAdminIdempotencyRecords"
+        ]
+      },
+      {
+        "name": "response_body",
+        "classification": "keep",
+        "retention_rule": "Essential.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "getD1Idempotent",
+          "putD1Idempotent",
+          "listAdminIdempotencyRecords"
+        ]
+      },
+      {
+        "name": "created_at_ms",
+        "classification": "keep",
+        "retention_rule": "Timestamp for TTL-based pruning.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "putD1Idempotent",
+          "listAdminIdempotencyRecords"
+        ]
+      }
+    ]
+  },
+  {
+    "table": "audit_events",
+    "classification": "keep",
+    "retention_rule": "Required to track admin console actions and webhook events.",
+    "compatibility_rule": "N/A",
+    "columns": [
+      {
+        "name": "id",
+        "classification": "keep",
+        "retention_rule": "Unique ID.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "listAdminAuditEvents"
+        ]
+      },
+      {
+        "name": "event_type",
+        "classification": "keep",
+        "retention_rule": "Event classification identifier.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "writeAuditEvent",
+          "listAdminAuditEvents",
+          "writeVerifiedGumroadSale"
+        ]
+      },
+      {
+        "name": "actor",
+        "classification": "keep",
+        "retention_rule": "Scoped identifier (system, admin, gumroad).",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "writeAuditEvent",
+          "listAdminAuditEvents",
+          "writeVerifiedGumroadSale"
+        ]
+      },
+      {
+        "name": "metadata_json",
+        "classification": "keep",
+        "retention_rule": "Structured event details. Mask secrets/tokens.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "writeAuditEvent",
+          "listAdminAuditEvents",
+          "writeVerifiedGumroadSale"
+        ]
+      },
+      {
+        "name": "created_at_ms",
+        "classification": "keep",
+        "retention_rule": "Audit timestamp.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "writeAuditEvent",
+          "listAdminAuditEvents",
+          "writeVerifiedGumroadSale"
+        ]
+      }
+    ]
+  },
+  {
+    "table": "user_data_deletion_requests",
+    "classification": "keep",
+    "retention_rule": "Required for compliance audit trail of completed and pending privacy requests.",
+    "compatibility_rule": "N/A",
+    "columns": [
+      {
+        "name": "request_id",
+        "classification": "keep",
+        "retention_rule": "Unique lookup ID.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "createDeletionRequest",
+          "getDeletionRequest",
+          "updateDeletionRequestStatus",
+          "updateDeletionRequestMetadata",
+          "sanitizeCompletedDeletionRequest",
+          "listDeletionRequestsByStatus"
+        ]
+      },
+      {
+        "name": "lookup_token_hash",
+        "classification": "keep",
+        "retention_rule": "Access verification token hash.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "createDeletionRequest",
+          "listDeletionRequestsByStatus",
+          "getDeletionRequest"
+        ]
+      },
+      {
+        "name": "license_key_hash",
+        "classification": "keep",
+        "retention_rule": "Target license hash.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "createDeletionRequest",
+          "getOpenDeletionRequestByLicenseHash",
+          "listDeletionRequestsByStatus",
+          "getDeletionRequest"
+        ]
+      },
+      {
+        "name": "masked_license_key",
+        "classification": "keep",
+        "retention_rule": "Redacted key for display only. Nullified upon completion.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "createDeletionRequest",
+          "sanitizeCompletedDeletionRequest",
+          "listDeletionRequestsByStatus",
+          "getDeletionRequest"
+        ]
+      },
+      {
+        "name": "purchaser_email",
+        "classification": "keep",
+        "retention_rule": "Required to trace target email during active processing. Nullified upon completion.",
+        "compatibility_rule": "Must remain masked in intermediate status surfaces.",
+        "caller_mapping": [
+          "createDeletionRequest",
+          "sanitizeCompletedDeletionRequest",
+          "listDeletionRequestsByStatus",
+          "getDeletionRequest"
+        ]
+      },
+      {
+        "name": "purchaser_email_masked",
+        "classification": "keep",
+        "retention_rule": "Masked version for permanent log.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "createDeletionRequest",
+          "listDeletionRequestsByStatus",
+          "getDeletionRequest"
+        ]
+      },
+      {
+        "name": "status",
+        "classification": "keep",
+        "retention_rule": "Request lifecycle state (pending, approved, completed, rejected).",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "createDeletionRequest",
+          "getOpenDeletionRequestByLicenseHash",
+          "updateDeletionRequestStatus",
+          "listDeletionRequestsByStatus",
+          "getDeletionRequest"
+        ]
+      },
+      {
+        "name": "requested_scope",
+        "classification": "keep",
+        "retention_rule": "Declares target scope.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "createDeletionRequest",
+          "listDeletionRequestsByStatus",
+          "getDeletionRequest"
+        ]
+      },
+      {
+        "name": "request_metadata_json",
+        "classification": "keep",
+        "retention_rule": "Contains validation metadata.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "createDeletionRequest",
+          "updateDeletionRequestMetadata",
+          "listDeletionRequestsByStatus",
+          "getDeletionRequest"
+        ]
+      },
+      {
+        "name": "deletion_summary_json",
+        "classification": "keep",
+        "retention_rule": "Stores summary of completed deletion elements.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "updateDeletionRequestStatus",
+          "listDeletionRequestsByStatus",
+          "getDeletionRequest"
+        ]
+      },
+      {
+        "name": "error_code",
+        "classification": "keep",
+        "retention_rule": "Debug info.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "updateDeletionRequestStatus",
+          "listDeletionRequestsByStatus",
+          "getDeletionRequest"
+        ]
+      },
+      {
+        "name": "error_message_safe",
+        "classification": "keep",
+        "retention_rule": "User safe error info.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "updateDeletionRequestStatus",
+          "listDeletionRequestsByStatus",
+          "getDeletionRequest"
+        ]
+      },
+      {
+        "name": "created_at_ms",
+        "classification": "keep",
+        "retention_rule": "Timestamp.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "createDeletionRequest",
+          "listDeletionRequestsByStatus",
+          "getDeletionRequest"
+        ]
+      },
+      {
+        "name": "updated_at_ms",
+        "classification": "keep",
+        "retention_rule": "Timestamp.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "createDeletionRequest",
+          "updateDeletionRequestStatus",
+          "updateDeletionRequestMetadata",
+          "sanitizeCompletedDeletionRequest",
+          "listDeletionRequestsByStatus",
+          "getDeletionRequest"
+        ]
+      },
+      {
+        "name": "decided_at_ms",
+        "classification": "keep",
+        "retention_rule": "Timestamp.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "updateDeletionRequestStatus",
+          "listDeletionRequestsByStatus",
+          "getDeletionRequest"
+        ]
+      },
+      {
+        "name": "completed_at_ms",
+        "classification": "keep",
+        "retention_rule": "Timestamp.",
+        "compatibility_rule": "N/A",
+        "caller_mapping": [
+          "updateDeletionRequestStatus",
+          "listDeletionRequestsByStatus",
+          "getDeletionRequest"
+        ]
+      }
+    ]
+  }
+]
