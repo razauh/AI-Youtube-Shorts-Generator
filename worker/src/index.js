@@ -1,3 +1,4 @@
+import { createDevolensKey, blockDevolensKey } from "./devolensBridge.js";
 import { DELETION_STATUS, err, json, ok, readForm, readJson, requestId, RESET_STATUS } from "./contracts.js";
 import {
   anonymizeLicenseForPrivacyDeletion,
@@ -1172,23 +1173,7 @@ async function handleGumroadWebhook(request, env) {
       const licenseKeyHash = await sha256Hex(`${env?.HASH_PEPPER || ""}:${normalizedLicenseKey}`);
 
       if (env.DEVOLENS_ACCESS_TOKEN && env.DEVOLENS_PRODUCT_ID) {
-        const baseUrl = env.DEVOLENS_BASE_URL || "https://api.cryptolens.ph";
-        const devolensUrl = new URL(`${baseUrl}/api/key/BlockKey`);
-
-        const form = new URLSearchParams();
-        form.append("token", env.DEVOLENS_ACCESS_TOKEN);
-        form.append("ProductId", env.DEVOLENS_PRODUCT_ID);
-        form.append("Key", normalizedLicenseKey);
-
-        try {
-          await fetch(devolensUrl.toString(), {
-            method: "POST",
-            headers: { "content-type": "application/x-www-form-urlencoded" },
-            body: form.toString(),
-          });
-        } catch (err) {
-          // Ignore network errors on deactivation to avoid blocking the webhook flow
-        }
+        await blockDevolensKey(env, normalizedLicenseKey);
       }
 
       const now = Date.now();
@@ -1233,32 +1218,15 @@ async function handleGumroadWebhook(request, env) {
   const licenseKeyHash = await sha256Hex(`${env?.HASH_PEPPER || ""}:${normalizedLicenseKey}`);
 
   if (env.DEVOLENS_ACCESS_TOKEN && env.DEVOLENS_PRODUCT_ID) {
-    const baseUrl = env.DEVOLENS_BASE_URL || "https://api.cryptolens.ph";
-    const devolensUrl = new URL(`${baseUrl}/api/key/CreateKey`);
-
-    const form = new URLSearchParams();
-    form.append("token", env.DEVOLENS_ACCESS_TOKEN);
-    form.append("ProductId", env.DEVOLENS_PRODUCT_ID);
-    form.append("Key", normalizedLicenseKey);
-
-    let devolensRes;
-    try {
-      devolensRes = await fetch(devolensUrl.toString(), {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: form.toString(),
-      });
-    } catch (err) {
-      return err("worker_unreachable", "Failed to contact Devolens for key creation.", rid, true, 503);
-    }
-
+    const devolensRes = await createDevolensKey(env, normalizedLicenseKey);
     if (!devolensRes.ok) {
-      return err("worker_unreachable", "Devolens key creation returned HTTP error.", rid, true, 503);
-    }
-
-    const devolensData = await devolensRes.json();
-    if (devolensData.result !== 0) {
-      return err("worker_unreachable", devolensData.message || "Devolens key creation failed.", rid, false, 502);
+      return err(
+        devolensRes.code,
+        devolensRes.message,
+        rid,
+        devolensRes.retryable,
+        devolensRes.status
+      );
     }
   }
 

@@ -111,6 +111,7 @@ scripts/graphify_split_merge.py
 !/.scripts/run-devolens-inventory-validation.sh
 !/.scripts/run-tauri-storage-validation.sh
 !/.scripts/run-gumroad-webhook-validation.sh
+!/.scripts/run-devolens-bridge-validation.sh
 app/.scripts/
 .opencode/
 app/.opencode/
