@@ -94,6 +94,12 @@ Required behavior from agents using these guidelines:
 - After editing, report verification steps or blockers explicitly.
 - Do not hide uncertainty behind implementation.
 
+## Graphify Project Analysis
+
+- Agents must check/use graphify to analyze the project codebase, its structure, dependencies, and file relationships.
+- The `graphify` tool is not available globally, in sandbox python interpreters, or in external/global conda environments.
+- To execute graphify commands or run update scripts, agents must use the locally available virtual environment (`.venv`) inside the repository.
+
 ## Non-Negotiable Rules
 
 - Do not run destructive commands such as `rm -rf`, `git reset --hard`, `git checkout --`, or mass file rewrites unless the user explicitly requests them.
