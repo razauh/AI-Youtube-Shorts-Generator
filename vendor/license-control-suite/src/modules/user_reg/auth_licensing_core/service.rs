@@ -273,6 +273,11 @@ impl AuthService {
     pub async fn get_auth_state(&self) -> Result<SessionState, AuthError> {
         self.state.load_session_state().await
     }
+
+    pub async fn deactivate_current_device(&self) -> Result<(), AuthError> {
+        // TDD Audit Stub (AUD-05)
+        todo!("deactivate_current_device")
+    }
 }
 
 fn masked_from_state(state: &SessionState) -> Option<MaskedLicenseKey> {

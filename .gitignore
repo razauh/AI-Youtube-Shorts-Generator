@@ -106,6 +106,9 @@ scripts/graphify_split_merge.py
 !/.scripts/run-customer-csp-validation.sh
 !/.scripts/run-routes-inventory-validation.sh
 !/.scripts/run-d1-schema-validation.sh
+!/.scripts/run-d1-authority-validation.sh
+!/.scripts/run-devolens-inventory-validation.sh
+!/.scripts/run-tauri-storage-validation.sh
 app/.scripts/
 .opencode/
 app/.opencode/

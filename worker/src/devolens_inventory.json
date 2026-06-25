@@ -1,0 +1,106 @@
+[
+  {
+    "endpoint": "/api/key/Activate",
+    "caller": "app/src-tauri/src/auth_worker.rs",
+    "required_scope": "Activate",
+    "token_security_category": "Client",
+    "parameters": ["token", "ProductId", "Key", "MachineCode"],
+    "error_mapping": {
+      "result_non_zero": "AuthError::InvalidLicenseKey",
+      "message_contains_machine": "AuthError::DeviceAlreadyBound",
+      "message_contains_permission_or_verify": "AuthError::Unauthorized",
+      "network_timeout_or_http_failure": "AuthError::WorkerUnreachable"
+    },
+    "retry_policy": "PolicyWorkerClient: retry up to max_attempts, circuit breaker with failure_threshold and cooldown_ms",
+    "migration_required": false,
+    "migration_notes": "Safe to invoke client-side; uses client-scoped activation token."
+  },
+  {
+    "endpoint": "/api/key/Validate",
+    "caller": "app/src-tauri/src/auth_worker.rs",
+    "required_scope": "Validate",
+    "token_security_category": "Client",
+    "parameters": ["token", "ProductId", "SessionToken"],
+    "error_mapping": {
+      "http_401_403": "AuthError::Unauthorized",
+      "http_400": "AuthError::InvalidLicenseKey",
+      "other_http_or_network": "AuthError::WorkerUnreachable (triggers offline validation fallback)",
+      "validation_inactive_or_revoked": "ValidationOutcome::Revoked",
+      "missing_envelope_fields": "AuthError::ReauthRequired"
+    },
+    "retry_policy": "PolicyWorkerClient: retry up to max_attempts, circuit breaker with failure_threshold and cooldown_ms",
+    "migration_required": false,
+    "migration_notes": "Safe to invoke client-side; verifies current session status."
+  },
+  {
+    "endpoint": "/api/key/Deactivate",
+    "caller": "app/src-tauri/src/auth_worker.rs",
+    "required_scope": "Deactivate",
+    "token_security_category": "Client",
+    "parameters": ["token", "ProductId", "Key", "MachineCode"],
+    "error_mapping": {
+      "http_failure_or_non_200": "AuthError::InvalidResetRequest",
+      "result_non_zero": "AuthError::InvalidResetRequest",
+      "network_timeout": "AuthError::WorkerUnreachable"
+    },
+    "retry_policy": "PolicyWorkerClient: retry up to max_attempts, circuit breaker with failure_threshold and cooldown_ms",
+    "migration_required": false,
+    "migration_notes": "Safe to invoke client-side; uses client-scoped deactivation token to unbind the device."
+  },
+  {
+    "endpoint": "/api/key/BlockKey",
+    "caller": "app/src-tauri/src/commands/privacy.rs",
+    "required_scope": "BlockKey",
+    "token_security_category": "Management",
+    "parameters": ["token", "ProductId", "Key"],
+    "error_mapping": {
+      "result_non_zero": "AuthCommandError::devolens_error"
+    },
+    "retry_policy": "None",
+    "migration_required": true,
+    "migration_notes": "CRITICAL SECURITY RISK: Never expose management-capable tokens to desktop clients. Must move server-side to the Worker."
+  },
+  {
+    "endpoint": "/api/key/GetKey",
+    "caller": "app/src-tauri/src/commands/privacy.rs",
+    "required_scope": "GetKey",
+    "token_security_category": "Management",
+    "parameters": ["token", "ProductId", "Key"],
+    "error_mapping": {
+      "result_non_zero": "AuthCommandError::devolens_error"
+    },
+    "retry_policy": "None",
+    "migration_required": true,
+    "migration_notes": "CRITICAL SECURITY RISK: Never expose management-capable tokens to desktop clients. Must move server-side to the Worker."
+  },
+  {
+    "endpoint": "/api/key/BlockKey",
+    "caller": "worker/src/index.js",
+    "required_scope": "BlockKey",
+    "token_security_category": "Management",
+    "parameters": ["token", "ProductId", "Key"],
+    "error_mapping": {
+      "fetch_error": "err('worker_unreachable')",
+      "http_error": "err('worker_unreachable')",
+      "result_non_zero": "err('devolens_error')"
+    },
+    "retry_policy": "None",
+    "migration_required": false,
+    "migration_notes": "Safe to call from Worker backend (secure server-side context)."
+  },
+  {
+    "endpoint": "/api/key/CreateKey",
+    "caller": "worker/src/index.js",
+    "required_scope": "CreateKey",
+    "token_security_category": "Management",
+    "parameters": ["token", "ProductId", "Key"],
+    "error_mapping": {
+      "fetch_error": "err('worker_unreachable')",
+      "http_error": "err('worker_unreachable')",
+      "result_non_zero": "err('devolens_error')"
+    },
+    "retry_policy": "None",
+    "migration_required": false,
+    "migration_notes": "Safe to call from Worker backend (secure server-side context)."
+  }
+]

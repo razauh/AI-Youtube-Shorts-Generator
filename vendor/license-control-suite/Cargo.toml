@@ -39,3 +39,8 @@ wiremock = "0.6"
 [[test]]
 name = "devolens_token_safety"
 path = "tests/baseline/devolens_token_safety.rs"
+
+[[test]]
+name = "user_reg_core_service_int"
+path = "tests/integration/user_reg_core_service_int.rs"
+

@@ -2,9 +2,9 @@ use license_control_suite::modules::user_reg::auth_licensing_core::test_support:
     FakeWorkerClient, TestService,
 };
 use license_control_suite::modules::user_reg::auth_licensing_core::{
-    AccessToken, ActivationOutcome, BoundDeviceSummary, DeviceFingerprint, DeviceId,
-    DevicePublicKey, DeviceResetStatus, EntitlementStatus, LicenseKey, MaskedLicenseKey,
-    ResetRequestId, SessionState, ValidationOutcome,
+    AccessToken, ActivationOutcome, AuthError, BoundDeviceSummary, DeviceFingerprint, DeviceId,
+    DevicePublicKey, DeviceResetStatus, EntitlementStatus, LicenseKey, LocalStateStore,
+    MaskedLicenseKey, ResetRequestId, SecretStore, SessionState, ValidationOutcome,
 };
 
 fn outcome() -> ActivationOutcome {
@@ -165,5 +165,125 @@ async fn reset_request_sends_required_metadata_and_persists_pending() {
             .unwrap()
             .request_id(),
         &request_id
+    );
+}
+
+#[tokio::test]
+#[should_panic(expected = "not yet implemented")]
+async fn deactivate_current_device_success_clears_only_approved_state() {
+    let worker = FakeWorkerClient::new().with_reset_request(Ok(DeviceResetStatus::Approved {
+        request_id: ResetRequestId::new("reset-success").unwrap(),
+        decided_at_ms: 10,
+    }));
+    let harness = TestService::new(worker);
+    harness
+        .secrets
+        .put_license_key(LicenseKey::new("key").unwrap())
+        .await
+        .unwrap();
+    harness
+        .secrets
+        .put_access_token(AccessToken::new("token").unwrap())
+        .await
+        .unwrap();
+    harness
+        .state
+        .save_session_state(SessionState::after_activation(
+            MaskedLicenseKey::new("••••-1234").unwrap(),
+            outcome().bound_device.clone(),
+            200,
+            10,
+            24 * 60 * 60 * 1000,
+        ))
+        .await
+        .unwrap();
+
+    harness.service.deactivate_current_device().await.unwrap();
+
+    assert!(harness.secrets.get_license_key().await.unwrap().is_none());
+    assert!(harness.secrets.get_access_token().await.unwrap().is_none());
+    assert!(harness.secrets.get_device_keypair().await.unwrap().is_some());
+    assert_eq!(
+        harness.state.load_session_state().await.unwrap(),
+        SessionState::Unauthenticated
+    );
+}
+
+#[tokio::test]
+#[should_panic(expected = "not yet implemented")]
+async fn deactivate_current_device_failure_preserves_retryable_state() {
+    let worker = FakeWorkerClient::new().with_reset_request(Err(AuthError::WorkerUnreachable));
+    let harness = TestService::new(worker);
+    harness
+        .secrets
+        .put_license_key(LicenseKey::new("key").unwrap())
+        .await
+        .unwrap();
+    harness
+        .secrets
+        .put_access_token(AccessToken::new("token").unwrap())
+        .await
+        .unwrap();
+    harness
+        .state
+        .save_session_state(SessionState::after_activation(
+            MaskedLicenseKey::new("••••-1234").unwrap(),
+            outcome().bound_device.clone(),
+            200,
+            10,
+            24 * 60 * 60 * 1000,
+        ))
+        .await
+        .unwrap();
+
+    let err = harness.service.deactivate_current_device().await.unwrap_err();
+    assert_eq!(err, AuthError::WorkerUnreachable);
+
+    assert!(harness.secrets.get_license_key().await.unwrap().is_some());
+    assert!(harness.secrets.get_access_token().await.unwrap().is_some());
+    assert!(harness.secrets.get_device_keypair().await.unwrap().is_some());
+    assert!(matches!(
+        harness.state.load_session_state().await.unwrap(),
+        SessionState::Licensed { .. }
+    ));
+}
+
+#[tokio::test]
+#[should_panic(expected = "not yet implemented")]
+async fn deactivate_current_device_terminal_already_deactivated_clears_state() {
+    let worker = FakeWorkerClient::new().with_reset_request(Err(AuthError::InvalidResetRequest));
+    let harness = TestService::new(worker);
+    harness
+        .secrets
+        .put_license_key(LicenseKey::new("key").unwrap())
+        .await
+        .unwrap();
+    harness
+        .secrets
+        .put_access_token(AccessToken::new("token").unwrap())
+        .await
+        .unwrap();
+    harness
+        .state
+        .save_session_state(SessionState::after_activation(
+            MaskedLicenseKey::new("••••-1234").unwrap(),
+            outcome().bound_device.clone(),
+            200,
+            10,
+            24 * 60 * 60 * 1000,
+        ))
+        .await
+        .unwrap();
+
+    let err = harness.service.deactivate_current_device().await.unwrap_err();
+    // Assuming InvalidResetRequest (or another terminal variant) is treated as terminal
+    assert_eq!(err, AuthError::InvalidResetRequest);
+
+    assert!(harness.secrets.get_license_key().await.unwrap().is_none());
+    assert!(harness.secrets.get_access_token().await.unwrap().is_none());
+    assert!(harness.secrets.get_device_keypair().await.unwrap().is_some());
+    assert_eq!(
+        harness.state.load_session_state().await.unwrap(),
+        SessionState::Unauthenticated
     );
 }

@@ -1,0 +1,191 @@
+[
+  {
+    "function_name": "getD1Idempotent",
+    "tables": ["idempotency_records"],
+    "classification": "mapping",
+    "description": "Reads idempotency record to prevent duplicate operations.",
+    "devolens_decoupling_strategy": "Keep. Idempotency is a local gateway concern, not a licensing authority concern."
+  },
+  {
+    "function_name": "putD1Idempotent",
+    "tables": ["idempotency_records"],
+    "classification": "mapping",
+    "description": "Writes idempotency record with operation status/body.",
+    "devolens_decoupling_strategy": "Keep. Idempotency is a local gateway concern, not a licensing authority concern."
+  },
+  {
+    "function_name": "writeVerifiedGumroadSale",
+    "tables": ["licenses", "audit_events"],
+    "classification": "authority",
+    "description": "Creates active license rows upon successful purchase verification.",
+    "devolens_decoupling_strategy": "Convert to mapping. Webhook must call Devolens api/key/CreateKey first, then write sale mapping metadata to D1."
+  },
+  {
+    "function_name": "getLicenseByHash",
+    "tables": ["licenses"],
+    "classification": "cache",
+    "description": "Looks up active license and purchaser details.",
+    "devolens_decoupling_strategy": "Convert to cache check. Fall back or redirect key lookup/validation calls to Devolens."
+  },
+  {
+    "function_name": "listLicensesByHashPrefix",
+    "tables": ["licenses"],
+    "classification": "mapping",
+    "description": "Lists licenses matching a hash prefix for administrative resolution.",
+    "devolens_decoupling_strategy": "Retain as audited mapping lookups only. Disallow broad unauthenticated prefix checks."
+  },
+  {
+    "function_name": "updateLicenseEntitlementStatus",
+    "tables": ["licenses"],
+    "classification": "cache",
+    "description": "Updates license entitlement (e.g. disabled or active).",
+    "devolens_decoupling_strategy": "Convert to cache update. Devolens is the sole authority for entitlement status changes."
+  },
+  {
+    "function_name": "listResetRequestsByStatus",
+    "tables": ["reset_requests"],
+    "classification": "mapping",
+    "description": "Lists reset requests of a specific status (e.g. pending).",
+    "devolens_decoupling_strategy": "Deprecate. Device resets will be handled client-side using Devolens deactivation."
+  },
+  {
+    "function_name": "listDeletionRequestsByStatus",
+    "tables": ["user_data_deletion_requests"],
+    "classification": "privacy",
+    "description": "Lists user data deletion requests.",
+    "devolens_decoupling_strategy": "Keep. Local privacy deletion requests require compliance log retention."
+  },
+  {
+    "function_name": "writeAuditEvent",
+    "tables": ["audit_events"],
+    "classification": "audit",
+    "description": "Writes administrative audit events.",
+    "devolens_decoupling_strategy": "Keep. Local audit logging is independent of Devolens authority."
+  },
+  {
+    "function_name": "createDeletionRequest",
+    "tables": ["user_data_deletion_requests"],
+    "classification": "privacy",
+    "description": "Creates a pending user data deletion request.",
+    "devolens_decoupling_strategy": "Keep. Local privacy deletion requests require compliance log retention."
+  },
+  {
+    "function_name": "getDeletionRequest",
+    "tables": ["user_data_deletion_requests"],
+    "classification": "privacy",
+    "description": "Retrieves user data deletion request by ID.",
+    "devolens_decoupling_strategy": "Keep. Local privacy deletion requests require compliance log retention."
+  },
+  {
+    "function_name": "getOpenDeletionRequestByLicenseHash",
+    "tables": ["user_data_deletion_requests"],
+    "classification": "privacy",
+    "description": "Checks if there is already an open deletion request for a license hash.",
+    "devolens_decoupling_strategy": "Keep. Local privacy validation prevents redundant/conflicting requests."
+  },
+  {
+    "function_name": "updateDeletionRequestStatus",
+    "tables": ["user_data_deletion_requests"],
+    "classification": "privacy",
+    "description": "Updates status of user data deletion request.",
+    "devolens_decoupling_strategy": "Keep. Privacy deletion request lifecycle tracker."
+  },
+  {
+    "function_name": "updateDeletionRequestMetadata",
+    "tables": ["user_data_deletion_requests"],
+    "classification": "privacy",
+    "description": "Updates metadata of user data deletion request.",
+    "devolens_decoupling_strategy": "Keep. Privacy deletion request lifecycle tracker."
+  },
+  {
+    "function_name": "sanitizeCompletedDeletionRequest",
+    "tables": ["user_data_deletion_requests"],
+    "classification": "privacy",
+    "description": "Nullifies purchaser_email and masked_license_key on completed requests.",
+    "devolens_decoupling_strategy": "Keep. Required to purge PII from compliance logs."
+  },
+  {
+    "function_name": "getResetRequest",
+    "tables": ["reset_requests"],
+    "classification": "mapping",
+    "description": "Retrieves reset request by ID.",
+    "devolens_decoupling_strategy": "Deprecate. Device resets will be handled client-side using Devolens deactivation."
+  },
+  {
+    "function_name": "updateResetRequestStatus",
+    "tables": ["reset_requests"],
+    "classification": "mapping",
+    "description": "Updates status of reset request.",
+    "devolens_decoupling_strategy": "Deprecate. Device resets will be handled client-side using Devolens deactivation."
+  },
+  {
+    "function_name": "deactivateDeviceBindingsByLicenseHash",
+    "tables": ["device_bindings"],
+    "classification": "cache",
+    "description": "Updates status of device bindings for a license to inactive.",
+    "devolens_decoupling_strategy": "Convert to cache update. Devolens owns deactivation authority."
+  },
+  {
+    "function_name": "getDeletionPreviewByLicenseHash",
+    "tables": ["licenses", "device_bindings", "reset_requests"],
+    "classification": "privacy",
+    "description": "Assembles counts of items to be deleted/anonymized.",
+    "devolens_decoupling_strategy": "Keep. Required for privacy request flow confirmation."
+  },
+  {
+    "function_name": "deleteDeviceBindingsByLicenseHash",
+    "tables": ["device_bindings"],
+    "classification": "cache",
+    "description": "Physically deletes device bindings matching a license hash.",
+    "devolens_decoupling_strategy": "Convert to cache deletion. Devolens is the authority for registered devices."
+  },
+  {
+    "function_name": "anonymizeResetRequestsByLicenseHash",
+    "tables": ["reset_requests"],
+    "classification": "privacy",
+    "description": "Nullifies purchaser_email in reset requests.",
+    "devolens_decoupling_strategy": "Deprecate. Part of legacy reset requests deletion flow."
+  },
+  {
+    "function_name": "anonymizeLicenseForPrivacyDeletion",
+    "tables": ["licenses"],
+    "classification": "privacy",
+    "description": "Nullifies email, updates status to disabled, and sets privacy deleted timestamp.",
+    "devolens_decoupling_strategy": "Convert to privacy cache update. Webhook/Admin must block key on Devolens as final authority."
+  },
+  {
+    "function_name": "getAdminOverviewCounts",
+    "tables": ["licenses", "device_bindings", "reset_requests", "user_data_deletion_requests"],
+    "classification": "audit",
+    "description": "Aggregates totals for admin dashboard.",
+    "devolens_decoupling_strategy": "Transition to aggregate local mapping/cache statistics with Devolens statistics."
+  },
+  {
+    "function_name": "listAdminLicenses",
+    "tables": ["licenses"],
+    "classification": "audit",
+    "description": "Lists licenses for admin display.",
+    "devolens_decoupling_strategy": "Transition to query Devolens keys and correlate with local mapping records."
+  },
+  {
+    "function_name": "listAdminDeviceBindings",
+    "tables": ["device_bindings", "licenses"],
+    "classification": "audit",
+    "description": "Lists device bindings for admin display.",
+    "devolens_decoupling_strategy": "Transition to query Devolens device registrations and correlate with local cache."
+  },
+  {
+    "function_name": "listAdminAuditEvents",
+    "tables": ["audit_events"],
+    "classification": "audit",
+    "description": "Lists audit events.",
+    "devolens_decoupling_strategy": "Keep. Local audit logging is independent of Devolens authority."
+  },
+  {
+    "function_name": "listAdminIdempotencyRecords",
+    "tables": ["idempotency_records"],
+    "classification": "audit",
+    "description": "Lists idempotency records.",
+    "devolens_decoupling_strategy": "Deprecate/Retain. Admin diagnostic log only."
+  }
+]
