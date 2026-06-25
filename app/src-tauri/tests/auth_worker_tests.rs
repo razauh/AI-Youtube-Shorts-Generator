@@ -72,6 +72,8 @@ fn worker_config(mode: LicenseBackendMode, base_url: String) -> LicenseWorkerCon
         circuit_breaker_cooldown_ms: 1000,
         devolens_base_url: DEFAULT_DEVOLENS_BASE_URL.to_string(),
         devolens_access_token: String::new(),
+        devolens_client_token: String::new(),
+        devolens_support_token: String::new(),
         devolens_product_id: String::new(),
         devolens_offline_grace_period_ms: 86400000,
     }

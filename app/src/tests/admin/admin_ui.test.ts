@@ -10,9 +10,6 @@ const saveAdminConfig = vi.fn();
 const clearAdminConfig = vi.fn();
 const testAdminConnection = vi.fn();
 const loadOverview = vi.fn();
-const listLicenses = vi.fn();
-const disableLicense = vi.fn();
-const listDeviceBindings = vi.fn();
 const listAuditEvents = vi.fn();
 const listIdempotencyRecords = vi.fn();
 
@@ -25,9 +22,6 @@ vi.mock('../../admin/lib/adminClient', () => ({
   clearAdminConfig: (...args: unknown[]) => clearAdminConfig(...args),
   testAdminConnection: (...args: unknown[]) => testAdminConnection(...args),
   loadOverview: (...args: unknown[]) => loadOverview(...args),
-  listLicenses: (...args: unknown[]) => listLicenses(...args),
-  disableLicense: (...args: unknown[]) => disableLicense(...args),
-  listDeviceBindings: (...args: unknown[]) => listDeviceBindings(...args),
   listAuditEvents: (...args: unknown[]) => listAuditEvents(...args),
   listIdempotencyRecords: (...args: unknown[]) => listIdempotencyRecords(...args)
 }));
@@ -63,9 +57,6 @@ describe('AdminApp', () => {
     clearAdminConfig.mockReset();
     testAdminConnection.mockReset();
     loadOverview.mockReset();
-    listLicenses.mockReset();
-    disableLicense.mockReset();
-    listDeviceBindings.mockReset();
     listAuditEvents.mockReset();
     listIdempotencyRecords.mockReset();
     AdminApp = (await import('../../admin/AdminApp.svelte')).default;
@@ -94,26 +85,22 @@ describe('AdminApp', () => {
     expect(screen.queryByText('Pending resets')).toBeNull();
   });
 
-  it('loads overview by default and allows section switching', async () => {
+  it('loads overview by default and keeps the removed browse tabs hidden', async () => {
     loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
     loadOverview.mockResolvedValue({ total_licenses: 8, entitlement_counts: {}, device_binding_counts: { active: 2 }, reset_request_counts: { pending: 1 }, deletion_request_counts: { pending: 1 }, recent_audit_events_24h: 3 });
-    listLicenses.mockResolvedValue({ licenses: [] });
 
     render(AdminApp);
 
     expect(await screen.findByText('Total licenses')).toBeInTheDocument();
     expect(await screen.findByText('8')).toBeInTheDocument();
-
-    await fireEvent.click(screen.getByRole('button', { name: 'licenses' }));
-    await waitFor(() => expect(listLicenses).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: 'licenses' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'device bindings' })).toBeNull();
   });
 
-  it('renders table headers across admin tabs', async () => {
+  it('renders table headers across the retained admin tabs', async () => {
     loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
     loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, deletion_request_counts: {}, recent_audit_events_24h: 0 });
     listDeletionRequests.mockResolvedValue({ requests: [pendingDeletionRequest] });
-    listLicenses.mockResolvedValue({ licenses: [{ license_hash_prefix: 'hash-1', purchaser_email_masked: 'b***@example.com', entitlement_status: 'active', provider: 'gumroad', provider_sale_id: 'sale-1', updated_at_ms: 1, active_device_count: 1, inactive_device_count: 0 }] });
-    listDeviceBindings.mockResolvedValue({ bindings: [{ device_id: 'dev-1', status: 'active', license_hash_prefix: 'hash-1', updated_at_ms: 1, purchaser_email_masked: 'b***@example.com', public_key_prefix: 'abc', fingerprint_summary: { os_name: 'linux', platform_family: 'linux', arch: 'x64', app_version: '1.0.0' } }] });
     listAuditEvents.mockResolvedValue({ events: [{ event_type: 'license_disabled', actor: 'admin', created_at_ms: 1, metadata_summary: {} }] });
     listIdempotencyRecords.mockResolvedValue({ records: [{ op: 'admin_license_disable', idempotency_key_prefix: 'idk', payload_hash_prefix: 'ph', response_status: 200, response_body_size: 10, created_at_ms: 1 }] });
 
@@ -122,34 +109,11 @@ describe('AdminApp', () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'delete requests' }));
     expect(await screen.findByText('del-pending')).toBeInTheDocument();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'licenses' }));
-    expect(await screen.findByText('Entitlement Status')).toBeInTheDocument();
-
-    await fireEvent.click(screen.getByRole('button', { name: 'device bindings' }));
-    expect(await screen.findByText('Fingerprint Summary')).toBeInTheDocument();
-
     await fireEvent.click(screen.getByRole('button', { name: 'audit events' }));
     expect(await screen.findByText('Event Type')).toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole('button', { name: 'idempotency' }));
     expect(await screen.findByText('Idempotency Key')).toBeInTheDocument();
-  });
-
-  it('does not show disable button/modal, shows manage on devolens link', async () => {
-    loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
-    loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, deletion_request_counts: {}, recent_audit_events_24h: 0 });
-    listLicenses.mockResolvedValue({ licenses: [{ license_hash_prefix: 'hash-1', purchaser_email_masked: 'b***@example.com', entitlement_status: 'active', provider: 'gumroad', provider_sale_id: 'sale-1', updated_at_ms: 1, active_device_count: 1, inactive_device_count: 0 }] });
-
-    render(AdminApp);
-    await fireEvent.click(await screen.findByRole('button', { name: 'licenses' }));
-    
-    // Direct "Disable License" button must not exist
-    expect(screen.queryByRole('button', { name: 'Disable License' })).toBeNull();
-
-    // Instead, there must be a "Manage on Devolens" link
-    const link = await screen.findByRole('link', { name: 'Manage on Devolens' });
-    expect(link).toBeInTheDocument();
-    expect(link).toHaveAttribute('href', 'https://console.cryptolens.io');
   });
 
   it('requires typed confirmation before approving deletion requests', async () => {

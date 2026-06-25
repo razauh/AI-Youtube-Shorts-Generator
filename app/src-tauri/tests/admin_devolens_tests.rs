@@ -27,8 +27,6 @@ async fn admin_commands_are_not_disabled_by_devolens_customer_licensing() {
     configure_devolens_customer_licensing();
 
     assert_not_devolens_guard(admin_overview().await.unwrap_err());
-    assert_not_devolens_guard(admin_list_licenses(None, None, None, None).await.unwrap_err());
-    assert_not_devolens_guard(admin_list_device_bindings(None, None, None, None).await.unwrap_err());
     assert_not_devolens_guard(admin_list_audit_events(None, None, None).await.unwrap_err());
     assert_not_devolens_guard(admin_list_idempotency_records(None, None).await.unwrap_err());
     assert_not_devolens_guard(admin_list_reset_requests(ResetRequestStatus::Pending).await.unwrap_err());

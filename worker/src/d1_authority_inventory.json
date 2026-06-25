@@ -161,20 +161,6 @@
     "devolens_decoupling_strategy": "Transition to aggregate local mapping/cache statistics with Devolens statistics."
   },
   {
-    "function_name": "listAdminLicenses",
-    "tables": ["licenses"],
-    "classification": "audit",
-    "description": "Lists licenses for admin display.",
-    "devolens_decoupling_strategy": "Transition to query Devolens keys and correlate with local mapping records."
-  },
-  {
-    "function_name": "listAdminDeviceBindings",
-    "tables": ["device_bindings", "licenses"],
-    "classification": "audit",
-    "description": "Lists device bindings for admin display.",
-    "devolens_decoupling_strategy": "Transition to query Devolens device registrations and correlate with local cache."
-  },
-  {
     "function_name": "listAdminAuditEvents",
     "tables": ["audit_events"],
     "classification": "audit",

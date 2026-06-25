@@ -75,6 +75,8 @@ fn cfg(base: String) -> Config {
         license_worker_circuit_breaker_cooldown_ms: 30_000,
         devolens_base_url: shorts_tauri_app::core::config::DEFAULT_DEVOLENS_BASE_URL.to_string(),
         devolens_access_token: "client-token".to_string(),
+        devolens_client_token: "client-token".to_string(),
+        devolens_support_token: String::new(),
         devolens_product_id: "1234".to_string(),
         devolens_offline_grace_period_ms: 86400000,
     }

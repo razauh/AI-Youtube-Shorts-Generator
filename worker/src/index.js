@@ -17,8 +17,6 @@ import {
   updateDeletionRequestStatus,
   sanitizeCompletedDeletionRequest,
   getAdminOverviewCounts,
-  listAdminLicenses,
-  listAdminDeviceBindings,
   listAdminAuditEvents,
   listAdminIdempotencyRecords,
   listLicensesByHashPrefix,
@@ -61,12 +59,6 @@ export default {
     }
     if (method === "GET" && path === "/v1/admin/overview") {
       return handleAdminOverview(request, env);
-    }
-    if (method === "GET" && path === "/v1/admin/licenses") {
-      return handleAdminLicenses(request, env);
-    }
-    if (method === "GET" && path === "/v1/admin/device-bindings") {
-      return handleAdminDeviceBindings(request, env);
     }
     if (method === "GET" && path === "/v1/admin/audit-events") {
       return handleAdminAuditEvents(request, env);
@@ -804,82 +796,6 @@ async function handleAdminDisableLicense(request, env) {
     false,
     410,
   );
-}
-
-async function handleAdminLicenses(request, env) {
-  const rid = requestId();
-  const auth = requireAdminAuth(request, env, rid);
-  if (auth) return auth;
-  if (!env?.DB) {
-    return err("storage", "D1 database binding is not configured.", rid, false, 503);
-  }
-  const url = new URL(request.url);
-  const q = asOptionalString(url.searchParams.get("q"));
-  const entitlementStatus = asOptionalString(url.searchParams.get("entitlement_status"));
-  const provider = asOptionalString(url.searchParams.get("provider"));
-  const limit = parseLimit(url.searchParams.get("limit"), 25, 100);
-  if (!limit.ok) return err("bad_request", limit.message, rid, false, 400);
-  try {
-    const rows = await listAdminLicenses(env.DB, {
-      q,
-      entitlementStatus,
-      provider,
-      limit: limit.value,
-    });
-    return ok({
-      licenses: rows.map((row) => ({
-        license_hash_prefix: hashPrefix(row.license_key_hash),
-        purchaser_email_masked: maskEmail(row.purchaser_email),
-        entitlement_status: row.entitlement_status,
-        provider: row.provider || null,
-        provider_sale_id: row.provider_sale_id || null,
-        updated_at_ms: row.updated_at_ms,
-        active_device_count: Number(row.active_device_count || 0),
-        inactive_device_count: Number(row.inactive_device_count || 0),
-      })),
-    });
-  } catch {
-    return err("storage", "Failed to load licenses.", rid, true, 503);
-  }
-}
-
-async function handleAdminDeviceBindings(request, env) {
-  const rid = requestId();
-  const auth = requireAdminAuth(request, env, rid);
-  if (auth) return auth;
-  if (!env?.DB) {
-    return err("storage", "D1 database binding is not configured.", rid, false, 503);
-  }
-  const url = new URL(request.url);
-  const q = asOptionalString(url.searchParams.get("q"));
-  const status = asOptionalString(url.searchParams.get("status"));
-  if (status && !["active", "inactive"].includes(status.toLowerCase())) {
-    return err("bad_request", "Invalid device binding status filter.", rid, false, 400);
-  }
-  const licenseHashPrefix = asOptionalString(url.searchParams.get("license_hash_prefix"));
-  const limit = parseLimit(url.searchParams.get("limit"), 25, 100);
-  if (!limit.ok) return err("bad_request", limit.message, rid, false, 400);
-  try {
-    const rows = await listAdminDeviceBindings(env.DB, {
-      q,
-      status,
-      licenseHashPrefix,
-      limit: limit.value,
-    });
-    return ok({
-      bindings: rows.map((row) => ({
-        device_id: row.device_id,
-        status: row.status,
-        license_hash_prefix: hashPrefix(row.license_key_hash),
-        updated_at_ms: row.updated_at_ms,
-        purchaser_email_masked: maskEmail(row.purchaser_email),
-        public_key_prefix: keyPrefix(row.public_key),
-        fingerprint_summary: summarizeFingerprint(row.fingerprint_json),
-      })),
-    });
-  } catch {
-    return err("storage", "Failed to load device bindings.", rid, true, 503);
-  }
 }
 
 async function handleAdminAuditEvents(request, env) {

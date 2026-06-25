@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 test('D1 schema inventory matches migrations and is complete', () => {
-  const migrationsDir = path.resolve('migrations');
-  const inventoryPath = path.resolve('src/d1_schema_inventory.json');
+  const migrationsDir = path.resolve('worker/migrations');
+  const inventoryPath = path.resolve('worker/src/d1_schema_inventory.json');
 
   const files = fs.readdirSync(migrationsDir).sort();
   const schema = {};

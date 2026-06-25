@@ -93,32 +93,6 @@
   },
   {
     "method": "GET",
-    "path": "/v1/admin/licenses",
-    "owner": "Support",
-    "authority_source": "D1",
-    "retained_or_deprecated": "deprecated",
-    "auth_requirement": "Bearer Admin Token",
-    "caller_surface": "Admin App UI",
-    "response_contract": "JSON license list",
-    "compatibility_deadline": "End of Migration",
-    "exposes_pii_or_secrets": true,
-    "exposed_elements": ["purchaser_email", "active_device_count"]
-  },
-  {
-    "method": "GET",
-    "path": "/v1/admin/device-bindings",
-    "owner": "Support",
-    "authority_source": "D1",
-    "retained_or_deprecated": "deprecated",
-    "auth_requirement": "Bearer Admin Token",
-    "caller_surface": "Admin App UI",
-    "response_contract": "JSON device binding list",
-    "compatibility_deadline": "End of Migration",
-    "exposes_pii_or_secrets": true,
-    "exposed_elements": ["purchaser_email", "license_hash", "device_id", "public_key"]
-  },
-  {
-    "method": "GET",
     "path": "/v1/admin/audit-events",
     "owner": "Support",
     "authority_source": "D1",

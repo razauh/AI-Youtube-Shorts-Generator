@@ -2,11 +2,8 @@
   import {
     approveDeletionRequest,
     clearAdminConfig,
-    disableLicense,
     listAuditEvents,
-    listDeviceBindings,
     listIdempotencyRecords,
-    listLicenses,
     listDeletionRequests,
     loadAdminConfig,
     loadOverview,
@@ -16,9 +13,8 @@
   } from './lib/adminClient';
   import { friendlyAdminError, validateAdminConfig } from './lib/messages';
 
-  const SECTIONS = ['overview', 'delete_requests', 'licenses', 'device_bindings', 'audit_events', 'idempotency'];
+  const SECTIONS = ['overview', 'delete_requests', 'audit_events', 'idempotency'];
   const DELETION_STATUSES = ['pending', 'approved', 'processing', 'rejected', 'completed', 'failed'];
-  const DEVICE_STATUSES = ['all', 'active', 'inactive'];
 
   let section = 'overview';
   let config = { baseUrl: null, tokenConfigured: false, tokenRedacted: null };
@@ -36,12 +32,6 @@
   let overview = null;
   let deletionFilter = 'pending';
   let deletionRequests = [];
-  let licenseQ = '';
-  let licenseStatus = '';
-  let licenses = [];
-  let bindingQ = '';
-  let bindingStatus = 'all';
-  let deviceBindings = [];
   let auditEventType = '';
   let auditActor = '';
   let auditEvents = [];
@@ -152,14 +142,6 @@
         overview = await loadOverview();
       } else if (section === 'delete_requests') {
         deletionRequests = (await listDeletionRequests(deletionFilter)).requests;
-      } else if (section === 'licenses') {
-        licenses = (await listLicenses({ q: licenseQ, entitlementStatus: licenseStatus, limit: 30 })).licenses;
-      } else if (section === 'device_bindings') {
-        deviceBindings = (await listDeviceBindings({
-          q: bindingQ,
-          status: bindingStatus === 'all' ? '' : bindingStatus,
-          limit: 30
-        })).bindings;
       } else if (section === 'audit_events') {
         auditEvents = (await listAuditEvents({ eventType: auditEventType, actor: auditActor, limit: 30 })).events;
       } else {
@@ -328,85 +310,6 @@
                         <span class="muted">No action available</span>
                       {/if}
                     </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        {/if}
-      {:else if section === 'licenses'}
-        <div class="actions">
-          <input placeholder="Search email/sale/hash prefix" bind:value={licenseQ} />
-          <input placeholder="entitlement_status" bind:value={licenseStatus} />
-          <button class="secondary" on:click={refreshCurrentSection}>Apply</button>
-        </div>
-        {#if !loading && licenses.length === 0}<div class="empty-state">No results.</div>{/if}
-        {#if licenses.length > 0}
-          <div class="table-scroll" role="region" aria-label="Licenses table">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th scope="col">License</th>
-                  <th scope="col">Purchaser Email</th>
-                  <th scope="col">Entitlement Status</th>
-                  <th scope="col">Provider</th>
-                  <th scope="col">Provider Sale ID</th>
-                  <th scope="col">Active Devices</th>
-                  <th scope="col">Updated</th>
-                  <th scope="col">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each licenses as item (item.license_hash_prefix)}
-                  <tr>
-                    <td>{item.license_hash_prefix}</td>
-                    <td>{item.purchaser_email_masked || 'Unavailable'}</td>
-                    <td>{item.entitlement_status}</td>
-                    <td>{item.provider ?? 'n/a'}</td>
-                    <td>{item.provider_sale_id ?? 'n/a'}</td>
-                    <td>{item.active_device_count}/{item.inactive_device_count}</td>
-                    <td>{formatDate(item.updated_at_ms)}</td>
-                    <td class="row-actions">
-                      <button class="secondary" on:click={() => openDetail('License', item)}>Details</button>
-                      <a class="button secondary" href="https://console.cryptolens.io" target="_blank" rel="noopener noreferrer">Manage on Devolens</a>
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        {/if}
-      {:else if section === 'device_bindings'}
-        <div class="actions">
-          <input placeholder="Search device/email/hash prefix" bind:value={bindingQ} />
-          <select bind:value={bindingStatus}><option value="all">all</option>{#each DEVICE_STATUSES.slice(1) as s}<option value={s}>{s}</option>{/each}</select>
-          <button class="secondary" on:click={refreshCurrentSection}>Apply</button>
-        </div>
-        {#if !loading && deviceBindings.length === 0}<div class="empty-state">No results.</div>{/if}
-        {#if deviceBindings.length > 0}
-          <div class="table-scroll" role="region" aria-label="Device bindings table">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th scope="col">Device ID</th>
-                  <th scope="col">License</th>
-                  <th scope="col">Purchaser Email</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Fingerprint Summary</th>
-                  <th scope="col">Updated</th>
-                  <th scope="col">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each deviceBindings as item (item.device_id)}
-                  <tr>
-                    <td>{item.device_id}</td>
-                    <td>{item.license_hash_prefix}</td>
-                    <td>{item.purchaser_email_masked || 'Unavailable'}</td>
-                    <td>{item.status}</td>
-                    <td>{item.fingerprint_summary?.os_name ?? 'n/a'} / {item.fingerprint_summary?.arch ?? 'n/a'}</td>
-                    <td>{formatDate(item.updated_at_ms)}</td>
-                    <td class="row-actions"><button class="secondary" on:click={() => openDetail('Device Binding', item)}>Details</button></td>
                   </tr>
                 {/each}
               </tbody>

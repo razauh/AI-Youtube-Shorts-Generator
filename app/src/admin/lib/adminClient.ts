@@ -1,8 +1,6 @@
 import type {
   AdminConfigView,
   AdminOverviewData,
-  AdminLicenseListData,
-  AdminDeviceBindingListData,
   AdminAuditEventListData,
   AdminIdempotencyRecordListData,
   AdminDeletionDecisionData,
@@ -47,34 +45,6 @@ export function testAdminConnection(): Promise<AdminOverviewData> {
 
 export function loadOverview(): Promise<AdminOverviewData> {
   return invoke<AdminOverviewData>('admin_overview');
-}
-
-export function listLicenses(filters: {
-  q?: string;
-  entitlementStatus?: string;
-  provider?: string;
-  limit?: number;
-}): Promise<AdminLicenseListData> {
-  return invoke<AdminLicenseListData>('admin_list_licenses', {
-    q: filters.q?.trim() || null,
-    entitlementStatus: filters.entitlementStatus?.trim() || null,
-    provider: filters.provider?.trim() || null,
-    limit: filters.limit ?? null
-  });
-}
-
-export function listDeviceBindings(filters: {
-  q?: string;
-  status?: string;
-  licenseHashPrefix?: string;
-  limit?: number;
-}): Promise<AdminDeviceBindingListData> {
-  return invoke<AdminDeviceBindingListData>('admin_list_device_bindings', {
-    q: filters.q?.trim() || null,
-    status: filters.status?.trim() || null,
-    licenseHashPrefix: filters.licenseHashPrefix?.trim() || null,
-    limit: filters.limit ?? null
-  });
 }
 
 export function listAuditEvents(filters: {

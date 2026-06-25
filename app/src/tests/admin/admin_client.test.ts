@@ -53,47 +53,31 @@ describe('adminClient', () => {
     });
   });
 
-  it('calls new admin listing commands with typed filters', async () => {
+  it('calls remaining admin commands with typed filters', async () => {
     invoke.mockResolvedValue({});
     const {
       loadOverview,
-      listLicenses,
-      listDeviceBindings,
       listAuditEvents,
       listIdempotencyRecords,
       disableLicense
     } = await import('../../admin/lib/adminClient');
 
     await loadOverview();
-    await listLicenses({ q: ' buyer@example.com ', entitlementStatus: 'active', provider: 'gumroad', limit: 10 });
-    await listDeviceBindings({ q: 'dev_', status: 'active', licenseHashPrefix: 'abc123', limit: 15 });
     await listAuditEvents({ eventType: 'gumroad_sale_verified', actor: 'gumroad', limit: 20 });
     await listIdempotencyRecords({ op: 'reset_request', limit: 5 });
     await disableLicense(' hash123 ', ' abuse ', true);
 
     expect(invoke).toHaveBeenNthCalledWith(1, 'admin_overview', undefined);
-    expect(invoke).toHaveBeenNthCalledWith(2, 'admin_list_licenses', {
-      q: 'buyer@example.com',
-      entitlementStatus: 'active',
-      provider: 'gumroad',
-      limit: 10
-    });
-    expect(invoke).toHaveBeenNthCalledWith(3, 'admin_list_device_bindings', {
-      q: 'dev_',
-      status: 'active',
-      licenseHashPrefix: 'abc123',
-      limit: 15
-    });
-    expect(invoke).toHaveBeenNthCalledWith(4, 'admin_list_audit_events', {
+    expect(invoke).toHaveBeenNthCalledWith(2, 'admin_list_audit_events', {
       eventType: 'gumroad_sale_verified',
       actor: 'gumroad',
       limit: 20
     });
-    expect(invoke).toHaveBeenNthCalledWith(5, 'admin_list_idempotency_records', {
+    expect(invoke).toHaveBeenNthCalledWith(3, 'admin_list_idempotency_records', {
       op: 'reset_request',
       limit: 5
     });
-    expect(invoke).toHaveBeenNthCalledWith(6, 'admin_disable_license', {
+    expect(invoke).toHaveBeenNthCalledWith(4, 'admin_disable_license', {
       licenseHashPrefix: 'hash123',
       reason: 'abuse',
       deactivateBindings: true

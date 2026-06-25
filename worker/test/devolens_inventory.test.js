@@ -4,13 +4,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 test('Devolens calls and token usage inventory is complete and secure', () => {
-  const indexJsPath = path.resolve('src/index.js');
-  const authWorkerRsPath = path.resolve('../app/src-tauri/src/auth_worker.rs');
-  const privacyRsPath = path.resolve('../app/src-tauri/src/commands/privacy.rs');
-  const inventoryPath = path.resolve('src/devolens_inventory.json');
+  const indexJsPath = path.resolve('worker/src/index.js');
+  const bridgeJsPath = path.resolve('worker/src/devolensBridge.js');
+  const authWorkerRsPath = path.resolve('app/src-tauri/src/auth_worker.rs');
+  const privacyRsPath = path.resolve('app/src-tauri/src/commands/privacy.rs');
+  const inventoryPath = path.resolve('worker/src/devolens_inventory.json');
 
   const filesToScan = [
     { name: 'worker/src/index.js', path: indexJsPath },
+    { name: 'worker/src/devolensBridge.js', path: bridgeJsPath },
     { name: 'app/src-tauri/src/auth_worker.rs', path: authWorkerRsPath },
     { name: 'app/src-tauri/src/commands/privacy.rs', path: privacyRsPath }
   ];

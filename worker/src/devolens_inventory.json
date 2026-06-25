@@ -75,7 +75,7 @@
   },
   {
     "endpoint": "/api/key/BlockKey",
-    "caller": "worker/src/index.js",
+    "caller": "worker/src/devolensBridge.js",
     "required_scope": "BlockKey",
     "token_security_category": "Management",
     "parameters": ["token", "ProductId", "Key"],
@@ -90,7 +90,7 @@
   },
   {
     "endpoint": "/api/key/CreateKey",
-    "caller": "worker/src/index.js",
+    "caller": "worker/src/devolensBridge.js",
     "required_scope": "CreateKey",
     "token_security_category": "Management",
     "parameters": ["token", "ProductId", "Key"],
@@ -102,5 +102,20 @@
     "retry_policy": "None",
     "migration_required": false,
     "migration_notes": "Safe to call from Worker backend (secure server-side context)."
+  },
+  {
+    "endpoint": "/api/key/Deactivate",
+    "caller": "worker/src/devolensBridge.js",
+    "required_scope": "Deactivate",
+    "token_security_category": "Management",
+    "parameters": ["token", "ProductId", "Key", "MachineCode"],
+    "error_mapping": {
+      "fetch_error": "err('worker_unreachable')",
+      "http_error": "err('worker_unreachable')",
+      "result_non_zero": "err('devolens_error')"
+    },
+    "retry_policy": "None",
+    "migration_required": false,
+    "migration_notes": "Helper exists in the Worker bridge for server-side deactivation support."
   }
 ]

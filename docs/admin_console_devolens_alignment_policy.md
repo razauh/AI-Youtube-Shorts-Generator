@@ -11,8 +11,8 @@ This document defines the alignment, retention, and migration decisions for each
 | **overview** | `loadOverview` | Reads D1 license, binding, reset, deletion, and audit metrics. | **Retain** | Useful dashboard for system state; does not duplicate authority. |
 | **reset_requests** | `approveResetRequest`, `rejectResetRequest` | Mutates D1 `reset_requests` and `device_bindings` to unbound/inactive. | **Replace with Devolens Flow** | A reset approval must trigger Devolens `/api/key/Deactivate` or `/api/key/BlockKey` on the backend to clear the binding on Cryptolens. |
 | **delete_requests** | `approveDeletionRequest`, `rejectDeletionRequest` | Deletes/anonymizes local D1 client records. | **Retain & Sync** | GDPR deletion of local logs is worker-specific, but the corresponding key must be blocked on Devolens. |
-| **licenses** | `listLicenses`, `disableLicense` | Lists license rows and performs custom disable mutation on D1. | **Replace with Devolens Link** | D1 is not the license source of truth. Direct license blocking/disabling should be done on the Devolens management portal. |
-| **device_bindings** | `listDeviceBindings` | Lists active and inactive device fingerprint mappings from D1. | **Replace with Devolens Flow** | Device binding queries and deactivations should call Devolens device list APIs. |
+| **licenses** | `listLicenses`, `disableLicense` | Legacy broad license browsing and D1 disable actions. | **Removed from UI** | The admin console no longer exposes broad license browsing. Narrow support actions remain server-side where needed. |
+| **device_bindings** | `listDeviceBindings` | Legacy broad device binding browsing from D1. | **Removed from UI** | The admin console no longer exposes device binding tables. Device actions should flow through Devolens-backed support paths instead. |
 | **audit_events** | `listAuditEvents` | Lists local admin activity audit events from D1. | **Retain** | Local compliance audit log of admin action history. |
 | **idempotency** | `listIdempotencyRecords` | Lists webhook/API idempotency status from D1. | **Retain** | Worker-specific request replay protection; not a Devolens concern. |
 
@@ -27,7 +27,7 @@ This document defines the alignment, retention, and migration decisions for each
    - High-privileged actions (GDPR deletion approvals, database index cleanups) require `super_admin` API tokens.
    - Regular reset approvals require `admin_token` verification.
 3. **No Direct D1 Authority**:
-   - The UI must make it clear that disabling a license in D1 is a local cache invalidation. Cryptolens/Devolens must remain the authority for enforcement.
+   - The UI must not expose broad D1 license/device browsing. Cryptolens/Devolens remains the authority for enforcement and device state.
 
 ---
 

@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 test('D1 authority inventory matches store.js exports and is complete', () => {
-  const storePath = path.resolve('src/store.js');
-  const inventoryPath = path.resolve('src/d1_authority_inventory.json');
+  const storePath = path.resolve('worker/src/store.js');
+  const inventoryPath = path.resolve('worker/src/d1_authority_inventory.json');
 
   const content = fs.readFileSync(storePath, 'utf8');
   const lines = content.split('\n');

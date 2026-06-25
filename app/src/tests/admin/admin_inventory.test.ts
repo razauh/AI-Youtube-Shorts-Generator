@@ -18,16 +18,6 @@ const ADMIN_SECTION_POLICIES: Record<string, AdminSectionPolicy> = {
     requiredAuthLevel: 'super_admin',
     rationale: 'GDPR/privacy data erasure is worker-specific but must also block the corresponding Devolens key.'
   },
-  licenses: {
-    decision: 'replace_with_devolens_link',
-    requiredAuthLevel: 'admin_token',
-    rationale: 'D1 is not the license source of truth. Licenses should be managed on the Devolens dashboard.'
-  },
-  device_bindings: {
-    decision: 'replace_with_devolens_flow',
-    requiredAuthLevel: 'admin_token',
-    rationale: 'Active bindings must be queried and cleared via Devolens APIs.'
-  },
   audit_events: {
     decision: 'retain',
     requiredAuthLevel: 'super_admin',
@@ -41,8 +31,8 @@ const ADMIN_SECTION_POLICIES: Record<string, AdminSectionPolicy> = {
 };
 
 describe('Admin UI & Command Inventory', () => {
-  const ACTUAL_SECTIONS = ['overview', 'delete_requests', 'licenses', 'device_bindings', 'audit_events', 'idempotency'];
-  const REMOVED_SECTIONS = ['reset_requests'];
+  const ACTUAL_SECTIONS = ['overview', 'delete_requests', 'audit_events', 'idempotency'];
+  const REMOVED_SECTIONS = ['licenses', 'device_bindings', 'reset_requests'];
 
   it('asserts every active admin section has a documented Devolens-alignment decision', () => {
     for (const section of ACTUAL_SECTIONS) {
@@ -60,14 +50,15 @@ describe('Admin UI & Command Inventory', () => {
     }
   });
 
-  // Red Test (TDD): Failing test representing sections that must be transitioned
-  it('enforces that licenses section is replaced with Devolens link and disables D1 direct editing', () => {
-    const policy = ADMIN_SECTION_POLICIES['licenses'];
-    expect(policy.decision).toBe('replace_with_devolens_link');
-  });
-
   it('enforces that deprecated reset requests are not active admin sections', () => {
     expect(ACTUAL_SECTIONS).not.toContain('reset_requests');
     expect(REMOVED_SECTIONS).toContain('reset_requests');
+  });
+
+  it('removes broad license and device browsing sections from the admin UI', () => {
+    expect(ACTUAL_SECTIONS).not.toContain('licenses');
+    expect(ACTUAL_SECTIONS).not.toContain('device_bindings');
+    expect(REMOVED_SECTIONS).toContain('licenses');
+    expect(REMOVED_SECTIONS).toContain('device_bindings');
   });
 });

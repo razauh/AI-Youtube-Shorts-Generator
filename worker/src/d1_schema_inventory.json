@@ -15,10 +15,8 @@
           "listLicensesByHashPrefix",
           "updateLicenseEntitlementStatus",
           "anonymizeLicenseForPrivacyDeletion",
-          "listAdminLicenses",
           "writeVerifiedGumroadSale",
-          "getDeletionPreviewByLicenseHash",
-          "listAdminDeviceBindings"
+          "getDeletionPreviewByLicenseHash"
         ]
       },
       {
@@ -29,7 +27,6 @@
         "caller_mapping": [
           "getLicenseByHash",
           "listLicensesByHashPrefix",
-          "listAdminLicenses",
           "anonymizeLicenseForPrivacyDeletion",
           "writeVerifiedGumroadSale"
         ]
@@ -43,7 +40,6 @@
           "getLicenseByHash",
           "listLicensesByHashPrefix",
           "updateLicenseEntitlementStatus",
-          "listAdminLicenses",
           "anonymizeLicenseForPrivacyDeletion",
           "writeVerifiedGumroadSale"
         ]
@@ -56,7 +52,6 @@
         "caller_mapping": [
           "getLicenseByHash",
           "listLicensesByHashPrefix",
-          "listAdminLicenses",
           "writeVerifiedGumroadSale"
         ]
       },
@@ -68,7 +63,6 @@
         "caller_mapping": [
           "getLicenseByHash",
           "listLicensesByHashPrefix",
-          "listAdminLicenses",
           "writeVerifiedGumroadSale"
         ]
       },
@@ -81,7 +75,6 @@
           "getLicenseByHash",
           "listLicensesByHashPrefix",
           "updateLicenseEntitlementStatus",
-          "listAdminLicenses",
           "anonymizeLicenseForPrivacyDeletion",
           "writeVerifiedGumroadSale"
         ]
@@ -108,9 +101,7 @@
         "classification": "deprecate",
         "retention_rule": "Device identifier cache. Delete on request.",
         "compatibility_rule": "Keep read-only during migration window.",
-        "caller_mapping": [
-          "listAdminDeviceBindings"
-        ]
+        "caller_mapping": []
       },
       {
         "name": "license_key_hash",
@@ -120,7 +111,6 @@
         "caller_mapping": [
           "deactivateDeviceBindingsByLicenseHash",
           "deleteDeviceBindingsByLicenseHash",
-          "listAdminDeviceBindings",
           "getDeletionPreviewByLicenseHash"
         ]
       },
@@ -129,18 +119,14 @@
         "classification": "deprecate",
         "retention_rule": "Cryptographic verify key.",
         "compatibility_rule": "N/A",
-        "caller_mapping": [
-          "listAdminDeviceBindings"
-        ]
+        "caller_mapping": []
       },
       {
         "name": "fingerprint_json",
         "classification": "delete_later",
         "retention_rule": "Remove completely after migration. Exposes hardware fingerprints.",
         "compatibility_rule": "Mask in administrative interfaces.",
-        "caller_mapping": [
-          "listAdminDeviceBindings"
-        ]
+        "caller_mapping": []
       },
       {
         "name": "status",
@@ -148,8 +134,7 @@
         "retention_rule": "Local status cache.",
         "compatibility_rule": "N/A",
         "caller_mapping": [
-          "deactivateDeviceBindingsByLicenseHash",
-          "listAdminDeviceBindings"
+          "deactivateDeviceBindingsByLicenseHash"
         ]
       },
       {
@@ -158,8 +143,7 @@
         "retention_rule": "Timestamp tracking cache modifications.",
         "compatibility_rule": "N/A",
         "caller_mapping": [
-          "deactivateDeviceBindingsByLicenseHash",
-          "listAdminDeviceBindings"
+          "deactivateDeviceBindingsByLicenseHash"
         ]
       }
     ]

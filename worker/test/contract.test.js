@@ -881,28 +881,18 @@ test('admin approve deletion can be retried after phase failure', async () => {
   assert.equal(db.deletionRequests.get(reqJson.data.request_id).purchaser_email, null);
 });
 
-test('admin licenses endpoint masks email and returns prefixes', async () => {
+test('admin license and device listing routes are not exposed', async () => {
   const db = new MockD1Database();
-  const licenseHashFixture = 'test-license-hash-fixture';
-  db.licenses.set(licenseHashFixture, {
-    license_key_hash: licenseHashFixture,
-    purchaser_email: 'buyer@example.com',
-    entitlement_status: 'active',
-    provider: 'gumroad',
-    provider_sale_id: 'sale_1',
-    updated_at_ms: 1,
-  });
-  const res = await call('/v1/admin/licenses?limit=10', {
-    method: 'GET',
-    headers: { authorization: 'Bearer admin-secret' },
-    env: { DB: db, ADMIN_API_TOKEN: 'admin-secret' },
-  });
-  assert.equal(res.status, 200);
-  const json = await res.json();
-  assert.equal(json.ok, true);
-  assert.equal(json.data.licenses[0].license_hash_prefix, 'test-license');
-  assert.equal(json.data.licenses[0].purchaser_email_masked, 'b***@example.com');
-  assert.equal(JSON.stringify(json).includes('buyer@example.com'), false);
+  for (const routePath of ['/v1/admin/licenses?limit=10', '/v1/admin/device-bindings?limit=10']) {
+    const res = await call(routePath, {
+      method: 'GET',
+      headers: { authorization: 'Bearer admin-secret' },
+      env: { DB: db, ADMIN_API_TOKEN: 'admin-secret' },
+    });
+    assert.equal(res.status, 404);
+    const json = await res.json();
+    assert.equal(json.error.code, 'route_not_found');
+  }
 });
 
 test('admin disable license requires bearer token', async () => {
