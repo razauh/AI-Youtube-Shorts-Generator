@@ -23,6 +23,8 @@ const CONFIG_ENV_KEYS: &[&str] = &[
     "LICENSE_WORKER_CIRCUIT_COOLDOWN_MS",
     "DEVOLENS_BASE_URL",
     "DEVOLENS_ACCESS_TOKEN",
+    "DEVOLENS_CLIENT_TOKEN",
+    "DEVOLENS_SUPPORT_TOKEN",
     "DEVOLENS_PRODUCT_ID",
     "DEVOLENS_OFFLINE_GRACE_PERIOD_MS",
     "SKIP_DEVOLENS_TOKEN_SAFETY_CHECK",
@@ -92,7 +94,7 @@ impl Drop for IsolatedConfigEnv {
 
 fn configure_required_devolens_env() {
     unsafe {
-        std::env::set_var("DEVOLENS_ACCESS_TOKEN", "client-token");
+        std::env::set_var("DEVOLENS_CLIENT_TOKEN", "client-token");
         std::env::set_var("DEVOLENS_PRODUCT_ID", "1234");
         std::env::set_var("SKIP_DEVOLENS_TOKEN_SAFETY_CHECK", "1");
     }
@@ -123,7 +125,7 @@ fn defaults_use_devolens_when_required_credentials_are_set() {
     assert_eq!(cfg.license_worker_circuit_breaker_failure_threshold, 3);
     assert_eq!(cfg.license_worker_circuit_breaker_cooldown_ms, 30_000);
     assert_eq!(cfg.devolens_base_url, DEFAULT_DEVOLENS_BASE_URL);
-    assert_eq!(cfg.devolens_access_token, "client-token");
+    assert_eq!(cfg.devolens_client_token, "client-token");
     assert_eq!(cfg.devolens_product_id, "1234");
 }
 
@@ -132,7 +134,7 @@ fn default_devolens_config_requires_provider_credentials() {
     let _env = IsolatedConfigEnv::new("devolens-required-by-default");
 
     let err = Config::from_env().expect_err("devolens token should be required");
-    assert!(err.to_string().contains("DEVOLENS_ACCESS_TOKEN"));
+    assert!(err.to_string().contains("DEVOLENS_CLIENT_TOKEN"));
 }
 
 #[test]
@@ -166,7 +168,7 @@ fn app_config_summary_reports_status_without_secret_values() {
         std::env::remove_var("MUAPI_API_KEY");
         std::env::remove_var("OPENAI_API_KEY");
         std::env::remove_var("LICENSE_WORKER_BASE_URL");
-        std::env::remove_var("DEVOLENS_ACCESS_TOKEN");
+        std::env::remove_var("DEVOLENS_CLIENT_TOKEN");
         std::env::remove_var("DEVOLENS_PRODUCT_ID");
         std::env::remove_var("SKIP_DEVOLENS_TOKEN_SAFETY_CHECK");
     }
@@ -239,7 +241,7 @@ fn license_config_env_overrides_are_trimmed_and_normalized() {
         std::env::set_var("LICENSE_WORKER_CIRCUIT_FAILURE_THRESHOLD", "5");
         std::env::set_var("LICENSE_WORKER_CIRCUIT_COOLDOWN_MS", "5000");
         std::env::set_var("DEVOLENS_BASE_URL", " https://devolens.example.test/ ");
-        std::env::set_var("DEVOLENS_ACCESS_TOKEN", " devolens-secret ");
+        std::env::set_var("DEVOLENS_CLIENT_TOKEN", " devolens-secret ");
         std::env::set_var("DEVOLENS_PRODUCT_ID", " 1234 ");
         std::env::set_var("SKIP_DEVOLENS_TOKEN_SAFETY_CHECK", "1");
     }
@@ -258,7 +260,7 @@ fn license_config_env_overrides_are_trimmed_and_normalized() {
     assert_eq!(cfg.license_worker_circuit_breaker_failure_threshold, 5);
     assert_eq!(cfg.license_worker_circuit_breaker_cooldown_ms, 5000);
     assert_eq!(cfg.devolens_base_url, "https://devolens.example.test");
-    assert_eq!(cfg.devolens_access_token, "devolens-secret");
+    assert_eq!(cfg.devolens_client_token, "devolens-secret");
     assert_eq!(cfg.devolens_product_id, "1234");
 
     unsafe {
@@ -272,7 +274,7 @@ fn license_config_env_overrides_are_trimmed_and_normalized() {
         std::env::remove_var("LICENSE_WORKER_CIRCUIT_FAILURE_THRESHOLD");
         std::env::remove_var("LICENSE_WORKER_CIRCUIT_COOLDOWN_MS");
         std::env::remove_var("DEVOLENS_BASE_URL");
-        std::env::remove_var("DEVOLENS_ACCESS_TOKEN");
+        std::env::remove_var("DEVOLENS_CLIENT_TOKEN");
         std::env::remove_var("DEVOLENS_PRODUCT_ID");
         std::env::remove_var("SKIP_DEVOLENS_TOKEN_SAFETY_CHECK");
     }
@@ -287,10 +289,10 @@ fn devolens_backend_requires_provider_credentials() {
     }
 
     let err = Config::from_env().expect_err("devolens token should be required");
-    assert!(err.to_string().contains("DEVOLENS_ACCESS_TOKEN"));
+    assert!(err.to_string().contains("DEVOLENS_CLIENT_TOKEN"));
 
     unsafe {
-        std::env::set_var("DEVOLENS_ACCESS_TOKEN", "token");
+        std::env::set_var("DEVOLENS_CLIENT_TOKEN", "token");
         std::env::remove_var("DEVOLENS_PRODUCT_ID");
     }
 
@@ -304,7 +306,7 @@ fn devolens_backend_mode_loads_provider_config() {
     unsafe {
         std::env::set_var("LICENSE_BACKEND_MODE", "devolens");
         std::env::set_var("DEVOLENS_BASE_URL", "https://api.cryptolens.io/");
-        std::env::set_var("DEVOLENS_ACCESS_TOKEN", "devolens-secret-value");
+        std::env::set_var("DEVOLENS_CLIENT_TOKEN", "devolens-secret-value");
         std::env::set_var("DEVOLENS_PRODUCT_ID", "1234");
         std::env::set_var("SKIP_DEVOLENS_TOKEN_SAFETY_CHECK", "1");
     }
@@ -316,7 +318,7 @@ fn devolens_backend_mode_loads_provider_config() {
         shorts_tauri_app::core::config::LicenseBackendMode::Devolens
     );
     assert_eq!(cfg.devolens_base_url, "https://api.cryptolens.io");
-    assert_eq!(cfg.devolens_access_token, "devolens-secret-value");
+    assert_eq!(cfg.devolens_client_token, "devolens-secret-value");
     assert_eq!(cfg.devolens_product_id, "1234");
 }
 
@@ -330,7 +332,6 @@ fn missing_required_keys_return_deterministic_prefixes() {
         .require_api_key()
         .expect_err("must fail when MUAPI_API_KEY missing");
     assert!(api_err.to_string().starts_with("MUAPI_API_KEY is not set."));
-
 }
 
 #[test]
@@ -400,8 +401,8 @@ fn invalid_license_worker_integer_is_rejected() {
 }
 
 #[test]
-fn devolens_token_safety_check_rejects_privileged_token() {
-    let _env = IsolatedConfigEnv::new("devolens-safety-fail");
+fn devolens_token_scope_check_rejects_privileged_client_token() {
+    let _env = IsolatedConfigEnv::new("devolens-scope-client-fail");
     
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -420,29 +421,71 @@ fn devolens_token_safety_check_rejects_privileged_token() {
     unsafe {
         std::env::set_var("LICENSE_BACKEND_MODE", "devolens");
         std::env::set_var("DEVOLENS_BASE_URL", &mock_url);
-        std::env::set_var("DEVOLENS_ACCESS_TOKEN", "privileged-token");
+        std::env::set_var("DEVOLENS_CLIENT_TOKEN", "privileged-token");
         std::env::set_var("DEVOLENS_PRODUCT_ID", "1234");
     }
 
-    let err = Config::from_env().expect_err("privileged token must be rejected");
-    assert!(err.to_string().contains("DEVOLENS_ACCESS_TOKEN"));
+    let err = Config::from_env().expect_err("privileged client token must be rejected");
+    assert!(err.to_string().contains("DEVOLENS_CLIENT_TOKEN"));
     assert!(err.to_string().contains("management scopes"));
 }
 
 #[test]
-fn devolens_token_safety_check_accepts_client_only_token() {
-    let _env = IsolatedConfigEnv::new("devolens-safety-pass");
+fn devolens_token_scope_check_rejects_wrong_scope_support_token() {
+    let _env = IsolatedConfigEnv::new("devolens-scope-support-fail");
     
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let mock_url = format!("http://127.0.0.1:{}", port);
     
     std::thread::spawn(move || {
+        // Accept two requests: one for client token, one for support token
+        for _ in 0..2 {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buffer = [0; 1024];
+                let _ = std::io::Read::read(&mut stream, &mut buffer);
+                
+                // Return "Access denied" (not management) for both
+                let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"result\":1,\"message\":\"Access denied.\"}";
+                let _ = std::io::Write::write_all(&mut stream, response.as_bytes());
+            }
+        }
+    });
+
+    unsafe {
+        std::env::set_var("LICENSE_BACKEND_MODE", "devolens");
+        std::env::set_var("DEVOLENS_BASE_URL", &mock_url);
+        std::env::set_var("DEVOLENS_CLIENT_TOKEN", "client-token");
+        std::env::set_var("DEVOLENS_SUPPORT_TOKEN", "wrong-scope-token");
+        std::env::set_var("DEVOLENS_PRODUCT_ID", "1234");
+    }
+
+    let err = Config::from_env().expect_err("wrong-scope support token must be rejected");
+    assert!(err.to_string().contains("DEVOLENS_SUPPORT_TOKEN"));
+    assert!(err.to_string().contains("lacks required management scopes"));
+}
+
+#[test]
+fn devolens_token_scope_check_accepts_valid_scope_tokens() {
+    let _env = IsolatedConfigEnv::new("devolens-scope-pass");
+    
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let mock_url = format!("http://127.0.0.1:{}", port);
+    
+    std::thread::spawn(move || {
+        // First request is client token check (expects non-management, we return 1/Access denied)
         if let Ok((mut stream, _)) = listener.accept() {
             let mut buffer = [0; 1024];
             let _ = std::io::Read::read(&mut stream, &mut buffer);
-            
             let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"result\":1,\"message\":\"Access denied.\"}";
+            let _ = std::io::Write::write_all(&mut stream, response.as_bytes());
+        }
+        // Second request is support token check (expects management, we return 0)
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buffer = [0; 1024];
+            let _ = std::io::Read::read(&mut stream, &mut buffer);
+            let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"result\":0,\"products\":[]}";
             let _ = std::io::Write::write_all(&mut stream, response.as_bytes());
         }
     });
@@ -450,10 +493,38 @@ fn devolens_token_safety_check_accepts_client_only_token() {
     unsafe {
         std::env::set_var("LICENSE_BACKEND_MODE", "devolens");
         std::env::set_var("DEVOLENS_BASE_URL", &mock_url);
-        std::env::set_var("DEVOLENS_ACCESS_TOKEN", "client-token");
+        std::env::set_var("DEVOLENS_CLIENT_TOKEN", "client-token");
+        std::env::set_var("DEVOLENS_SUPPORT_TOKEN", "support-token");
         std::env::set_var("DEVOLENS_PRODUCT_ID", "1234");
     }
 
-    let cfg = Config::from_env().expect("client-only token must be accepted");
-    assert_eq!(cfg.devolens_access_token, "client-token");
+    let cfg = Config::from_env().expect("valid scope tokens must be accepted");
+    assert_eq!(cfg.devolens_client_token, "client-token");
+    assert_eq!(cfg.devolens_support_token, "support-token");
+}
+
+#[test]
+fn devolens_config_redacts_debug_diagnostics() {
+    let _env = IsolatedConfigEnv::new("redact-debug");
+    unsafe {
+        std::env::set_var("DEVOLENS_CLIENT_TOKEN", "my-client-token");
+        std::env::set_var("DEVOLENS_SUPPORT_TOKEN", "my-support-token");
+        std::env::set_var("DEVOLENS_ACCESS_TOKEN", "my-access-token");
+        std::env::set_var("DEVOLENS_PRODUCT_ID", "1234");
+        std::env::set_var("SKIP_DEVOLENS_TOKEN_SAFETY_CHECK", "1");
+    }
+
+    let cfg = Config::from_env().expect("config should load");
+    let debug_str = format!("{:?}", cfg);
+    assert!(!debug_str.contains("my-client-token"));
+    assert!(!debug_str.contains("my-support-token"));
+    assert!(!debug_str.contains("my-access-token"));
+    assert!(debug_str.contains("\"[redacted]\""));
+
+    let worker_cfg = cfg.license_worker_config();
+    let worker_debug_str = format!("{:?}", worker_cfg);
+    assert!(!worker_debug_str.contains("my-client-token"));
+    assert!(!worker_debug_str.contains("my-support-token"));
+    assert!(!worker_debug_str.contains("my-access-token"));
+    assert!(worker_debug_str.contains("\"[redacted]\""));
 }

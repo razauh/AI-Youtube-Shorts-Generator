@@ -122,10 +122,10 @@ async fn devolens_post<T: DeserializeOwned>(
 
 async fn devolens_block_key(cfg: &Config, license_key: &str) -> Result<UserDataDeletionView, AuthCommandError> {
     let worker_cfg = cfg.license_worker_config();
-    let access_token = &worker_cfg.devolens_access_token;
+    let access_token = &worker_cfg.devolens_support_token;
     let product_id = &worker_cfg.devolens_product_id;
     if access_token.trim().is_empty() || product_id.trim().is_empty() {
-        return Err(command_error("unauthorized", "Devolens access token or product id is not configured."));
+        return Err(command_error("unauthorized", "Devolens support token or product id is not configured."));
     }
     let res: DevolensBlockKeyResponse = devolens_post(
         cfg,
@@ -154,10 +154,10 @@ async fn devolens_block_key(cfg: &Config, license_key: &str) -> Result<UserDataD
 
 async fn devolens_get_key(cfg: &Config, license_key: &str) -> Result<UserDataDeletionView, AuthCommandError> {
     let worker_cfg = cfg.license_worker_config();
-    let access_token = &worker_cfg.devolens_access_token;
+    let access_token = &worker_cfg.devolens_support_token;
     let product_id = &worker_cfg.devolens_product_id;
     if access_token.trim().is_empty() || product_id.trim().is_empty() {
-        return Err(command_error("unauthorized", "Devolens access token or product id is not configured."));
+        return Err(command_error("unauthorized", "Devolens support token or product id is not configured."));
     }
     let res: DevolensGetKeyResponse = devolens_post(
         cfg,

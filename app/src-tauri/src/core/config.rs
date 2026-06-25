@@ -7,7 +7,7 @@ pub const PRODUCTION_LICENSE_WORKER_BASE_URL: &str =
     "https://license-worker.demandscout.workers.dev";
 pub const DEFAULT_DEVOLENS_BASE_URL: &str = "https://api.cryptolens.io";
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Config {
     pub muapi_api_key: String,
     pub muapi_base_url: String,
@@ -26,11 +26,13 @@ pub struct Config {
     pub license_worker_circuit_breaker_cooldown_ms: u64,
     pub devolens_base_url: String,
     pub devolens_access_token: String,
+    pub devolens_client_token: String,
+    pub devolens_support_token: String,
     pub devolens_product_id: String,
     pub devolens_offline_grace_period_ms: u64,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct LicenseWorkerConfig {
     pub backend_mode: LicenseBackendMode,
     pub base_url: String,
@@ -43,6 +45,8 @@ pub struct LicenseWorkerConfig {
     pub circuit_breaker_cooldown_ms: u64,
     pub devolens_base_url: String,
     pub devolens_access_token: String,
+    pub devolens_client_token: String,
+    pub devolens_support_token: String,
     pub devolens_product_id: String,
     pub devolens_offline_grace_period_ms: u64,
 }
@@ -104,6 +108,18 @@ impl Config {
             .trim_end_matches('/')
             .to_string();
         let devolens_access_token = read_env_or_secure("DEVOLENS_ACCESS_TOKEN", "");
+        let mut devolens_client_token = read_env_or_secure("DEVOLENS_CLIENT_TOKEN", "");
+        let mut devolens_support_token = read_env_or_secure("DEVOLENS_SUPPORT_TOKEN", "");
+
+        if devolens_client_token.trim().is_empty() && !devolens_access_token.trim().is_empty() {
+            eprintln!("Warning: DEVOLENS_ACCESS_TOKEN is deprecated. Please use DEVOLENS_CLIENT_TOKEN.");
+            devolens_client_token = devolens_access_token.clone();
+        }
+        if devolens_support_token.trim().is_empty() && !devolens_access_token.trim().is_empty() {
+            eprintln!("Warning: DEVOLENS_ACCESS_TOKEN is deprecated. Please use DEVOLENS_SUPPORT_TOKEN.");
+            devolens_support_token = devolens_access_token.clone();
+        }
+
         let devolens_product_id = read_env_trimmed("DEVOLENS_PRODUCT_ID", "");
         let devolens_offline_grace_period_ms =
             parse_u64_env("DEVOLENS_OFFLINE_GRACE_PERIOD_MS", "86400000")?;
@@ -112,7 +128,8 @@ impl Config {
             license_backend_mode,
             &license_worker_base_url,
             &devolens_base_url,
-            &devolens_access_token,
+            &devolens_client_token,
+            &devolens_support_token,
             &devolens_product_id,
             &license_storage_namespace,
             &license_keychain_service,
@@ -139,6 +156,8 @@ impl Config {
             license_worker_circuit_breaker_cooldown_ms,
             devolens_base_url,
             devolens_access_token,
+            devolens_client_token,
+            devolens_support_token,
             devolens_product_id,
             devolens_offline_grace_period_ms,
         })
@@ -158,6 +177,8 @@ impl Config {
             circuit_breaker_cooldown_ms: self.license_worker_circuit_breaker_cooldown_ms,
             devolens_base_url: self.devolens_base_url.clone(),
             devolens_access_token: self.devolens_access_token.clone(),
+            devolens_client_token: self.devolens_client_token.clone(),
+            devolens_support_token: self.devolens_support_token.clone(),
             devolens_product_id: self.devolens_product_id.clone(),
             devolens_offline_grace_period_ms: self.devolens_offline_grace_period_ms,
         }
@@ -273,7 +294,8 @@ fn validate_license_worker_config(
     mode: LicenseBackendMode,
     base_url: &str,
     devolens_base_url: &str,
-    devolens_access_token: &str,
+    devolens_client_token: &str,
+    devolens_support_token: &str,
     devolens_product_id: &str,
     namespace: &str,
     keychain_service: &str,
@@ -295,9 +317,9 @@ fn validate_license_worker_config(
             reason: "must start with http:// or https://",
         });
     }
-    if mode == LicenseBackendMode::Devolens && devolens_access_token.trim().is_empty() {
+    if mode == LicenseBackendMode::Devolens && devolens_client_token.trim().is_empty() {
         return Err(ConfigError::InvalidConfigValue {
-            var_name: "DEVOLENS_ACCESS_TOKEN",
+            var_name: "DEVOLENS_CLIENT_TOKEN",
             reason: "must be set when LICENSE_BACKEND_MODE=devolens",
         });
     }
@@ -308,7 +330,8 @@ fn validate_license_worker_config(
         });
     }
     if mode == LicenseBackendMode::Devolens && std::env::var("SKIP_DEVOLENS_TOKEN_SAFETY_CHECK").is_err() {
-        check_devolens_token_safety(devolens_base_url, devolens_access_token)?;
+        check_devolens_token_scope(devolens_base_url, devolens_client_token, false)?;
+        check_devolens_token_scope(devolens_base_url, devolens_support_token, true)?;
     }
     if namespace.trim().is_empty() {
         return Err(ConfigError::InvalidConfigValue {
@@ -343,16 +366,17 @@ fn validate_license_worker_config(
     Ok(())
 }
 
-fn check_devolens_token_safety(
+fn check_devolens_token_scope(
     devolens_base_url: &str,
-    devolens_access_token: &str,
+    token: &str,
+    expected_to_be_management: bool,
 ) -> Result<(), ConfigError> {
-    if devolens_access_token.trim().is_empty() {
+    if token.trim().is_empty() {
         return Ok(());
     }
 
     let url = format!("{}/api/product/GetProducts", devolens_base_url.trim_end_matches('/'));
-    let token = devolens_access_token.trim().to_string();
+    let token_val = token.trim().to_string();
 
     let handle = std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -368,7 +392,7 @@ fn check_devolens_token_safety(
             
             let response = client
                 .post(&url)
-                .form(&[("token", &token)])
+                .form(&[("token", &token_val)])
                 .send()
                 .await
                 .map_err(|e| e.to_string())?;
@@ -380,20 +404,77 @@ fn check_devolens_token_safety(
 
     match handle.join() {
         Ok(Ok(response_text)) => {
-            if response_text.contains("\"result\":0") || response_text.contains("\"result\": 0") {
+            let is_management = response_text.contains("\"result\":0") || response_text.contains("\"result\": 0");
+            if expected_to_be_management && !is_management {
                 return Err(ConfigError::InvalidConfigValue {
-                    var_name: "DEVOLENS_ACCESS_TOKEN",
+                    var_name: "DEVOLENS_SUPPORT_TOKEN",
+                    reason: "Token lacks required management scopes (CreateKey/BlockKey/GetKeys/GetProducts). Support token must have management scopes.",
+                });
+            }
+            if !expected_to_be_management && is_management {
+                return Err(ConfigError::InvalidConfigValue {
+                    var_name: "DEVOLENS_CLIENT_TOKEN",
                     reason: "Token has management scopes (CreateKey/BlockKey/GetKeys/GetProducts). Client token must only have Activate/Deactivate.",
                 });
             }
         }
         Ok(Err(err)) => {
-            eprintln!("Warning: Devolens token safety check failed to run: {}", err);
+            eprintln!("Warning: Devolens token scope check failed to run: {}", err);
         }
         Err(_) => {
-            eprintln!("Warning: Devolens token safety check thread panicked.");
+            eprintln!("Warning: Devolens token scope check thread panicked.");
         }
     }
 
     Ok(())
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("muapi_api_key", &"[redacted]")
+            .field("muapi_base_url", &self.muapi_base_url)
+            .field("muapi_poll_interval_seconds", &self.muapi_poll_interval_seconds)
+            .field("muapi_poll_timeout_seconds", &self.muapi_poll_timeout_seconds)
+            .field("openai_api_key", &"[redacted]")
+            .field("openai_model", &self.openai_model)
+            .field("license_worker_base_url", &self.license_worker_base_url)
+            .field("license_storage_namespace", &self.license_storage_namespace)
+            .field("license_keychain_service", &self.license_keychain_service)
+            .field("license_backend_mode", &self.license_backend_mode)
+            .field("license_worker_timeout_ms", &self.license_worker_timeout_ms)
+            .field("license_worker_retry_attempts", &self.license_worker_retry_attempts)
+            .field("license_worker_retry_backoff_ms", &self.license_worker_retry_backoff_ms)
+            .field("license_worker_circuit_breaker_failure_threshold", &self.license_worker_circuit_breaker_failure_threshold)
+            .field("license_worker_circuit_breaker_cooldown_ms", &self.license_worker_circuit_breaker_cooldown_ms)
+            .field("devolens_base_url", &self.devolens_base_url)
+            .field("devolens_access_token", &"[redacted]")
+            .field("devolens_client_token", &"[redacted]")
+            .field("devolens_support_token", &"[redacted]")
+            .field("devolens_product_id", &self.devolens_product_id)
+            .field("devolens_offline_grace_period_ms", &self.devolens_offline_grace_period_ms)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for LicenseWorkerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LicenseWorkerConfig")
+            .field("backend_mode", &self.backend_mode)
+            .field("base_url", &self.base_url)
+            .field("storage_namespace", &self.storage_namespace)
+            .field("keychain_service", &self.keychain_service)
+            .field("timeout_ms", &self.timeout_ms)
+            .field("retry_attempts", &self.retry_attempts)
+            .field("retry_backoff_ms", &self.retry_backoff_ms)
+            .field("circuit_breaker_failure_threshold", &self.circuit_breaker_failure_threshold)
+            .field("circuit_breaker_cooldown_ms", &self.circuit_breaker_cooldown_ms)
+            .field("devolens_base_url", &self.devolens_base_url)
+            .field("devolens_access_token", &"[redacted]")
+            .field("devolens_client_token", &"[redacted]")
+            .field("devolens_support_token", &"[redacted]")
+            .field("devolens_product_id", &self.devolens_product_id)
+            .field("devolens_offline_grace_period_ms", &self.devolens_offline_grace_period_ms)
+            .finish()
+    }
 }

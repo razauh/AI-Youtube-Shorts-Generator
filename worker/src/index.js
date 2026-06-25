@@ -1082,7 +1082,7 @@ async function handleGumroadWebhook(request, env) {
       const normalizedLicenseKey = normalizeLicenseKey(verification.license_key);
       const licenseKeyHash = await sha256Hex(`${env?.HASH_PEPPER || ""}:${normalizedLicenseKey}`);
 
-      if (env.DEVOLENS_ACCESS_TOKEN && env.DEVOLENS_PRODUCT_ID) {
+      if ((env.DEVOLENS_WEBHOOK_TOKEN || env.DEVOLENS_ACCESS_TOKEN) && env.DEVOLENS_PRODUCT_ID) {
         await blockDevolensKey(env, normalizedLicenseKey);
       }
 
@@ -1127,7 +1127,7 @@ async function handleGumroadWebhook(request, env) {
   const normalizedLicenseKey = normalizeLicenseKey(verification.sale.license_key);
   const licenseKeyHash = await sha256Hex(`${env?.HASH_PEPPER || ""}:${normalizedLicenseKey}`);
 
-  if (env.DEVOLENS_ACCESS_TOKEN && env.DEVOLENS_PRODUCT_ID) {
+  if ((env.DEVOLENS_WEBHOOK_TOKEN || env.DEVOLENS_ACCESS_TOKEN) && env.DEVOLENS_PRODUCT_ID) {
     const devolensRes = await createDevolensKey(env, normalizedLicenseKey);
     if (!devolensRes.ok) {
       return err(

@@ -237,7 +237,7 @@ impl DevolensWorkerClient {
         config: &LicenseWorkerConfig,
         timeout: Duration,
     ) -> Result<Self, AuthError> {
-        if config.devolens_access_token.trim().is_empty()
+        if config.devolens_client_token.trim().is_empty()
             || config.devolens_product_id.trim().is_empty()
         {
             return Err(AuthError::Unauthorized);
@@ -248,7 +248,7 @@ impl DevolensWorkerClient {
             .map_err(|err| AuthError::Storage(err.to_string()))?;
         Ok(Self {
             base_url: config.devolens_base_url.trim_end_matches('/').to_string(),
-            access_token: config.devolens_access_token.trim().to_string(),
+            access_token: config.devolens_client_token.trim().to_string(),
             product_id: config.devolens_product_id.trim().to_string(),
             devolens_offline_grace_period_ms: config.devolens_offline_grace_period_ms,
             client,

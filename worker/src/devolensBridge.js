@@ -15,7 +15,31 @@ function redactText(text, token, key) {
 }
 
 async function callDevolensAPI(env, endpoint, params) {
-  const token = env.DEVOLENS_ACCESS_TOKEN;
+  let token;
+  let tokenVarName = "";
+  if (endpoint === "/api/key/CreateKey" || endpoint === "/api/key/BlockKey") {
+    tokenVarName = "DEVOLENS_WEBHOOK_TOKEN";
+    token = env.DEVOLENS_WEBHOOK_TOKEN;
+    if (!token && env.DEVOLENS_ACCESS_TOKEN) {
+      console.warn("Warning: DEVOLENS_ACCESS_TOKEN is deprecated. Please use DEVOLENS_WEBHOOK_TOKEN.");
+      token = env.DEVOLENS_ACCESS_TOKEN;
+    }
+  } else if (endpoint === "/api/key/Deactivate") {
+    tokenVarName = "DEVOLENS_CLIENT_TOKEN";
+    token = env.DEVOLENS_CLIENT_TOKEN;
+    if (!token && env.DEVOLENS_ACCESS_TOKEN) {
+      console.warn("Warning: DEVOLENS_ACCESS_TOKEN is deprecated. Please use DEVOLENS_CLIENT_TOKEN.");
+      token = env.DEVOLENS_ACCESS_TOKEN;
+    }
+  } else {
+    tokenVarName = "DEVOLENS_SUPPORT_TOKEN";
+    token = env.DEVOLENS_SUPPORT_TOKEN;
+    if (!token && env.DEVOLENS_ACCESS_TOKEN) {
+      console.warn("Warning: DEVOLENS_ACCESS_TOKEN is deprecated. Please use DEVOLENS_SUPPORT_TOKEN.");
+      token = env.DEVOLENS_ACCESS_TOKEN;
+    }
+  }
+
   const productId = env.DEVOLENS_PRODUCT_ID;
   const key = params.Key;
 
@@ -23,7 +47,7 @@ async function callDevolensAPI(env, endpoint, params) {
     return {
       ok: false,
       code: "devolens_error",
-      message: "Devolens configuration (DEVOLENS_ACCESS_TOKEN/DEVOLENS_PRODUCT_ID) is missing.",
+      message: `Devolens configuration (${tokenVarName}/DEVOLENS_PRODUCT_ID) is missing.`,
       status: 400,
       retryable: false
     };
