@@ -186,23 +186,21 @@ describe('AdminApp', () => {
     expect(await screen.findByText('Idempotency Key')).toBeInTheDocument();
   });
 
-  it('opens disable modal, requires reason, and sends toggle value', async () => {
+  it('does not show disable button/modal, shows manage on devolens link', async () => {
     loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
     loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, deletion_request_counts: {}, recent_audit_events_24h: 0 });
     listLicenses.mockResolvedValue({ licenses: [{ license_hash_prefix: 'hash-1', purchaser_email_masked: 'b***@example.com', entitlement_status: 'active', provider: 'gumroad', provider_sale_id: 'sale-1', updated_at_ms: 1, active_device_count: 1, inactive_device_count: 0 }] });
-    disableLicense.mockResolvedValue({ license_hash_prefix: 'hash-1', entitlement_status: 'disabled', deactivate_bindings: false });
 
     render(AdminApp);
     await fireEvent.click(await screen.findByRole('button', { name: 'licenses' }));
-    await fireEvent.click(await screen.findByRole('button', { name: 'Disable License' }));
+    
+    // Direct "Disable License" button must not exist
+    expect(screen.queryByRole('button', { name: 'Disable License' })).toBeNull();
 
-    expect(screen.getByText('Disable License?')).toBeInTheDocument();
-    await fireEvent.input(screen.getByLabelText('Reason for disabling'), { target: { value: 'fraud' } });
-    await fireEvent.click(screen.getByLabelText('Deactivate active device bindings now'));
-    const disableButtons = screen.getAllByRole('button', { name: 'Disable License' });
-    await fireEvent.click(disableButtons[disableButtons.length - 1]);
-
-    await waitFor(() => expect(disableLicense).toHaveBeenCalledWith('hash-1', 'fraud', false));
+    // Instead, there must be a "Manage on Devolens" link
+    const link = await screen.findByRole('link', { name: 'Manage on Devolens' });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', 'https://console.cryptolens.io');
   });
 
   it('requires typed confirmation before approving deletion requests', async () => {

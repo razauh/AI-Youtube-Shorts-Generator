@@ -275,8 +275,39 @@ impl AuthService {
     }
 
     pub async fn deactivate_current_device(&self) -> Result<(), AuthError> {
-        // TDD Audit Stub (AUD-05)
-        todo!("deactivate_current_device")
+        let keypair = self.identity.get_or_create_keypair().await?;
+        self.secrets.put_device_keypair(keypair.clone()).await?;
+        let fingerprint = self.identity.collect_fingerprint().await?;
+        let license_key = self.secrets.get_license_key().await?;
+        if license_key.is_none() {
+            return Err(AuthError::InvalidResetRequest);
+        }
+        let request = DeviceResetRequest {
+            license_key,
+            masked_license_key: None,
+            purchaser_email: None,
+            device_public_key: keypair.public_key().clone(),
+            fingerprint,
+            app_version: self.app_version.clone(),
+            timestamp_ms: self.clock.now_ms(),
+        };
+        match self.worker.request_device_reset(request).await {
+            Ok(status) => {
+                self.secrets.clear_session_secrets().await?;
+                self.state.save_session_state(SessionState::Unauthenticated).await?;
+                self.state.save_reset_status(status).await?;
+                Ok(())
+            }
+            Err(err) => {
+                if err == AuthError::WorkerUnreachable {
+                    Err(err)
+                } else {
+                    self.secrets.clear_session_secrets().await?;
+                    self.state.save_session_state(SessionState::Unauthenticated).await?;
+                    Err(err)
+                }
+            }
+        }
     }
 }
 

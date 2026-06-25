@@ -169,7 +169,6 @@ async fn reset_request_sends_required_metadata_and_persists_pending() {
 }
 
 #[tokio::test]
-#[should_panic(expected = "not yet implemented")]
 async fn deactivate_current_device_success_clears_only_approved_state() {
     let worker = FakeWorkerClient::new().with_reset_request(Ok(DeviceResetStatus::Approved {
         request_id: ResetRequestId::new("reset-success").unwrap(),
@@ -210,7 +209,6 @@ async fn deactivate_current_device_success_clears_only_approved_state() {
 }
 
 #[tokio::test]
-#[should_panic(expected = "not yet implemented")]
 async fn deactivate_current_device_failure_preserves_retryable_state() {
     let worker = FakeWorkerClient::new().with_reset_request(Err(AuthError::WorkerUnreachable));
     let harness = TestService::new(worker);
@@ -249,7 +247,6 @@ async fn deactivate_current_device_failure_preserves_retryable_state() {
 }
 
 #[tokio::test]
-#[should_panic(expected = "not yet implemented")]
 async fn deactivate_current_device_terminal_already_deactivated_clears_state() {
     let worker = FakeWorkerClient::new().with_reset_request(Err(AuthError::InvalidResetRequest));
     let harness = TestService::new(worker);

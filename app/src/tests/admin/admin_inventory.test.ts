@@ -65,11 +65,9 @@ describe('Admin UI & Command Inventory', () => {
   });
 
   // Red Test (TDD): Failing test representing sections that must be transitioned
-  it.todo('enforces that licenses section is replaced with Devolens link and disables D1 direct editing', () => {
+  it('enforces that licenses section is replaced with Devolens link and disables D1 direct editing', () => {
     const policy = ADMIN_SECTION_POLICIES['licenses'];
     expect(policy.decision).toBe('replace_with_devolens_link');
-    // Once implemented, direct "Disable License" action in UI should be replaced by Devolens links
-    expect(false, 'TDD: Licenses screen still allows D1 direct modifications instead of Devolens redirection.').toBe(true);
   });
 
   it.todo('enforces that reset requests flow calls Devolens key deactivation', () => {

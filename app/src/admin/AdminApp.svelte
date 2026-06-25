@@ -59,9 +59,7 @@
   let confirmRequest = null;
   let confirmReason = '';
   let deletionConfirmText = '';
-  let disableTarget = null;
-  let disableReason = '';
-  let disableDeactivateBindings = true;
+
 
   $: configured = Boolean(config.baseUrl && config.tokenConfigured);
 
@@ -81,9 +79,7 @@
     else notice = next;
   }
 
-  function canDisableLicense(item) {
-    return String(item?.entitlement_status || '').toLowerCase() === 'active';
-  }
+
 
   async function bootstrap() {
     try {
@@ -214,18 +210,7 @@
     deletionConfirmText = '';
   }
 
-  function openDisable(item) {
-    disableTarget = item;
-    disableReason = '';
-    disableDeactivateBindings = true;
-  }
 
-  function closeDisable() {
-    if (actionBusyFor) return;
-    disableTarget = null;
-    disableReason = '';
-    disableDeactivateBindings = true;
-  }
 
   async function submitDecision() {
     if (!confirmAction || !confirmRequest || actionBusyFor) return;
@@ -263,28 +248,7 @@
     }
   }
 
-  async function submitDisable() {
-    if (!disableTarget || actionBusyFor) return;
-    const reason = disableReason.trim();
-    if (!reason) {
-      notice = { kind: 'error', message: 'Reason for disabling is required.' };
-      return;
-    }
-    actionBusyFor = `disable:${disableTarget.license_hash_prefix}`;
-    try {
-      const result = await disableLicense(disableTarget.license_hash_prefix, reason, disableDeactivateBindings);
-      notice = {
-        kind: 'success',
-        message: `License ${result.license_hash_prefix} is now ${result.entitlement_status}.`
-      };
-      closeDisable();
-      await refreshCurrentSection();
-    } catch (error) {
-      showError(error);
-    } finally {
-      actionBusyFor = null;
-    }
-  }
+
 
   bootstrap();
 </script>
@@ -482,9 +446,7 @@
                     <td>{formatDate(item.updated_at_ms)}</td>
                     <td class="row-actions">
                       <button class="secondary" on:click={() => openDetail('License', item)}>Details</button>
-                      {#if canDisableLicense(item)}
-                        <button class="danger" on:click={() => openDisable(item)}>Disable License</button>
-                      {/if}
+                      <a class="button secondary" href="https://console.cryptolens.io" target="_blank" rel="noopener noreferrer">Manage on Devolens</a>
                     </td>
                   </tr>
                 {/each}
@@ -644,22 +606,3 @@
   </div>
 {/if}
 
-{#if disableTarget}
-  <div class="modal-backdrop" role="presentation" on:click|self={closeDisable}>
-    <section class="modal decision-modal" role="dialog" aria-modal="true" aria-labelledby="disable-dialog-title">
-      <header><h2 id="disable-dialog-title">Disable License?</h2></header>
-      <p>This action may prevent the customer from activating or using the application with this license. This does not delete the license record. The action will be recorded in the audit log.</p>
-      <label>Reason for disabling <textarea bind:value={disableReason} rows="4" /></label>
-      <label class="checkbox-label">
-        <input type="checkbox" bind:checked={disableDeactivateBindings} />
-        Deactivate active device bindings now
-      </label>
-      <div class="actions">
-        <button class="danger" on:click={submitDisable} disabled={Boolean(actionBusyFor) || !disableReason.trim()}>
-          {actionBusyFor ? 'Disabling...' : 'Disable License'}
-        </button>
-        <button class="secondary" on:click={closeDisable} disabled={Boolean(actionBusyFor)}>Cancel</button>
-      </div>
-    </section>
-  </div>
-{/if}

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import app from '../src/index.js';
 
-class MockD1Database {
+export class MockD1Database {
   constructor() {
     this.idempotency = new Map();
     this.licenses = new Map();
@@ -25,7 +25,7 @@ class MockD1Database {
   }
 }
 
-class MockStatement {
+export class MockStatement {
   constructor(db, sql) {
     this.db = db;
     this.sql = sql;
@@ -423,7 +423,7 @@ class MockStatement {
   }
 }
 
-async function call(path, { method = 'POST', headers = {}, body, env = {} } = {}) {
+export async function call(path, { method = 'POST', headers = {}, body, env = {} } = {}) {
   const mergedHeaders = new Headers({ 'content-type': 'application/json', ...headers });
   const req = new Request(`http://localhost${path}`, {
     method,
@@ -926,12 +926,12 @@ test('admin disable license requires request body fields', async () => {
     body: { license_hash_prefix: '', reason: '' },
     env: { DB: new MockD1Database(), ADMIN_API_TOKEN: 'admin-secret' },
   });
-  assert.equal(res.status, 400);
+  assert.equal(res.status, 410);
   const json = await res.json();
-  assert.equal(json.error.code, 'bad_request');
+  assert.equal(json.error.code, 'gone');
 });
 
-test('admin disable license updates status, writes audit event, and deactivates bindings when requested', async () => {
+test('admin disable license is deprecated and returns 410 without mutating D1', async () => {
   const db = new MockD1Database();
   const licenseHash = 'match-prefix-license-hash-001';
   db.licenses.set(licenseHash, {
@@ -940,14 +940,6 @@ test('admin disable license updates status, writes audit event, and deactivates 
     entitlement_status: 'active',
     provider: 'gumroad',
     provider_sale_id: 'sale_1',
-    updated_at_ms: 1,
-  });
-  db.deviceBindings.set('dev-1', {
-    device_id: 'dev-1',
-    license_key_hash: licenseHash,
-    public_key: 'pub',
-    fingerprint_json: '{}',
-    status: 'active',
     updated_at_ms: 1,
   });
 
@@ -960,112 +952,17 @@ test('admin disable license updates status, writes audit event, and deactivates 
     },
     env: { DB: db, ADMIN_API_TOKEN: 'admin-secret' },
   });
-  assert.equal(res.status, 200);
+
+  assert.equal(res.status, 410);
   const json = await res.json();
-  assert.equal(json.ok, true);
-  assert.equal(json.data.entitlement_status, 'disabled');
-  assert.equal(db.licenses.get(licenseHash).entitlement_status, 'disabled');
-  assert.equal(db.deviceBindings.get('dev-1').status, 'inactive');
-  assert.equal(db.auditEvents.at(-1).event_type, 'license_disabled');
-  assert.equal(JSON.stringify(db.auditEvents.at(-1)).includes('buyer@example.com'), false);
+  assert.equal(json.ok, false);
+  assert.equal(json.error.code, 'gone');
+  assert.match(json.error.message, /deprecated/i);
+  
+  // Verify D1 state is NOT mutated
+  assert.equal(db.licenses.get(licenseHash).entitlement_status, 'active');
 });
 
-test('admin disable license rejects invalid transitions and not found', async () => {
-  const db = new MockD1Database();
-  db.licenses.set('already-disabled-hash', {
-    license_key_hash: 'already-disabled-hash',
-    purchaser_email: 'buyer@example.com',
-    entitlement_status: 'disabled',
-    provider: 'gumroad',
-    provider_sale_id: 'sale_1',
-    updated_at_ms: 1,
-  });
-
-  const invalidTransition = await call('/v1/admin/licenses/disable', {
-    headers: { authorization: 'Bearer admin-secret', 'x-idempotency-key': 'disable-3' },
-    body: {
-      license_hash_prefix: 'already-disabled',
-      reason: 'policy',
-      deactivate_bindings: false,
-    },
-    env: { DB: db, ADMIN_API_TOKEN: 'admin-secret' },
-  });
-  assert.equal(invalidTransition.status, 409);
-  assert.equal((await invalidTransition.json()).error.code, 'invalid_transition');
-
-  const notFound = await call('/v1/admin/licenses/disable', {
-    headers: { authorization: 'Bearer admin-secret', 'x-idempotency-key': 'disable-4' },
-    body: {
-      license_hash_prefix: 'missing',
-      reason: 'policy',
-      deactivate_bindings: false,
-    },
-    env: { DB: db, ADMIN_API_TOKEN: 'admin-secret' },
-  });
-  assert.equal(notFound.status, 404);
-  assert.equal((await notFound.json()).error.code, 'license_not_found');
-});
-
-test('admin disable license rejects ambiguous prefixes and supports idempotent replay', async () => {
-  const db = new MockD1Database();
-  db.licenses.set('prefix-aa-1', {
-    license_key_hash: 'prefix-aa-1',
-    purchaser_email: 'a@example.com',
-    entitlement_status: 'active',
-    provider: 'gumroad',
-    provider_sale_id: 'sale_1',
-    updated_at_ms: 1,
-  });
-  db.licenses.set('prefix-aa-2', {
-    license_key_hash: 'prefix-aa-2',
-    purchaser_email: 'b@example.com',
-    entitlement_status: 'active',
-    provider: 'gumroad',
-    provider_sale_id: 'sale_2',
-    updated_at_ms: 1,
-  });
-  const ambiguous = await call('/v1/admin/licenses/disable', {
-    headers: { authorization: 'Bearer admin-secret', 'x-idempotency-key': 'disable-5' },
-    body: {
-      license_hash_prefix: 'prefix-aa',
-      reason: 'manual review',
-      deactivate_bindings: false,
-    },
-    env: { DB: db, ADMIN_API_TOKEN: 'admin-secret' },
-  });
-  assert.equal(ambiguous.status, 400);
-  assert.equal((await ambiguous.json()).error.code, 'bad_request');
-
-  const singleDb = new MockD1Database();
-  singleDb.licenses.set('prefix-bb-1', {
-    license_key_hash: 'prefix-bb-1',
-    purchaser_email: 'c@example.com',
-    entitlement_status: 'active',
-    provider: 'gumroad',
-    provider_sale_id: 'sale_3',
-    updated_at_ms: 1,
-  });
-  const first = await call('/v1/admin/licenses/disable', {
-    headers: { authorization: 'Bearer admin-secret', 'x-idempotency-key': 'disable-6' },
-    body: {
-      license_hash_prefix: 'prefix-bb',
-      reason: 'chargeback',
-      deactivate_bindings: false,
-    },
-    env: { DB: singleDb, ADMIN_API_TOKEN: 'admin-secret' },
-  });
-  assert.equal(first.status, 200);
-  const replay = await call('/v1/admin/licenses/disable', {
-    headers: { authorization: 'Bearer admin-secret', 'x-idempotency-key': 'disable-6' },
-    body: {
-      license_hash_prefix: 'prefix-bb',
-      reason: 'chargeback',
-      deactivate_bindings: false,
-    },
-    env: { DB: singleDb, ADMIN_API_TOKEN: 'admin-secret' },
-  });
-  assert.equal(replay.status, 200);
-});
 
 test('admin audit events endpoint redacts email-like metadata', async () => {
   const db = new MockD1Database();
