@@ -80,15 +80,15 @@ function toResetLifecycle(status: string): DeviceResetLifecycle {
 function statusMessageFor(status: DeviceResetLifecycle): string | null {
   switch (status) {
     case 'pending':
-      return 'Device reset request pending. We will keep checking for an admin decision.';
+      return 'Device release is pending. Keep this request ID if support asked you to track it.';
     case 'approved':
-      return 'Device reset approved. You can now activate again on this device, or activate from another device.';
+      return 'Device released. You can now activate again on this device, or activate from another device.';
     case 'rejected':
-      return 'Device reset request rejected. You can retry or contact support if this looks wrong.';
+      return 'Device release was not approved. Contact support through your purchase channel if this looks wrong.';
     case 'expired':
-      return 'Device reset request expired. Please submit a new request if you still need to move devices.';
+      return 'Device release request expired. Deactivate from the old device or contact support if you still need to move devices.';
     case 'not_found':
-      return 'Device reset request not found. Please verify the request id and try again.';
+      return 'Device release request not found. Verify the request ID if support provided one.';
     case 'idle':
     case 'error':
     default:
@@ -137,7 +137,7 @@ function safeAuthMessage(code: string): string {
     case 'invalid_license_key':
       return 'Invalid license key. Please check and try again.';
     case 'device_already_bound':
-      return 'This license is already in use on another device.';
+      return 'This license is active on another device. Deactivate it on the old device first, or contact support through your purchase channel.';
     case 'reauth_required':
       return 'Session expired. Re-enter your license key to continue.';
     case 'worker_unreachable':
@@ -145,7 +145,7 @@ function safeAuthMessage(code: string): string {
     case 'invalid_purchase_email':
       return 'Invalid purchaser email. Please verify and try again.';
     case 'invalid_reset_request':
-      return 'Unable to request a device reset. This requires your license key on this device—activate again with your license key, then retry.';
+      return 'Unable to release this device. Activate on this device with your license key, then retry deactivation, or contact support through your purchase channel.';
     case 'reset_request_not_found':
       return 'Reset request not found. Check the request ID and try again.';
     default:

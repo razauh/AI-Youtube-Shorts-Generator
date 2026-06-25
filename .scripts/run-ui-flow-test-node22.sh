@@ -24,7 +24,7 @@ echo "Node path: $(which node)"
 echo "pnpm: $(pnpm -v)"
 
 {
-  echo "== ui-flow-auth-node22 =="
+  echo "== ui-flow-auth-machine-limit-node22 =="
   echo "command: pnpm --dir $ROOT_DIR/app run test -- src/tests/ui_flow.test.ts src/tests/auth_client.test.ts src/tests/auth_state.test.ts"
   pnpm --dir "$ROOT_DIR/app" run test -- src/tests/ui_flow.test.ts src/tests/auth_client.test.ts src/tests/auth_state.test.ts
 } 2>&1 | tee "$LOG_FILE"

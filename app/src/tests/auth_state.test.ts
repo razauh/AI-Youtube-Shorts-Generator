@@ -105,7 +105,7 @@ describe('authState store', () => {
     expect(JSON.stringify(localStorage)).not.toContain('LICENSE-1234');
   });
 
-  it('maps device bound errors to reset path', async () => {
+  it('maps device bound errors to machine-limit guidance', async () => {
     activateLicense.mockRejectedValue({
       code: 'device_already_bound',
       message: 'license is already bound to another device',
@@ -117,7 +117,9 @@ describe('authState store', () => {
 
     expect(get(state).lifecycle).toBe('device_bound_elsewhere');
     expect(get(state).error?.code).toBe('device_already_bound');
-    expect(get(state).error?.message).toBe('This license is already in use on another device.');
+    expect(get(state).error?.message).toBe(
+      'This license is active on another device. Deactivate it on the old device first, or contact support through your purchase channel.',
+    );
     expect(JSON.stringify(get(state))).not.toContain('LICENSE-1234');
   });
 
@@ -303,7 +305,7 @@ describe('authState store', () => {
       code: 'invalid_reset_request',
     });
     expect(get(state).resetError?.message).toBe(
-      'Unable to request a device reset. This requires your license key on this device—activate again with your license key, then retry.',
+      'Unable to release this device. Activate on this device with your license key, then retry deactivation, or contact support through your purchase channel.',
     );
   });
 });

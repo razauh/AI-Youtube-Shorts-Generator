@@ -587,7 +587,7 @@ describe('test_ui flow parity', () => {
     expect(screen.getByRole('button', { name: 'Refund Policy' })).toBeTruthy();
   });
 
-  it('test_device_bound_state_shows_reset_request_form', async () => {
+  it('test_device_bound_state_shows_machine_limit_guidance_without_reset_form', async () => {
     authStoreMock.set({
       lifecycle: 'device_bound_elsewhere',
       authState: null,
@@ -601,11 +601,14 @@ describe('test_ui flow parity', () => {
     render(Page);
     expect(screen.getByText('License Required')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Generate' })).toBeNull();
-
-    await fireEvent.input(screen.getByLabelText('Reset license key'), { target: { value: 'LICENSE-1234' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Request Reset' }));
-
-    expect(authStoreMock.store.requestReset).toHaveBeenCalledWith({ license_key: 'LICENSE-1234' });
+    expect(screen.getByRole('heading', { name: 'License active on another device' })).toBeTruthy();
+    expect(screen.getByText('This license is already bound to a different machine.')).toBeTruthy();
+    expect(screen.getByText('Open the app on the old device and use Settings -> Deactivate Device to release it before activating here.')).toBeTruthy();
+    expect(screen.getByText(/contact support through your Gumroad purchase or support channel/)).toBeTruthy();
+    expect(screen.queryByLabelText('Reset license key')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Request Reset' })).toBeNull();
+    expect(authStoreMock.store.requestReset).not.toHaveBeenCalled();
+    expect(authStoreMock.store.pollResetStatus).not.toHaveBeenCalled();
   });
 
   it('test_settings_deactivate_device_failure_keeps_retryable_confirmation', async () => {

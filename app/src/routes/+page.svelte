@@ -55,7 +55,6 @@
   let format = '720';
   let outputJson = '';
   let licenseKey = '';
-  let resetLicenseKey = '';
   let termsAccepted = false;
   let showTermsModal = false;
 
@@ -94,8 +93,6 @@
   let deletionMessage = '';
   let deletionError = '';
   let deletionBusy = false;
-  let authResetActionStatus = '';
-  let authResetActionKind = 'success';
   let licenseFormStatus = '';
   let licenseFormStatusKind = 'info';
   let generateFormStatus = '';
@@ -728,25 +725,6 @@
     licenseKey = '';
   }
 
-  async function submitResetRequest() {
-    const key = resetLicenseKey.trim();
-    if (!key) {
-      authResetActionStatus = 'Enter your license key to request a device reset.';
-      authResetActionKind = 'error';
-      return;
-    }
-    authResetActionStatus = '';
-    authResetActionKind = 'success';
-    await authState.requestReset({ license_key: key });
-    resetLicenseKey = '';
-  }
-
-  async function refreshResetStatus() {
-    if ($authState.resetRequestId) {
-      await authState.pollResetStatus($authState.resetRequestId);
-    }
-  }
-
   async function chooseOutputJsonPath() {
     const picked = await pickOutputJsonPath();
     if (picked) {
@@ -922,21 +900,21 @@
 
       {#if isResetStatus}
         <div class="auth-status">
-          <h2>Device Reset</h2>
+          <h2>Device Release Status</h2>
           <p class="meta">Status: {$authState.lifecycle.replaceAll('_', ' ')}</p>
           {#if $authState.resetRequestId}
             <p class="meta">Request: {$authState.resetRequestId}</p>
           {/if}
           {#if $authState.lifecycle === 'reset_approved_unbound'}
-            <p>Device reset complete.</p>
-            <p class="meta">This license is now unbound. You can:</p>
+            <p>Device release complete.</p>
+            <p class="meta">This license is now available for activation. You can:</p>
             <ul class="meta">
               <li>Activate again on this device using your license key.</li>
               <li>Or activate on a different device if you’re moving.</li>
             </ul>
           {/if}
           {#if $authState.lifecycle === 'reset_pending'}
-            <button type="button" on:click={refreshResetStatus}>Refresh Reset Status</button>
+            <p class="meta">If support provided this request, keep the request ID and follow up through your purchase channel.</p>
           {/if}
         </div>
       {/if}
@@ -964,22 +942,11 @@
       {/if}
 
       {#if $authState.lifecycle === 'device_bound_elsewhere'}
-        <div class="reset-box">
-          <h2>Request Device Reset</h2>
-          <form class="form reset-form" novalidate on:submit|preventDefault={submitResetRequest}>
-            <label>
-              License key
-              <input
-                aria-label="Reset license key"
-                type="password"
-                bind:value={resetLicenseKey}
-                autocomplete="off"
-                spellcheck="false"
-              />
-            </label>
-            <button type="submit">Request Reset</button>
-          </form>
-          <FormStatus message={authResetActionStatus} kind={authResetActionKind} />
+        <div class="reset-box machine-limit-box">
+          <h2>License active on another device</h2>
+          <p>This license is already bound to a different machine.</p>
+          <p class="meta">Open the app on the old device and use Settings -> Deactivate Device to release it before activating here.</p>
+          <p class="meta">If you no longer have access to the old device, contact support through your Gumroad purchase or support channel. Do not share raw license keys in screenshots or public messages.</p>
         </div>
       {/if}
     </section>
