@@ -1346,6 +1346,62 @@ test('gumroad webhook replays stored response for identical sale payload', async
   }
 });
 
+test('gumroad webhook replay skips gumroad verification and devolens provisioning', async () => {
+  const originalFetch = global.fetch;
+  const db = new MockD1Database();
+  const fetchRequests = [];
+
+  global.fetch = async (url) => {
+    fetchRequests.push(url);
+    if (url.includes('api.gumroad.com')) {
+      return new Response(
+        JSON.stringify({
+          sale: {
+            id: 'sale_9xy123',
+            product_id: 'prod_123',
+            email: 'buyer@example.com',
+            license_key: 'AAAA-BBBB-CCCC-DDDD',
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    if (url.includes('/api/key/CreateKey')) {
+      return new Response(JSON.stringify({ result: 0 }), { status: 200 });
+    }
+    return new Response(JSON.stringify({}), { status: 200 });
+  };
+
+  try {
+    const env = {
+      DB: db,
+      GUMROAD_ACCESS_TOKEN: 'token_123',
+      HASH_PEPPER: 'pepper_123',
+      DEVOLENS_WEBHOOK_TOKEN: 'devolens_tok',
+      DEVOLENS_PRODUCT_ID: 'dev_prod',
+    };
+    const first = await call('/v1/license/webhooks/gumroad', {
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: { sale_id: 'sale_9xy123', product_id: 'prod_123', email: 'buyer@example.com' },
+      env,
+    });
+    const second = await call('/v1/license/webhooks/gumroad', {
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: { sale_id: 'sale_9xy123', product_id: 'prod_123', email: 'buyer@example.com' },
+      env,
+    });
+
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 200);
+    assert.equal(fetchRequests.filter((url) => url.includes('api.gumroad.com')).length, 1);
+    assert.equal(fetchRequests.filter((url) => url.includes('/api/key/CreateKey')).length, 1);
+    assert.equal(db.licenses.size, 1);
+    assert.equal(db.idempotency.size, 1);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('gumroad webhook provisions gumroad license to devolens', async () => {
   const originalFetch = global.fetch;
   const db = new MockD1Database();
@@ -1394,6 +1450,54 @@ test('gumroad webhook provisions gumroad license to devolens', async () => {
     assert.ok(createKeyRequest.options.body.includes('token=devolens_tok'));
     assert.ok(createKeyRequest.options.body.includes('ProductId=dev_prod'));
     assert.ok(createKeyRequest.options.body.includes('Key=GUMROAD-VAL-KEY'));
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('gumroad webhook does not persist gumroad mapping when devolens provisioning fails', async () => {
+  const originalFetch = global.fetch;
+  const db = new MockD1Database();
+
+  global.fetch = async (url) => {
+    if (url.includes('api.gumroad.com')) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          sale: {
+            id: 'sale_9xy123',
+            product_id: 'prod_123',
+            email: 'buyer@example.com',
+            license_key: 'GUMROAD-VAL-KEY',
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    if (url.includes('/api/key/CreateKey')) {
+      return new Response(JSON.stringify({ result: 1, message: 'temporary failure' }), { status: 200 });
+    }
+    return new Response(JSON.stringify({}), { status: 200 });
+  };
+
+  try {
+    const env = {
+      DB: db,
+      GUMROAD_ACCESS_TOKEN: 'token_123',
+      HASH_PEPPER: 'pepper_123',
+      DEVOLENS_WEBHOOK_TOKEN: 'devolens_tok',
+      DEVOLENS_PRODUCT_ID: 'dev_prod',
+    };
+    const res = await call('/v1/license/webhooks/gumroad', {
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: { sale_id: 'sale_9xy123', product_id: 'prod_123', email: 'buyer@example.com' },
+      env,
+    });
+
+    assert.equal(res.status, 502);
+    assert.equal(db.licenses.size, 0);
+    assert.equal(db.idempotency.size, 0);
+    assert.equal(db.auditEvents.length, 0);
   } finally {
     global.fetch = originalFetch;
   }

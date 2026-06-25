@@ -881,76 +881,21 @@ async function handleAdminIdempotencyRecords(request, env) {
 
 async function handleGumroadWebhook(request, env) {
   const rid = requestId();
-  const contentType = request.headers.get("content-type") || "";
-  if (!contentType.toLowerCase().includes("application/x-www-form-urlencoded")) {
-    return err(
-      "bad_request",
-      "Gumroad Ping must use application/x-www-form-urlencoded payloads.",
-      rid,
-      false,
-      400,
-    );
-  }
+  const prepared = await prepareGumroadWebhookRequest(request, env, rid);
+  if (prepared instanceof Response) return prepared;
 
-  const body = await readForm(request);
-  if (!body || !body.sale_id || !body.product_id || !body.email) {
-    return err("bad_request", "Invalid webhook payload", rid, false, 400);
-  }
-  if (!env?.DB) {
-    return err("storage", "D1 database binding is not configured.", rid, false, 503);
-  }
-
-  const payloadHash = stableHash(body);
-  const replay = await getD1Idempotent(env.DB, "gumroad_webhook", String(body.sale_id));
-  if (replay) {
-    if (replay.payload_hash !== payloadHash) {
-      return err(
-        "invalid_transition",
-        "Webhook replay does not match original Gumroad payload.",
-        rid,
-        false,
-        409,
-      );
-    }
-    return new Response(replay.response_body, {
-      status: replay.response_status,
-      headers: { "content-type": "application/json; charset=utf-8" },
-    });
-  }
+  const replay = await resolveGumroadWebhookReplay(env.DB, prepared, rid);
+  if (replay) return replay;
 
   const verification = await verifyGumroadSale({
-    saleId: String(body.sale_id),
-    productId: String(body.product_id),
-    email: String(body.email),
+    saleId: prepared.saleId,
+    productId: prepared.productId,
+    email: prepared.email,
     token: env?.GUMROAD_ACCESS_TOKEN,
   });
 
   if (!verification.ok) {
-    if (verification.code === "invalid_transition" && verification.license_key) {
-      const normalizedLicenseKey = normalizeLicenseKey(verification.license_key);
-      const licenseKeyHash = await sha256Hex(`${env?.HASH_PEPPER || ""}:${normalizedLicenseKey}`);
-
-      if ((env.DEVOLENS_WEBHOOK_TOKEN || env.DEVOLENS_ACCESS_TOKEN) && env.DEVOLENS_PRODUCT_ID) {
-        await blockDevolensKey(env, normalizedLicenseKey);
-      }
-
-      const now = Date.now();
-      try {
-        await updateLicenseEntitlementStatus(env.DB, licenseKeyHash, "disabled", now);
-        await writeAuditEvent(
-          env.DB,
-          "license_disabled",
-          "gumroad",
-          JSON.stringify({
-            sale_id: String(body.sale_id),
-            reason: "refunded_or_disputed",
-          }),
-          now,
-        );
-      } catch (e) {
-        // Ignore DB error to allow response propagation
-      }
-    }
+    await handleVerifiedGumroadTerminalSale(env, prepared.saleId, verification);
 
     return err(
       verification.code,
@@ -971,57 +916,150 @@ async function handleGumroadWebhook(request, env) {
     );
   }
 
-  const now = Date.now();
   const normalizedLicenseKey = normalizeLicenseKey(verification.sale.license_key);
-  const licenseKeyHash = await sha256Hex(`${env?.HASH_PEPPER || ""}:${normalizedLicenseKey}`);
-
-  if ((env.DEVOLENS_WEBHOOK_TOKEN || env.DEVOLENS_ACCESS_TOKEN) && env.DEVOLENS_PRODUCT_ID) {
-    const devolensRes = await createDevolensKey(env, normalizedLicenseKey);
-    if (!devolensRes.ok) {
-      return err(
-        devolensRes.code,
-        devolensRes.message,
-        rid,
-        devolensRes.retryable,
-        devolensRes.status
-      );
-    }
+  const devolensResult = await provisionVerifiedGumroadSaleInDevolens(env, normalizedLicenseKey);
+  if (!devolensResult.ok) {
+    return err(
+      devolensResult.code,
+      devolensResult.message,
+      rid,
+      devolensResult.retryable,
+      devolensResult.status,
+    );
   }
 
   const response = ok({
     accepted: true,
     provider: "gumroad",
-    sale_id: body.sale_id,
+    sale_id: prepared.saleId,
     verified: true,
   });
   const responseBody = await response.clone().text();
 
   try {
-    await writeVerifiedGumroadSale(env.DB, {
-      licenseKeyHash,
-      purchaserEmail: String(verification.sale.email),
-      providerSaleId: String(verification.sale.id ?? verification.sale.sale_id ?? body.sale_id),
-      metadataJson: JSON.stringify({
-        sale_id: String(verification.sale.id ?? verification.sale.sale_id ?? body.sale_id),
-        product_id: String(verification.sale.product_id),
-        email: String(verification.sale.email),
-        verified: true,
-      }),
-      updatedAtMs: now,
+    await persistVerifiedGumroadSaleMapping(env, prepared, verification.sale, normalizedLicenseKey, {
+      status: response.status,
+      body: responseBody,
     });
-    await putD1Idempotent(
-      env.DB,
-      "gumroad_webhook",
-      String(body.sale_id),
-      payloadHash,
-      { status: response.status, body: responseBody },
-      now,
-    );
   } catch {
     return err("storage", "Failed to persist verified Gumroad sale.", rid, true, 503);
   }
 
   return response;
+}
+
+async function prepareGumroadWebhookRequest(request, env, rid) {
+  const contentType = request.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().includes("application/x-www-form-urlencoded")) {
+    return err(
+      "bad_request",
+      "Gumroad Ping must use application/x-www-form-urlencoded payloads.",
+      rid,
+      false,
+      400,
+    );
+  }
+
+  const body = await readForm(request);
+  if (!body || !body.sale_id || !body.product_id || !body.email) {
+    return err("bad_request", "Invalid webhook payload", rid, false, 400);
+  }
+  if (!env?.DB) {
+    return err("storage", "D1 database binding is not configured.", rid, false, 503);
+  }
+
+  return {
+    body,
+    saleId: String(body.sale_id),
+    productId: String(body.product_id),
+    email: String(body.email),
+    payloadHash: stableHash(body),
+  };
+}
+
+async function resolveGumroadWebhookReplay(db, prepared, rid) {
+  const replay = await getD1Idempotent(db, "gumroad_webhook", prepared.saleId);
+  if (!replay) return null;
+
+  if (replay.payload_hash !== prepared.payloadHash) {
+    return err(
+      "invalid_transition",
+      "Webhook replay does not match original Gumroad payload.",
+      rid,
+      false,
+      409,
+    );
+  }
+
+  return new Response(replay.response_body, {
+    status: replay.response_status,
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
+}
+
+async function handleVerifiedGumroadTerminalSale(env, saleId, verification) {
+  if (verification.code !== "invalid_transition" || !verification.license_key) return;
+
+  const normalizedLicenseKey = normalizeLicenseKey(verification.license_key);
+  const licenseKeyHash = await sha256Hex(`${env?.HASH_PEPPER || ""}:${normalizedLicenseKey}`);
+
+  if (hasDevolensWebhookConfig(env)) {
+    await blockDevolensKey(env, normalizedLicenseKey);
+  }
+
+  const now = Date.now();
+  try {
+    await updateLicenseEntitlementStatus(env.DB, licenseKeyHash, "disabled", now);
+    await writeAuditEvent(
+      env.DB,
+      "license_disabled",
+      "gumroad",
+      JSON.stringify({
+        sale_id: saleId,
+        reason: "refunded_or_disputed",
+      }),
+      now,
+    );
+  } catch {
+    // Keep terminal Gumroad verification failures non-retryable even if compatibility mapping fails.
+  }
+}
+
+async function provisionVerifiedGumroadSaleInDevolens(env, normalizedLicenseKey) {
+  if (!hasDevolensWebhookConfig(env)) return { ok: true };
+  return createDevolensKey(env, normalizedLicenseKey);
+}
+
+async function persistVerifiedGumroadSaleMapping(env, prepared, sale, normalizedLicenseKey, responseRecord) {
+  const now = Date.now();
+  const providerSaleId = String(sale.id ?? sale.sale_id ?? prepared.saleId);
+  const licenseKeyHash = await sha256Hex(`${env?.HASH_PEPPER || ""}:${normalizedLicenseKey}`);
+
+  await writeVerifiedGumroadSale(env.DB, {
+    licenseKeyHash,
+    purchaserEmail: String(sale.email),
+    providerSaleId,
+    metadataJson: JSON.stringify({
+      sale_id: providerSaleId,
+      product_id: String(sale.product_id),
+      email_masked: maskEmail(sale.email),
+      verified: true,
+      mapping_only: true,
+    }),
+    updatedAtMs: now,
+  });
+  await putD1Idempotent(
+    env.DB,
+    "gumroad_webhook",
+    prepared.saleId,
+    prepared.payloadHash,
+    responseRecord,
+    now,
+  );
+}
+
+function hasDevolensWebhookConfig(env) {
+  return Boolean((env?.DEVOLENS_WEBHOOK_TOKEN || env?.DEVOLENS_ACCESS_TOKEN) && env?.DEVOLENS_PRODUCT_ID);
 }
 
 async function verifyGumroadSale({ saleId, productId, email, token }) {

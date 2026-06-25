@@ -22,6 +22,7 @@ run_step() {
 cd "${ROOT_DIR}/worker"
 
 # We use the local node environment to run node:test on the new failure contract file
+run_step "node-test-worker-contract" node --test test/contract.test.js
 run_step "node-test-gumroad-webhook-failures" node --test test/gumroad_webhook_failures.test.js
 
 echo "validation logs: ${LOG_FILE}"
