@@ -49,8 +49,6 @@ pub struct LicenseWorkerConfig {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LicenseBackendMode {
-    Reference,
-    Hosted,
     Devolens,
     Mock,
 }
@@ -58,8 +56,6 @@ pub enum LicenseBackendMode {
 impl LicenseBackendMode {
     pub fn parse(value: &str) -> Result<Self, ConfigError> {
         match value.trim().to_ascii_lowercase().as_str() {
-            "reference" => Ok(Self::Reference),
-            "hosted" => Ok(Self::Hosted),
             "devolens" => Ok(Self::Devolens),
             "mock" => Ok(Self::Mock),
             _ => Err(ConfigError::InvalidLicenseBackendMode {
@@ -70,8 +66,6 @@ impl LicenseBackendMode {
 
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Reference => "reference",
-            Self::Hosted => "hosted",
             Self::Devolens => "devolens",
             Self::Mock => "mock",
         }
@@ -97,7 +91,7 @@ impl Config {
         let license_keychain_service =
             read_env_trimmed("LICENSE_KEYCHAIN_SERVICE", "ai-youtube-shorts-generator");
         let license_backend_mode =
-            LicenseBackendMode::parse(&read_env_trimmed("LICENSE_BACKEND_MODE", "reference"))?;
+            LicenseBackendMode::parse(&read_env_trimmed("LICENSE_BACKEND_MODE", "devolens"))?;
         let license_worker_timeout_ms = parse_u64_env("LICENSE_WORKER_TIMEOUT_MS", "10000")?;
         let license_worker_retry_attempts = parse_u32_env("LICENSE_WORKER_RETRY_ATTEMPTS", "2")?;
         let license_worker_retry_backoff_ms =
@@ -287,9 +281,7 @@ fn validate_license_worker_config(
     retry_attempts: u32,
     circuit_failure_threshold: u32,
 ) -> Result<(), ConfigError> {
-    if mode != LicenseBackendMode::Mock
-        && !(base_url.starts_with("http://") || base_url.starts_with("https://"))
-    {
+    if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
         return Err(ConfigError::InvalidConfigValue {
             var_name: "LICENSE_WORKER_BASE_URL",
             reason: "must start with http:// or https://",
@@ -405,4 +397,3 @@ fn check_devolens_token_safety(
 
     Ok(())
 }
-

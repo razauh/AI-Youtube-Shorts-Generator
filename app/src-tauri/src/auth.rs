@@ -871,7 +871,7 @@ mod tests {
     fn auth_state_builder_accepts_basic_parts_without_touching_keyring() {
         let root = temp_root("builder");
         let worker_config = LicenseWorkerConfig {
-            backend_mode: crate::core::config::LicenseBackendMode::Reference,
+            backend_mode: crate::core::config::LicenseBackendMode::Devolens,
             base_url: "http://127.0.0.1:8787".to_string(),
             storage_namespace: "desktop-client-test".to_string(),
             keychain_service: "shorts-test".to_string(),
@@ -881,8 +881,8 @@ mod tests {
             circuit_breaker_failure_threshold: 3,
             circuit_breaker_cooldown_ms: 30_000,
             devolens_base_url: crate::core::config::DEFAULT_DEVOLENS_BASE_URL.to_string(),
-            devolens_access_token: String::new(),
-            devolens_product_id: String::new(),
+            devolens_access_token: "client-token".to_string(),
+            devolens_product_id: "1234".to_string(),
             devolens_offline_grace_period_ms: 86400000,
         };
         let state = build_auth_state_from_parts(&worker_config, &root, "0.1.0");

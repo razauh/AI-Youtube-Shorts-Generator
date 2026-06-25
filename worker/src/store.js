@@ -131,42 +131,6 @@ export async function updateLicenseEntitlementStatus(db, licenseKeyHash, entitle
     .run();
 }
 
-export async function upsertDeviceBinding(
-  db,
-  { deviceId, licenseKeyHash, publicKey, fingerprintJson, status, updatedAtMs },
-) {
-  return db
-    .prepare(
-      `INSERT INTO device_bindings (
-         device_id,
-         license_key_hash,
-         public_key,
-         fingerprint_json,
-         status,
-         updated_at_ms
-       ) VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(device_id) DO UPDATE SET
-         license_key_hash = excluded.license_key_hash,
-         public_key = excluded.public_key,
-         fingerprint_json = excluded.fingerprint_json,
-         status = excluded.status,
-         updated_at_ms = excluded.updated_at_ms`,
-    )
-    .bind(deviceId, licenseKeyHash, publicKey, fingerprintJson, status, updatedAtMs)
-    .run();
-}
-
-export async function getDeviceBinding(db, deviceId) {
-  return db
-    .prepare(
-      `SELECT device_id, license_key_hash, public_key, fingerprint_json, status, updated_at_ms
-       FROM device_bindings
-       WHERE device_id = ?`,
-    )
-    .bind(deviceId)
-    .first();
-}
-
 export async function listResetRequestsByStatus(db, status) {
   return db
     .prepare(
@@ -329,40 +293,6 @@ export async function sanitizeCompletedDeletionRequest(db, requestId, updatedAtM
        WHERE request_id = ?`,
     )
     .bind(updatedAtMs, requestId)
-    .run();
-}
-
-export async function upsertResetRequest(
-  db,
-  { requestId, licenseKeyHash, maskedLicenseKey, purchaserEmail, status, createdAtMs, updatedAtMs },
-) {
-  return db
-    .prepare(
-      `INSERT INTO reset_requests (
-         request_id,
-         license_key_hash,
-         masked_license_key,
-         purchaser_email,
-         status,
-         created_at_ms,
-         updated_at_ms
-       ) VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(request_id) DO UPDATE SET
-         license_key_hash = excluded.license_key_hash,
-         masked_license_key = excluded.masked_license_key,
-         purchaser_email = excluded.purchaser_email,
-         status = excluded.status,
-         updated_at_ms = excluded.updated_at_ms`,
-    )
-    .bind(
-      requestId,
-      licenseKeyHash,
-      maskedLicenseKey,
-      purchaserEmail,
-      status,
-      createdAtMs,
-      updatedAtMs,
-    )
     .run();
 }
 

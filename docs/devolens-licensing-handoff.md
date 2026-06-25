@@ -110,11 +110,10 @@ Implemented method behavior:
 
 `build_worker_client` now routes:
 
-- `reference` and `hosted` to the existing `HttpWorkerClient`.
 - `mock` to the existing `MockLicenseWorkerClient`.
 - `devolens` to the new `DevolensWorkerClient`.
 
-The Devolens adapter is wrapped in the existing `PolicyWorkerClient`, so timeout, retry, and circuit-breaker behavior still apply.
+The Devolens adapter is wrapped in the existing `PolicyWorkerClient`, so timeout, retry, and circuit-breaker behavior still apply. The old `reference` and `hosted` customer licensing modes are no longer app config options.
 
 ### Readiness flag
 
@@ -159,35 +158,19 @@ The agent did not run this script, per repository policy.
 
 ## Current Runtime Behavior
 
-### Existing Worker mode
-
-If the app is configured with the current Worker-backed modes, behavior should remain unchanged:
-
-```env
-LICENSE_BACKEND_MODE=hosted
-LICENSE_WORKER_BASE_URL=https://license-worker.demandscout.workers.dev
-```
-
-or:
-
-```env
-LICENSE_BACKEND_MODE=reference
-```
-
-These still use the existing `HttpWorkerClient` and custom Worker contract.
-
 ### Devolens mode
 
-If configured as:
+Customer activation and validation are Devolens-only. Configure the desktop app with:
 
 ```env
-LICENSE_BACKEND_MODE=devolens
 DEVOLENS_ACCESS_TOKEN=[redacted]
 DEVOLENS_PRODUCT_ID=1234
 DEVOLENS_BASE_URL=https://api.cryptolens.io
 ```
 
 then activation goes directly from the Tauri app to the Devolens/Cryptolens API through the new Rust adapter.
+
+The Cloudflare Worker remains a companion service for Gumroad webhooks, updater checks, privacy/admin review, D1 records, and admin desktop operations. It no longer handles customer activation, validation, or public reset request/status routes.
 
 The app still stores session state through the existing `AuthService` and local secure-storage/fallback mechanisms. The frontend receives the same high-level auth views as before.
 

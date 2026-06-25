@@ -24,6 +24,8 @@ const CONFIG_ENV_KEYS: &[&str] = &[
     "DEVOLENS_BASE_URL",
     "DEVOLENS_ACCESS_TOKEN",
     "DEVOLENS_PRODUCT_ID",
+    "DEVOLENS_OFFLINE_GRACE_PERIOD_MS",
+    "SKIP_DEVOLENS_TOKEN_SAFETY_CHECK",
 ];
 
 const ISOLATED_ENV_KEYS: &[&str] = &["HOME", "PATH", "APPDATA"];
@@ -88,9 +90,18 @@ impl Drop for IsolatedConfigEnv {
     }
 }
 
+fn configure_required_devolens_env() {
+    unsafe {
+        std::env::set_var("DEVOLENS_ACCESS_TOKEN", "client-token");
+        std::env::set_var("DEVOLENS_PRODUCT_ID", "1234");
+        std::env::set_var("SKIP_DEVOLENS_TOKEN_SAFETY_CHECK", "1");
+    }
+}
+
 #[test]
-fn defaults_match_python_when_env_missing() {
+fn defaults_use_devolens_when_required_credentials_are_set() {
     let _env = IsolatedConfigEnv::new("defaults");
+    configure_required_devolens_env();
 
     let cfg = Config::from_env().expect("config should load from defaults");
     assert_eq!(cfg.muapi_api_key, "");
@@ -104,7 +115,7 @@ fn defaults_match_python_when_env_missing() {
     assert_eq!(cfg.license_keychain_service, "ai-youtube-shorts-generator");
     assert_eq!(
         cfg.license_backend_mode,
-        shorts_tauri_app::core::config::LicenseBackendMode::Reference
+        shorts_tauri_app::core::config::LicenseBackendMode::Devolens
     );
     assert_eq!(cfg.license_worker_timeout_ms, 10_000);
     assert_eq!(cfg.license_worker_retry_attempts, 2);
@@ -112,8 +123,16 @@ fn defaults_match_python_when_env_missing() {
     assert_eq!(cfg.license_worker_circuit_breaker_failure_threshold, 3);
     assert_eq!(cfg.license_worker_circuit_breaker_cooldown_ms, 30_000);
     assert_eq!(cfg.devolens_base_url, DEFAULT_DEVOLENS_BASE_URL);
-    assert_eq!(cfg.devolens_access_token, "");
-    assert_eq!(cfg.devolens_product_id, "");
+    assert_eq!(cfg.devolens_access_token, "client-token");
+    assert_eq!(cfg.devolens_product_id, "1234");
+}
+
+#[test]
+fn default_devolens_config_requires_provider_credentials() {
+    let _env = IsolatedConfigEnv::new("devolens-required-by-default");
+
+    let err = Config::from_env().expect_err("devolens token should be required");
+    assert!(err.to_string().contains("DEVOLENS_ACCESS_TOKEN"));
 }
 
 #[test]
@@ -126,11 +145,11 @@ fn app_config_summary_reports_status_without_secret_values() {
             "LICENSE_WORKER_BASE_URL",
             "http://127.0.0.1:8787/license-secret-route",
         );
-        std::env::set_var("LICENSE_BACKEND_MODE", "hosted");
+        configure_required_devolens_env();
     }
 
     let summary = app_config_summary().expect("summary should load");
-    assert_eq!(summary.license_backend_mode, "hosted");
+    assert_eq!(summary.license_backend_mode, "devolens");
     assert_eq!(summary.license_worker_endpoint, "local/private worker");
     assert_eq!(summary.license_worker_endpoint_kind, "local");
     assert!(summary.muapi_configured);
@@ -147,7 +166,9 @@ fn app_config_summary_reports_status_without_secret_values() {
         std::env::remove_var("MUAPI_API_KEY");
         std::env::remove_var("OPENAI_API_KEY");
         std::env::remove_var("LICENSE_WORKER_BASE_URL");
-        std::env::remove_var("LICENSE_BACKEND_MODE");
+        std::env::remove_var("DEVOLENS_ACCESS_TOKEN");
+        std::env::remove_var("DEVOLENS_PRODUCT_ID");
+        std::env::remove_var("SKIP_DEVOLENS_TOKEN_SAFETY_CHECK");
     }
 }
 
@@ -159,7 +180,7 @@ fn dotenv_loader_walks_parent_dirs_without_overriding_existing_env() {
     std::fs::create_dir_all(&app_dir).expect("test app dir should be created");
     std::fs::write(
         root.join(".env"),
-        "LICENSE_WORKER_BASE_URL=https://licenses.example.test\nLICENSE_BACKEND_MODE=hosted\nLICENSE_STORAGE_NAMESPACE=root-env\n",
+        "LICENSE_WORKER_BASE_URL=https://licenses.example.test\nLICENSE_BACKEND_MODE=devolens\nLICENSE_STORAGE_NAMESPACE=root-env\n",
     )
     .expect("root dotenv should be written");
     std::fs::write(
@@ -211,7 +232,7 @@ fn license_config_env_overrides_are_trimmed_and_normalized() {
         );
         std::env::set_var("LICENSE_STORAGE_NAMESPACE", " desktop-client-test ");
         std::env::set_var("LICENSE_KEYCHAIN_SERVICE", " shorts-test ");
-        std::env::set_var("LICENSE_BACKEND_MODE", " hosted ");
+        std::env::set_var("LICENSE_BACKEND_MODE", " devolens ");
         std::env::set_var("LICENSE_WORKER_TIMEOUT_MS", "2500");
         std::env::set_var("LICENSE_WORKER_RETRY_ATTEMPTS", "4");
         std::env::set_var("LICENSE_WORKER_RETRY_BACKOFF_MS", "25");
@@ -220,6 +241,7 @@ fn license_config_env_overrides_are_trimmed_and_normalized() {
         std::env::set_var("DEVOLENS_BASE_URL", " https://devolens.example.test/ ");
         std::env::set_var("DEVOLENS_ACCESS_TOKEN", " devolens-secret ");
         std::env::set_var("DEVOLENS_PRODUCT_ID", " 1234 ");
+        std::env::set_var("SKIP_DEVOLENS_TOKEN_SAFETY_CHECK", "1");
     }
 
     let cfg = Config::from_env().expect("config should load");
@@ -228,7 +250,7 @@ fn license_config_env_overrides_are_trimmed_and_normalized() {
     assert_eq!(cfg.license_keychain_service, "shorts-test");
     assert_eq!(
         cfg.license_backend_mode,
-        shorts_tauri_app::core::config::LicenseBackendMode::Hosted
+        shorts_tauri_app::core::config::LicenseBackendMode::Devolens
     );
     assert_eq!(cfg.license_worker_timeout_ms, 2500);
     assert_eq!(cfg.license_worker_retry_attempts, 4);
@@ -252,6 +274,7 @@ fn license_config_env_overrides_are_trimmed_and_normalized() {
         std::env::remove_var("DEVOLENS_BASE_URL");
         std::env::remove_var("DEVOLENS_ACCESS_TOKEN");
         std::env::remove_var("DEVOLENS_PRODUCT_ID");
+        std::env::remove_var("SKIP_DEVOLENS_TOKEN_SAFETY_CHECK");
     }
 }
 
@@ -283,6 +306,7 @@ fn devolens_backend_mode_loads_provider_config() {
         std::env::set_var("DEVOLENS_BASE_URL", "https://api.cryptolens.io/");
         std::env::set_var("DEVOLENS_ACCESS_TOKEN", "devolens-secret-value");
         std::env::set_var("DEVOLENS_PRODUCT_ID", "1234");
+        std::env::set_var("SKIP_DEVOLENS_TOKEN_SAFETY_CHECK", "1");
     }
 
     let cfg = Config::from_env().expect("devolens config should load");
@@ -299,6 +323,7 @@ fn devolens_backend_mode_loads_provider_config() {
 #[test]
 fn missing_required_keys_return_deterministic_prefixes() {
     let _env = IsolatedConfigEnv::new("missing-keys");
+    configure_required_devolens_env();
 
     let cfg = Config::from_env().expect("config should still load");
     let api_err = cfg
@@ -334,6 +359,23 @@ fn invalid_license_backend_mode_is_rejected() {
 
     let err = Config::from_env().expect_err("unknown backend mode should fail");
     assert!(err.to_string().starts_with("invalid LICENSE_BACKEND_MODE:"));
+
+    unsafe {
+        std::env::remove_var("LICENSE_BACKEND_MODE");
+    }
+}
+
+#[test]
+fn legacy_license_backend_modes_are_rejected() {
+    let _env = IsolatedConfigEnv::new("legacy-backends");
+    for mode in ["reference", "hosted"] {
+        unsafe {
+            std::env::set_var("LICENSE_BACKEND_MODE", mode);
+        }
+
+        let err = Config::from_env().expect_err("legacy backend mode should fail");
+        assert!(err.to_string().starts_with("invalid LICENSE_BACKEND_MODE:"));
+    }
 
     unsafe {
         std::env::remove_var("LICENSE_BACKEND_MODE");
@@ -415,4 +457,3 @@ fn devolens_token_safety_check_accepts_client_only_token() {
     let cfg = Config::from_env().expect("client-only token must be accepted");
     assert_eq!(cfg.devolens_access_token, "client-token");
 }
-

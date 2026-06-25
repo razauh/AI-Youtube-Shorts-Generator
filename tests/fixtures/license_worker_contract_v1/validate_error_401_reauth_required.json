@@ -1,9 +1,0 @@
-{
-  "ok": false,
-  "error": {
-    "code": "reauth_required",
-    "message": "Session token has expired and must be re-authorized.",
-    "request_id": "req_01HXYZA3",
-    "retryable": false
-  }
-}

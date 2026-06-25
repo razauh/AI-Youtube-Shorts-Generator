@@ -174,7 +174,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
       paragraphs: [
         'You may provide YouTube URLs, generation settings, project names, API keys, license keys, purchaser email for support flows, and deletion request details.',
         'MuAPI may receive source URLs, media references, transcript-related data, prompt-like processing data, timing data, and aspect-ratio settings for API-based processing.',
-        'Gumroad, Devolens (Cryptolens), and Cloudflare Workers and D1 may process purchase, license, activation, reset, and deletion request data. This includes IP addresses, purchaser emails, license keys, and device machine codes needed for activation and license compliance.'
+        'Gumroad, Devolens (Cryptolens), and Cloudflare Workers and D1 may process purchase, license, activation, admin, and deletion request data. Devolens handles customer activation and validation data, including license keys and device machine codes needed for license compliance.'
       ]
     },
     {
@@ -270,7 +270,7 @@ export const POLICY_SECTIONS: Record<PolicyTab, PolicySection[]> = {
     {
       heading: 'Security Controls',
       paragraphs: [
-        'Security controls identified or expected include license-gated UI for generation features, device binding and signed access tokens, server-side hashed license keys with hash pepper, admin bearer-token authentication, masked emails/license keys in several UI/API responses, local secure-store use where available, crash-draft redaction for selected secret/license patterns, structured error mapping to avoid exposing raw auth failures, and no general telemetry/analytics SDK identified in inspected code.',
+        'Security controls identified or expected include license-gated UI for generation features, Devolens device binding, server-side hashed license keys with hash pepper for companion records, admin bearer-token authentication, masked emails/license keys in several UI/API responses, local secure-store use where available, crash-draft redaction for selected secret/license patterns, structured error mapping to avoid exposing raw auth failures, and no general telemetry/analytics SDK identified in inspected code.',
         'Before release, the operator should create an incident response plan covering suspected exposure of Worker secrets, Gumroad tokens, admin tokens, API keys, license keys, access tokens, or D1 data; unauthorized admin access; accidental support log or crash-report disclosure; user notification and regulatory notification timelines under applicable law; and token revocation, secret rotation, forensic preservation, and post-incident remediation.',
         'Data may move across borders through Devolens (Cryptolens), Cloudflare, Gumroad, MuAPI, update hosts, crash-report endpoints, and support operations.'
       ]

@@ -1,9 +1,0 @@
-{
-  "ok": false,
-  "error": {
-    "code": "invalid_purchase_email",
-    "message": "Purchaser email format is invalid.",
-    "request_id": "req_01HXYZA5",
-    "retryable": false
-  }
-}

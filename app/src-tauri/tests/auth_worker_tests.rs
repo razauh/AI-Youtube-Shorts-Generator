@@ -329,47 +329,6 @@ async fn local_license_store_interface_accepts_contract_metadata() {
 }
 
 #[tokio::test]
-async fn hosted_worker_mode_hits_real_local_http_route_contract() {
-    let public_key = DevicePublicKey::new("public").unwrap();
-    let device_id = DeviceId::from_public_key(&public_key);
-    let body = format!(
-        r#"{{
-            "ok":true,
-            "data":{{
-                "access_token":"TOKEN",
-                "masked_license_key":"****-ENSE",
-                "bound_device":{{
-                    "device_id":"{}",
-                    "public_key":"public",
-                    "fingerprint":{{
-                        "platform":"linux",
-                        "os":"linux",
-                        "arch":"x86_64",
-                        "hostname_hash":null
-                    }}
-                }},
-                "entitlement":"active",
-                "token_expires_at_ms":9999
-                }}
-        }}"#,
-        device_id.as_str()
-    );
-    let (base_url, handle) = local_http_server(body);
-    let cfg = worker_config(LicenseBackendMode::Hosted, base_url);
-    let worker = build_worker_client(&cfg).expect("hosted worker should build");
-
-    let outcome = worker
-        .activate(activation_request())
-        .await
-        .expect("local HTTP worker should activate");
-    let request = handle.join().expect("server thread should finish");
-
-    assert!(request.starts_with("POST /v1/license/activate "));
-    assert!(request.contains(r#""license_key":"SECRET-LICENSE""#));
-    assert_eq!(outcome.entitlement, EntitlementStatus::Active);
-}
-
-#[tokio::test]
 async fn devolens_backend_mode_activates_against_provider_api_shape() {
     let (base_url, handle) = local_http_server(
         r#"{"result":0,"licenseKey":{"blocked":false,"expired":false}}"#.to_string(),

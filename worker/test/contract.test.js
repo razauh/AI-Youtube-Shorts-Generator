@@ -456,7 +456,6 @@ test('readyz returns ready when env is configured', async () => {
     env: {
       DB: new MockD1Database(),
       HASH_PEPPER: 'pepper',
-      TOKEN_SIGNING_SECRET: 'secret',
       ADMIN_API_TOKEN: 'admin-token',
     },
   });
@@ -472,8 +471,7 @@ test('readyz returns not_ready when required secrets are missing', async () => {
     method: 'GET',
     env: {
       DB: new MockD1Database(),
-      HASH_PEPPER: 'pepper',
-      TOKEN_SIGNING_SECRET: '',
+      HASH_PEPPER: '',
       ADMIN_API_TOKEN: 'admin-token',
     },
   });
@@ -611,61 +609,23 @@ test('updater endpoint returns storage error for failed or invalid manifest', as
   }
 });
 
-test('activate requires idempotency key', async () => {
-  const res = await call('/v1/license/activate', {
-    body: {
-      license_key: 'AAAA-BBBB-CCCC-DDDD',
-      device_public_key: 'pub',
-      fingerprint: { os_name: 'linux', platform_family: 'linux', arch: 'x86_64' },
-      app_version: '0.1.0',
-      timestamp_ms: 1,
-    },
-  });
-  assert.equal(res.status, 400);
-  const json = await res.json();
-  assert.equal(json.ok, false);
-  assert.equal(json.error.code, 'bad_request');
-});
-
-test('reset status not found shape', async () => {
-  const res = await call('/v1/license/reset/status', {
-    body: { request_id: 'missing' },
-    env: { DB: new MockD1Database() },
-  });
-  assert.equal(res.status, 404);
-  const json = await res.json();
-  assert.equal(json.error.code, 'reset_request_not_found');
-});
-
-test('reset request and reset status use D1 authoritative state', async () => {
-  const db = new MockD1Database();
-  const env = { DB: db, HASH_PEPPER: 'pepper_123', TOKEN_SIGNING_SECRET: 'sign_123' };
-
-  const req = await call('/v1/license/reset/request', {
-    headers: { 'x-idempotency-key': 'reset-1' },
-    body: {
-      license_key: 'AAAA-BBBB-CCCC-DDDD',
-      masked_license_key: '••••-DDDD',
-      device_public_key: 'pubkey-abc-123',
-      fingerprint: { os_name: 'linux', platform_family: 'linux', arch: 'x86_64' },
-      app_version: '0.1.0',
-      timestamp_ms: Date.now(),
-    },
-    env,
-  });
-  assert.equal(req.status, 200);
-  const reqJson = await req.json();
-  assert.equal(reqJson.ok, true);
-  assert.equal(reqJson.data.status, 'pending');
-
-  const status = await call('/v1/license/reset/status', {
-    body: { request_id: reqJson.data.request_id },
-    env,
-  });
-  assert.equal(status.status, 200);
-  const statusJson = await status.json();
-  assert.equal(statusJson.ok, true);
-  assert.equal(statusJson.data.status, 'pending');
+test('customer licensing routes are removed from companion worker', async () => {
+  for (const path of [
+    '/v1/license/activate',
+    '/v1/license/validate',
+    '/v1/license/reset/request',
+    '/v1/license/reset/status',
+  ]) {
+    const res = await call(path, {
+      method: 'POST',
+      body: {},
+      env: { DB: new MockD1Database() },
+    });
+    assert.equal(res.status, 404);
+    const json = await res.json();
+    assert.equal(json.ok, false);
+    assert.equal(json.error.code, 'route_not_found');
+  }
 });
 
 test('admin reset routes require bearer token', async () => {
@@ -1131,7 +1091,6 @@ test('admin approve reset unbinds active device and idempotently replays', async
   const env = {
     DB: db,
     HASH_PEPPER: 'pepper_123',
-    TOKEN_SIGNING_SECRET: 'sign_123',
     ADMIN_API_TOKEN: 'admin-secret',
   };
   const licenseKey = 'AAAA-BBBB-CCCC-DDDD';
@@ -1144,38 +1103,27 @@ test('admin approve reset unbinds active device and idempotently replays', async
     provider_sale_id: 'sale_9xy123',
     updated_at_ms: Date.now(),
   });
-
-  const activate = await call('/v1/license/activate', {
-    headers: { 'x-idempotency-key': 'act-admin-approve' },
-    body: {
-      license_key: licenseKey,
-      device_public_key: 'pubkey-abc-123',
-      fingerprint: { os_name: 'linux', platform_family: 'linux', arch: 'x86_64' },
-      app_version: '0.1.0',
-      timestamp_ms: Date.now(),
-    },
-    env,
+  db.deviceBindings.set('dev-1', {
+    device_id: 'dev-1',
+    license_key_hash: licenseHash,
+    public_key: 'pubkey-abc-123',
+    fingerprint_json: '{}',
+    status: 'active',
+    updated_at_ms: 1,
   });
-  const activateJson = await activate.json();
-
-  const reset = await call('/v1/license/reset/request', {
-    headers: { 'x-idempotency-key': 'reset-admin-approve' },
-    body: {
-      license_key: licenseKey,
-      masked_license_key: '••••-DDDD',
-      purchaser_email: 'buyer@example.com',
-      device_public_key: 'pubkey-abc-123',
-      fingerprint: { os_name: 'linux', platform_family: 'linux', arch: 'x86_64' },
-      app_version: '0.1.0',
-      timestamp_ms: Date.now(),
-    },
-    env,
+  db.resetRequests.set('reset-1', {
+    request_id: 'reset-1',
+    license_key_hash: licenseHash,
+    masked_license_key: '••••-DDDD',
+    purchaser_email: 'buyer@example.com',
+    status: 'pending',
+    created_at_ms: 1,
+    updated_at_ms: 1,
   });
-  const resetJson = await reset.json();
 
   const approve = await call('/v1/admin/reset/approve', {
     headers: { authorization: 'Bearer admin-secret', 'x-idempotency-key': 'approve-1' },
-    body: { request_id: resetJson.data.request_id },
+    body: { request_id: 'reset-1' },
     env,
   });
   assert.equal(approve.status, 200);
@@ -1186,18 +1134,11 @@ test('admin approve reset unbinds active device and idempotently replays', async
 
   const replay = await call('/v1/admin/reset/approve', {
     headers: { authorization: 'Bearer admin-secret', 'x-idempotency-key': 'approve-1' },
-    body: { request_id: resetJson.data.request_id },
+    body: { request_id: 'reset-1' },
     env,
   });
   assert.equal(replay.status, 200);
 
-  const validate = await call('/v1/license/validate', {
-    body: { access_token: activateJson.data.access_token },
-    env,
-  });
-  assert.equal(validate.status, 401);
-  const validateJson = await validate.json();
-  assert.equal(validateJson.error.code, 'reauth_required');
   assert.equal(db.auditEvents.at(-1).event_type, 'device_reset_approved');
   assert.equal(JSON.stringify(db.auditEvents.at(-1)).includes('buyer@example.com'), false);
 });
@@ -1273,51 +1214,6 @@ test('gumroad webhook accepts form-encoded ping payloads', async () => {
   } finally {
     global.fetch = originalFetch;
   }
-});
-
-test('activate and validate use D1 authoritative state', async () => {
-  const db = new MockD1Database();
-  const env = { DB: db, HASH_PEPPER: 'pepper_123', TOKEN_SIGNING_SECRET: 'sign_123' };
-  const licenseKey = 'AAAA-BBBB-CCCC-DDDD';
-  const licenseHash = await sha256Hex(`${env.HASH_PEPPER}:${licenseKey}`);
-
-  // Pre-seed verified active license as webhook flow would.
-  db.licenses.set(licenseHash, {
-      license_key_hash: licenseHash,
-      purchaser_email: 'buyer@example.com',
-      entitlement_status: 'active',
-      provider: 'gumroad',
-      provider_sale_id: 'sale_9xy123',
-      updated_at_ms: Date.now(),
-    });
-
-  const activate = await call('/v1/license/activate', {
-    headers: { 'x-idempotency-key': 'act-1' },
-    body: {
-      license_key: licenseKey,
-      device_public_key: 'pubkey-abc-123',
-      fingerprint: { os_name: 'linux', platform_family: 'linux', arch: 'x86_64' },
-      app_version: '0.1.0',
-      timestamp_ms: Date.now(),
-    },
-    env,
-  });
-
-  assert.equal(activate.status, 200);
-  const activateJson = await activate.json();
-  assert.equal(activateJson.ok, true);
-  assert.equal(activateJson.data.entitlement, 'active');
-  assert.equal(db.deviceBindings.size, 1);
-
-  const validate = await call('/v1/license/validate', {
-    body: { access_token: activateJson.data.access_token },
-    env,
-  });
-  assert.equal(validate.status, 200);
-  const validateJson = await validate.json();
-  assert.equal(validateJson.ok, true);
-  assert.equal(validateJson.data.entitlement, 'active');
-  assert.equal(validateJson.data.bound_device.public_key, 'pubkey-abc-123');
 });
 
 test('gumroad webhook fails without access token', async () => {
@@ -1531,33 +1427,4 @@ test('gumroad webhook blocks gumroad license on refund', async () => {
   } finally {
     global.fetch = originalFetch;
   }
-});
-
-test('activate and validate endpoints return 410 Gone in Devolens mode', async () => {
-  const db = new MockD1Database();
-  const env = { DB: db, LICENSE_BACKEND_MODE: 'devolens' };
-
-  const actRes = await call('/v1/license/activate', {
-    method: 'POST',
-    body: {
-      license_key: 'AAAA-BBBB-CCCC-DDDD',
-      device_public_key: 'pubkey',
-      fingerprint: {},
-      app_version: '0.1.0',
-      timestamp_ms: Date.now(),
-    },
-    env,
-  });
-  assert.equal(actRes.status, 410);
-  const actJson = await actRes.json();
-  assert.equal(actJson.error.code, 'gone');
-
-  const valRes = await call('/v1/license/validate', {
-    method: 'POST',
-    body: { access_token: 'some-token' },
-    env,
-  });
-  assert.equal(valRes.status, 410);
-  const valJson = await valRes.json();
-  assert.equal(valJson.error.code, 'gone');
 });

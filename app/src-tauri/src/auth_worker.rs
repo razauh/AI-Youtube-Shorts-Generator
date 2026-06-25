@@ -6,7 +6,6 @@ use license_control_suite::core::{
     EntitlementStatus, LicenseKey, MaskedLicenseKey, PurchaseEmail, ResetRequestId,
     ValidationOutcome, WorkerClient,
 };
-use license_control_suite::modules::user_reg::auth_licensing_tauri::HttpWorkerClient;
 use serde::Deserialize;
 use std::fmt;
 use std::sync::{Arc, Mutex};
@@ -207,16 +206,6 @@ pub fn build_worker_client(
     config: &LicenseWorkerConfig,
 ) -> Result<Arc<dyn WorkerClient>, AuthError> {
     match config.backend_mode {
-        LicenseBackendMode::Reference | LicenseBackendMode::Hosted => {
-            let http = HttpWorkerClient::with_timeout(
-                &config.base_url,
-                Duration::from_millis(config.timeout_ms),
-            )?;
-            Ok(Arc::new(PolicyWorkerClient::new(
-                Arc::new(http),
-                WorkerClientPolicy::from_config(config),
-            )))
-        }
         LicenseBackendMode::Devolens => {
             let devolens = DevolensWorkerClient::with_timeout(
                 config,

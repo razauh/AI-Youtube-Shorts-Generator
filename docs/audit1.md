@@ -238,8 +238,8 @@ Licensing integration is MVP-capable:
 - Customer auth commands are routed through Tauri wrappers.
 - License-control-suite provides auth core, Tauri persistence, admin domain, shared contracts, and downstream harnesses.
 - `app/src-tauri/src/commands/generate.rs` enforces license state before generation.
-- Worker activation validates license state and persists device binding.
-- Worker validation checks signed token, active license, and active device binding.
+- Devolens handles customer activation and validation directly.
+- Worker companion routes retain Gumroad, updater, privacy/admin review, D1 record, and audit/idempotency responsibilities.
 
 Sensitive handling observed:
 
@@ -254,10 +254,6 @@ Worker routes cover MVP licensing/service operations:
 - `GET /health`
 - `GET /readyz`
 - `GET /updates/:target/:arch/:current_version`
-- `POST /v1/license/activate`
-- `POST /v1/license/validate`
-- `POST /v1/license/reset/request`
-- `POST /v1/license/reset/status`
 - `POST /v1/privacy/delete/request`
 - `POST /v1/privacy/delete/status`
 - Admin overview/list/reset/deletion/disable routes

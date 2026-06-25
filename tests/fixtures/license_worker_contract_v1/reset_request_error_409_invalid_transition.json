@@ -1,9 +1,0 @@
-{
-  "ok": false,
-  "error": {
-    "code": "invalid_transition",
-    "message": "Idempotency key reuse does not match original request payload.",
-    "request_id": "req_01HXYZA6",
-    "retryable": false
-  }
-}

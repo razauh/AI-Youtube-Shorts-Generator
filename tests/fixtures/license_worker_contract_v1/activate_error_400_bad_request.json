@@ -1,9 +1,0 @@
-{
-  "ok": false,
-  "error": {
-    "code": "bad_request",
-    "message": "Missing required header: X-Idempotency-Key",
-    "request_id": "req_01HXYZA2",
-    "retryable": false
-  }
-}

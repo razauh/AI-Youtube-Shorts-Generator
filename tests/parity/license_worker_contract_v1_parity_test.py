@@ -8,17 +8,11 @@ FIXTURE_DIR = (
 MANIFEST_PATH = FIXTURE_DIR / "manifest.json"
 
 FROZEN_ERROR_CODES = {
-    "invalid_license_key",
     "invalid_purchase_email",
-    "invalid_device_identity",
-    "invalid_reset_request",
     "invalid_deletion_request",
     "deletion_request_not_found",
     "invalid_deletion_lookup_token",
-    "device_already_bound",
-    "reauth_required",
     "worker_unreachable",
-    "reset_request_not_found",
     "unauthorized",
     "storage",
     "serialization",
@@ -26,7 +20,6 @@ FROZEN_ERROR_CODES = {
     "bad_request",
 }
 
-RESET_STATUS_VALUES = {"pending", "approved", "rejected", "expired"}
 DELETION_STATUS_VALUES = {"pending", "approved", "processing", "rejected", "completed", "failed"}
 
 
@@ -60,74 +53,6 @@ def test_manifest_files_exist_and_are_valid_json():
         assert path.exists(), f"missing fixture: {name}"
         with path.open("r", encoding="utf-8") as f:
             json.load(f)
-
-
-def test_activate_contract_shapes():
-    req = _load("activate_request.json")
-    assert isinstance(req.get("license_key"), str) and req["license_key"]
-    assert isinstance(req.get("device_public_key"), str) and req["device_public_key"]
-    assert isinstance(req.get("app_version"), str) and req["app_version"]
-    assert isinstance(req.get("timestamp_ms"), int) and req["timestamp_ms"] > 0
-    fp = req.get("fingerprint")
-    assert isinstance(fp, dict)
-    assert all(isinstance(fp.get(k), str) and fp.get(k) for k in ("os_name", "platform_family", "arch"))
-
-    ok = _load("activate_success_200.json")
-    _assert_success_envelope(ok)
-    data = ok["data"]
-    assert isinstance(data.get("access_token"), str) and data["access_token"]
-    assert isinstance(data.get("masked_license_key"), str) and data["masked_license_key"]
-    assert data.get("entitlement") == "active"
-    assert isinstance(data.get("token_expires_at_ms"), int) and data["token_expires_at_ms"] > 0
-
-    _assert_error_envelope(_load("activate_error_409_device_already_bound.json"))
-    _assert_error_envelope(_load("activate_error_400_bad_request.json"))
-
-
-def test_validate_contract_shapes():
-    req = _load("validate_request.json")
-    assert isinstance(req.get("access_token"), str) and req["access_token"]
-
-    ok = _load("validate_success_200.json")
-    _assert_success_envelope(ok)
-    data = ok["data"]
-    assert data.get("entitlement") == "active"
-    assert isinstance(data.get("masked_license_key"), str) and data["masked_license_key"]
-    assert isinstance(data.get("token_expires_at_ms"), int) and data["token_expires_at_ms"] > 0
-
-    _assert_error_envelope(_load("validate_error_401_reauth_required.json"))
-    _assert_error_envelope(_load("validate_error_503_worker_unreachable.json"))
-
-
-def test_reset_request_contract_shapes():
-    req = _load("reset_request_request.json")
-    assert isinstance(req.get("purchaser_email"), str) and "@" in req["purchaser_email"]
-    assert isinstance(req.get("device_public_key"), str) and req["device_public_key"]
-    assert isinstance(req.get("timestamp_ms"), int) and req["timestamp_ms"] > 0
-
-    ok = _load("reset_request_success_200.json")
-    _assert_success_envelope(ok)
-    data = ok["data"]
-    assert isinstance(data.get("request_id"), str) and data["request_id"]
-    assert data.get("status") in RESET_STATUS_VALUES
-
-    _assert_error_envelope(_load("reset_request_error_400_invalid_purchase_email.json"))
-    _assert_error_envelope(_load("reset_request_error_409_invalid_transition.json"))
-
-
-def test_reset_status_contract_shapes():
-    req = _load("reset_status_request.json")
-    assert isinstance(req.get("request_id"), str) and req["request_id"]
-
-    pending = _load("reset_status_success_200_pending.json")
-    _assert_success_envelope(pending)
-    assert pending["data"].get("status") == "pending"
-
-    approved = _load("reset_status_success_200_approved.json")
-    _assert_success_envelope(approved)
-    assert approved["data"].get("status") == "approved"
-
-    _assert_error_envelope(_load("reset_status_error_404_not_found.json"))
 
 
 def test_delete_user_data_contract_shapes():

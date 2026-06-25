@@ -45,11 +45,11 @@ What appears to work end-to-end:
 - Licensed customer UI is gated behind auth state and includes activation, reset, MuAPI setup, generation, progress, output links, library, policies, deletion request, diagnostics, crash draft, and customer updater controls.
 - Customer generation command path is connected: Svelte route -> `tauriClient.ts` -> `generate_shorts_stream` -> Rust auth gate -> Rust API pipeline -> MuAPI stages.
 - Admin app is a separate entry point/binary/config and connects to admin Tauri commands and Worker admin routes.
-- Worker routes exist for activation, validation, reset request/status, Gumroad webhook, user data deletion, admin listing, admin reset decisions, admin deletion decisions, license disabling, and customer update checks.
+- Worker routes exist for Gumroad webhook, user data deletion, admin listing, admin reset decisions, admin deletion decisions, license disabling, and customer update checks. Customer activation and validation use Devolens directly.
 
 What is missing or incomplete:
 
-- Worker activation does not enforce the one-active-device/device-bound contract expected by the desktop auth UI and reset flow.
+- Devolens is the customer activation/validation authority; device-bound behavior depends on Devolens machine activation limits and direct adapter handling.
 - Pipeline can report generation success when every clip render failed and no usable clip URL exists.
 - Runtime secure-store fallback writes plaintext API/admin/deletion secrets into app-data fallback files when OS keychain storage fails.
 - `app/src/DELETION_NOTICE.md` from the required policy inventory is missing.
@@ -97,11 +97,11 @@ Needs manual decision:
 - **MVP area:** Licensing/auth desktop integration; License Worker service
 - **Classification:** worker / backend
 - **File path:** `worker/src/index.js`; `worker/src/store.js`; `app/src/lib/stores/authState.ts`; `app/src-tauri/src/auth_worker.rs`
-- **Function/component/type/command/config/string involved:** `handleActivate`, `upsertDeviceBinding`, `device_already_bound`, `device_bound_elsewhere`
-- **What is missing or incomplete:** Activation does not check for an existing active binding for the same license on another device before upserting the new `device_id`.
-- **Why it matters for MVP completeness:** The desktop app has a device-bound-elsewhere lifecycle and reset request workflow, and the auth adapter maps `AuthError::DeviceAlreadyBound` to `device_already_bound`. The Worker currently allows multiple active devices for one license, so the main license-enforcement behavior is incomplete.
-- **Evidence from code or Graphify:** Graphify identified auth and reset communities around activation/reset. Source verification shows `handleActivate` validates license status and writes `upsertDeviceBinding` but performs no active-binding-by-license conflict check (`worker/src/index.js:346`, `worker/src/index.js:403`). `upsertDeviceBinding` keys only by `device_id` and updates that row (`worker/src/store.js:134`). The frontend explicitly handles `device_bound_elsewhere` on activation errors (`app/src/lib/stores/authState.ts:387`). The Rust auth worker includes a `DeviceAlreadyBound` contract code (`app/src-tauri/src/auth_worker.rs:50`).
-- **Recommended action:** Add a Worker query for active device bindings by `license_key_hash`; allow same `device_id`, reject different active device with `device_already_bound`, and keep reset approval deactivating prior bindings.
+- **Function/component/type/command/config/string involved:** Devolens activation, `device_already_bound`, `device_bound_elsewhere`
+- **What is missing or incomplete:** Superseded by the Devolens-only licensing cutover. The Worker no longer owns customer activation.
+- **Why it matters for MVP completeness:** Device-limit behavior now needs to be verified against Devolens machine activation limits and the direct Rust adapter.
+- **Evidence from code or Graphify:** Customer activation and validation route through the Devolens adapter in `app/src-tauri/src/auth_worker.rs`; the Worker customer activation route has been removed.
+- **Recommended action:** Validate Devolens machine-limit behavior with real client-scoped credentials and keep UI error mapping aligned with Devolens responses.
 - **Priority:** Critical
 - **Risk level:** High
 - **Confidence:** High
@@ -197,11 +197,11 @@ Needs manual decision:
 - **MVP area:** License Worker service
 - **Classification:** worker / security
 - **File path:** `worker/src/index.js`; `worker/src/store.js`
-- **Function/component/type/command/config/string involved:** `issueAccessToken`, `verifyAccessToken`, `stableHash`
-- **What is missing or incomplete:** Worker token signing uses `sha256(secret:payload)` and direct string comparison; idempotency payload hashing uses a non-cryptographic 32-bit hash with a comment saying it is scaffold behavior.
-- **Why it matters for MVP completeness:** Licensing is security-sensitive. Token signing and idempotency hashing should be robust and clearly production-grade.
-- **Evidence from code or Graphify:** Access token issue/verify uses `sha256Hex(`${secret}:${payloadB64}`)` and `signature !== expected` (`worker/src/index.js:1860`). `stableHash` is a simple rolling hash and the comment says “Swap with stronger canonical hashing in production implementation” (`worker/src/store.js:29`).
-- **Recommended action:** Replace token signature with WebCrypto HMAC-SHA-256 and constant-time verification where possible; replace idempotency hash with canonical JSON plus SHA-256.
+- **Function/component/type/command/config/string involved:** `stableHash`
+- **What is missing or incomplete:** Worker customer access-token signing was removed with the Devolens-only cutover. Idempotency payload hashing remains a companion-service concern.
+- **Why it matters for MVP completeness:** Licensing companion routes are security-sensitive and should use robust idempotency hashing.
+- **Evidence from code or Graphify:** `stableHash` is a simple rolling hash and the comment says “Swap with stronger canonical hashing in production implementation” (`worker/src/store.js:29`).
+- **Recommended action:** Replace idempotency hashing with canonical JSON plus SHA-256.
 - **Priority:** High
 - **Risk level:** High
 - **Confidence:** High
@@ -304,7 +304,7 @@ Tauri command boundary is functional but broad. Customer and admin commands are 
 
 Rust generation is API-only in current source. Graphify output still references removed local-mode nodes, but current production source search did not find active `local_mode`, `python_runtime`, `tool_resolver`, or runtime pack modules under `app/src-tauri/src/core`.
 
-Worker implementation is broad and integrated, but device-binding enforcement and security primitives are not release-ready.
+Worker implementation is broad and integrated as a companion service. Customer activation and validation are no longer Worker responsibilities.
 
 ## 12. Frontend Customer App Findings
 
@@ -436,7 +436,7 @@ Flow check:
 
 ### Critical before MVP release
 
-- `worker/src/index.js`, `worker/src/store.js`: enforce one active device per license in `handleActivate`; return `device_already_bound` for different active device. Risk: high. Suggested validation: manual activation on device A then device B, reset approval, reactivation.
+- Devolens machine-limit behavior: verify device-bound responses with real client-scoped credentials and confirm UI mapping for activation on a second device. Risk: high.
 - `app/src-tauri/src/core/pipeline.rs`, `app/src-tauri/src/core/api_mode/clipper.rs`, `app/src/routes/+page.svelte`: convert zero successful clip URLs into failure or partial-success UX. Risk: high. Suggested validation: MuAPI autocrop failure simulation or controlled provider failure.
 
 ### High priority before public release

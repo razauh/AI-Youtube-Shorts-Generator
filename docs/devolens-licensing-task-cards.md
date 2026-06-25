@@ -143,12 +143,12 @@ Before starting execution, ensure the following are complete:
 - **Preconditions**:
   - Task Cards 1, 6, and 7 complete.
 - **TDD Workflow**:
-  1. **Red Phase**: Write a test suite in `worker/test/contract.test.js` asserting that the endpoints `/v1/license/activate` and `/v1/license/validate` return `404 Not Found` or `410 Gone` in Devolens mode. Verify the tests fail because the routes are still active and functional.
+  1. **Red Phase**: Write a test suite in `worker/test/contract.test.js` asserting that `/v1/license/activate`, `/v1/license/validate`, `/v1/license/reset/request`, and `/v1/license/reset/status` return `404 route_not_found`.
   2. **Green Phase**: Modify the routing logic in `worker/src/index.js` to remove these routes. Run the tests to verify they pass.
   3. **Refactor Phase**: Remove unused database helpers, unused migration scripts, and dead endpoints from the worker codebase.
 - **Verification Criteria**:
   - Refactored Worker tests pass.
-  - Unused routes are deleted and return 404/410.
+  - Unused routes are deleted and return `404 route_not_found`.
 
 ---
 

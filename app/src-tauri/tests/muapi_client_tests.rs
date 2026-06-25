@@ -67,15 +67,15 @@ fn cfg(base: String) -> Config {
         license_worker_base_url: "http://127.0.0.1:8787".to_string(),
         license_storage_namespace: "desktop-client-test".to_string(),
         license_keychain_service: "shorts-test".to_string(),
-        license_backend_mode: shorts_tauri_app::core::config::LicenseBackendMode::Reference,
+        license_backend_mode: shorts_tauri_app::core::config::LicenseBackendMode::Devolens,
         license_worker_timeout_ms: 10_000,
         license_worker_retry_attempts: 2,
         license_worker_retry_backoff_ms: 150,
         license_worker_circuit_breaker_failure_threshold: 3,
         license_worker_circuit_breaker_cooldown_ms: 30_000,
         devolens_base_url: shorts_tauri_app::core::config::DEFAULT_DEVOLENS_BASE_URL.to_string(),
-        devolens_access_token: String::new(),
-        devolens_product_id: String::new(),
+        devolens_access_token: "client-token".to_string(),
+        devolens_product_id: "1234".to_string(),
         devolens_offline_grace_period_ms: 86400000,
     }
 }

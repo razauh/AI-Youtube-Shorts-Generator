@@ -148,7 +148,7 @@ describe('test_ui flow parity', () => {
       profiles: []
     }));
     appConfigSummary.mockResolvedValue({
-      licenseBackendMode: 'hosted',
+      licenseBackendMode: 'devolens',
       licenseWorkerEndpoint: 'licenses.example.test',
       licenseWorkerEndpointKind: 'remote',
       muapiConfigured: true,
@@ -626,7 +626,7 @@ describe('test_ui flow parity', () => {
 
   it('test_generate_is_blocked_and_guided_when_setup_is_incomplete', async () => {
     appConfigSummary.mockResolvedValue({
-      licenseBackendMode: 'hosted',
+      licenseBackendMode: 'devolens',
       licenseWorkerEndpoint: 'licenses.example.test',
       licenseWorkerEndpointKind: 'remote',
       muapiConfigured: false,
@@ -650,7 +650,7 @@ describe('test_ui flow parity', () => {
 
   it('test_setup_modal_configure_now_routes_to_configuration_api_providers', async () => {
     appConfigSummary.mockResolvedValue({
-      licenseBackendMode: 'hosted',
+      licenseBackendMode: 'devolens',
       licenseWorkerEndpoint: 'licenses.example.test',
       licenseWorkerEndpointKind: 'remote',
       muapiConfigured: false,
@@ -671,7 +671,7 @@ describe('test_ui flow parity', () => {
 
   it('test_setup_modal_cancel_closes_and_keeps_form_values', async () => {
     appConfigSummary.mockResolvedValue({
-      licenseBackendMode: 'hosted',
+      licenseBackendMode: 'devolens',
       licenseWorkerEndpoint: 'licenses.example.test',
       licenseWorkerEndpointKind: 'remote',
       muapiConfigured: false,

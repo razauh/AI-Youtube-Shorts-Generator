@@ -1,9 +1,0 @@
-{
-  "ok": false,
-  "error": {
-    "code": "reset_request_not_found",
-    "message": "Reset request was not found.",
-    "request_id": "req_01HXYZA7",
-    "retryable": false
-  }
-}
