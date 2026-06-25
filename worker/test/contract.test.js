@@ -696,6 +696,133 @@ test('admin overview returns aggregate counts', async () => {
   assert.equal(json.data.deletion_request_counts.pending ?? 0, 0);
 });
 
+test('legacy admin token remains read-only for retained admin read endpoints', async () => {
+  const db = new MockD1Database();
+  const env = {
+    DB: db,
+    ADMIN_API_TOKEN: 'legacy-admin-secret',
+    ADMIN_SUPPORT_TOKEN: 'support-secret',
+  };
+
+  const overview = await call('/v1/admin/overview', {
+    method: 'GET',
+    headers: { authorization: 'Bearer legacy-admin-secret' },
+    env,
+  });
+  assert.equal(overview.status, 200);
+
+  const supportOverview = await call('/v1/admin/overview', {
+    method: 'GET',
+    headers: { authorization: 'Bearer support-secret' },
+    env,
+  });
+  assert.equal(supportOverview.status, 200);
+
+  const supportList = await call('/v1/admin/privacy/delete-requests?status=pending', {
+    method: 'GET',
+    headers: { authorization: 'Bearer legacy-admin-secret' },
+    env,
+  });
+  assert.equal(supportList.status, 403);
+  const supportListJson = await supportList.json();
+  assert.equal(supportListJson.error.code, 'forbidden');
+});
+
+test('support deletion decisions require actor and reason', async () => {
+  const db = new MockD1Database();
+  const env = { DB: db, ADMIN_SUPPORT_TOKEN: 'support-secret' };
+
+  const missingActor = await call('/v1/admin/privacy/delete/reject', {
+    headers: { authorization: 'Bearer support-secret', 'x-idempotency-key': 'reject-missing-actor' },
+    body: { request_id: 'delete-1', reason: 'manual review failed' },
+    env,
+  });
+  assert.equal(missingActor.status, 400);
+  assert.equal((await missingActor.json()).error.code, 'bad_request');
+
+  const missingReason = await call('/v1/admin/privacy/delete/reject', {
+    headers: {
+      authorization: 'Bearer support-secret',
+      'x-idempotency-key': 'reject-missing-reason',
+      'x-admin-actor': 'support@example.test',
+    },
+    body: { request_id: 'delete-1', reason: ' ' },
+    env,
+  });
+  assert.equal(missingReason.status, 400);
+  assert.equal((await missingReason.json()).error.code, 'bad_request');
+});
+
+test('support deletion request lookup requires support token', async () => {
+  const db = new MockD1Database();
+  db.deletionRequests.set('delete-1', {
+    request_id: 'delete-1',
+    lookup_token_hash: 'lookup-hash',
+    license_key_hash: 'license-hash',
+    masked_license_key: '••••-DDDD',
+    purchaser_email: 'buyer@example.com',
+    purchaser_email_masked: 'b***@example.com',
+    status: 'pending',
+    requested_scope: 'backend_licensing_data',
+    request_metadata_json: '{}',
+    deletion_summary_json: null,
+    error_code: null,
+    error_message_safe: null,
+    created_at_ms: 1,
+    updated_at_ms: 1,
+    decided_at_ms: null,
+    completed_at_ms: null,
+  });
+
+  const missingToken = await call('/v1/admin/privacy/delete-requests?status=pending', {
+    method: 'GET',
+    env: { DB: db, ADMIN_SUPPORT_TOKEN: 'support-secret' },
+  });
+  assert.equal(missingToken.status, 403);
+  assert.equal((await missingToken.json()).error.code, 'forbidden');
+
+  const withSupportToken = await call('/v1/admin/privacy/delete-requests?status=pending', {
+    method: 'GET',
+    headers: { authorization: 'Bearer support-secret' },
+    env: { DB: db, ADMIN_SUPPORT_TOKEN: 'support-secret' },
+  });
+  assert.equal(withSupportToken.status, 200);
+  const json = await withSupportToken.json();
+  assert.equal(json.ok, true);
+  assert.equal(json.data.requests.length, 1);
+  assert.equal(JSON.stringify(json).includes('buyer@example.com'), false);
+});
+
+test('support deletion decisions are rate limited per token and action', async () => {
+  const db = new MockD1Database();
+  const env = {
+    DB: db,
+    ADMIN_SUPPORT_TOKEN: 'rate-limit-support-secret',
+    ADMIN_SUPPORT_RATE_LIMIT_MAX: '1',
+    ADMIN_SUPPORT_RATE_LIMIT_WINDOW_MS: '60000',
+  };
+  const headers = {
+    authorization: 'Bearer rate-limit-support-secret',
+    'x-admin-actor': 'support@example.test',
+  };
+
+  const first = await call('/v1/admin/privacy/delete/reject', {
+    headers: { ...headers, 'x-idempotency-key': 'rate-limit-1' },
+    body: { request_id: 'missing-delete-1', reason: 'manual review failed' },
+    env,
+  });
+  assert.equal(first.status, 404);
+
+  const second = await call('/v1/admin/privacy/delete/reject', {
+    headers: { ...headers, 'x-idempotency-key': 'rate-limit-2' },
+    body: { request_id: 'missing-delete-2', reason: 'manual review failed' },
+    env,
+  });
+  assert.equal(second.status, 429);
+  const secondJson = await second.json();
+  assert.equal(secondJson.error.code, 'rate_limited');
+});
+
 test('privacy deletion request requires confirmation', async () => {
   const res = await call('/v1/privacy/delete/request', {
     headers: { 'x-idempotency-key': 'delete-missing-confirmation' },
@@ -759,7 +886,7 @@ test('privacy deletion request creates pending request and status requires looku
 
 test('admin approve deletion deletes devices and anonymizes license/reset data', async () => {
   const db = new MockD1Database();
-  const env = { DB: db, HASH_PEPPER: 'pepper_123', ADMIN_API_TOKEN: 'admin-secret' };
+  const env = { DB: db, HASH_PEPPER: 'pepper_123', ADMIN_SUPPORT_TOKEN: 'support-secret' };
   const licenseKey = 'AAAA-BBBB-CCCC-DDDD';
   const licenseHash = await sha256Hex(`${env.HASH_PEPPER}:${licenseKey}`);
   db.licenses.set(licenseHash, {
@@ -800,7 +927,11 @@ test('admin approve deletion deletes devices and anonymizes license/reset data',
   const reqJson = await req.json();
 
   const approve = await call('/v1/admin/privacy/delete/approve', {
-    headers: { authorization: 'Bearer admin-secret', 'x-idempotency-key': 'approve-delete-1' },
+    headers: {
+      authorization: 'Bearer support-secret',
+      'x-idempotency-key': 'approve-delete-1',
+      'x-admin-actor': 'support@example.test',
+    },
     body: {
       request_id: reqJson.data.request_id,
       confirmation: 'DELETE USER DATA',
@@ -818,11 +949,15 @@ test('admin approve deletion deletes devices and anonymizes license/reset data',
   assert.equal(db.resetRequests.get('reset-1').license_key_hash, null);
   assert.equal(db.deletionRequests.get(reqJson.data.request_id).purchaser_email, null);
   assert.equal(JSON.stringify(db.auditEvents).includes('buyer@example.com'), false);
+  const completionAudit = db.auditEvents.find((event) => event.event_type === 'user_data_deletion_completed');
+  assert.ok(completionAudit);
+  assert.equal(completionAudit.actor, '[redacted-email]');
+  assert.equal(JSON.parse(completionAudit.metadata_json).reason, 'privacy request');
 });
 
 test('admin approve deletion can be retried after phase failure', async () => {
   const db = new MockD1Database();
-  const baseEnv = { DB: db, HASH_PEPPER: 'pepper_123', ADMIN_API_TOKEN: 'admin-secret' };
+  const baseEnv = { DB: db, HASH_PEPPER: 'pepper_123', ADMIN_SUPPORT_TOKEN: 'support-secret' };
   const licenseKey = 'AAAA-BBBB-CCCC-DDDD';
   const licenseHash = await sha256Hex(`${baseEnv.HASH_PEPPER}:${licenseKey}`);
   db.licenses.set(licenseHash, {
@@ -859,7 +994,11 @@ test('admin approve deletion can be retried after phase failure', async () => {
   const reqJson = await req.json();
 
   const failed = await call('/v1/admin/privacy/delete/approve', {
-    headers: { authorization: 'Bearer admin-secret', 'x-idempotency-key': 'approve-delete-fail-1' },
+    headers: {
+      authorization: 'Bearer support-secret',
+      'x-idempotency-key': 'approve-delete-fail-1',
+      'x-admin-actor': 'support@example.test',
+    },
     body: { request_id: reqJson.data.request_id, confirmation: 'DELETE USER DATA', reason: 'privacy request' },
     env: { ...baseEnv, DELETION_FAIL_PHASE: 'anonymize_license' },
   });
@@ -869,7 +1008,11 @@ test('admin approve deletion can be retried after phase failure', async () => {
   assert.equal(db.deviceBindings.size, 0);
 
   const retry = await call('/v1/admin/privacy/delete/approve', {
-    headers: { authorization: 'Bearer admin-secret', 'x-idempotency-key': 'approve-delete-retry-1' },
+    headers: {
+      authorization: 'Bearer support-secret',
+      'x-idempotency-key': 'approve-delete-retry-1',
+      'x-admin-actor': 'support@example.test',
+    },
     body: { request_id: reqJson.data.request_id, confirmation: 'DELETE USER DATA', reason: 'privacy request' },
     env: baseEnv,
   });

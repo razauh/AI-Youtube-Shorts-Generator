@@ -186,6 +186,10 @@
 
   async function submitDeletionDecision() {
     if (!confirmAction || !confirmRequest || actionBusyFor) return;
+    if (!confirmReason.trim()) {
+      notice = { kind: 'error', message: 'Support decision reason is required.' };
+      return;
+    }
     const requestId = confirmRequest.deletion_request_id;
     actionBusyFor = `${confirmAction}:${requestId}`;
     try {
@@ -407,12 +411,12 @@
       {:else if confirmAction === 'reject_deletion'}
         <header><h2 id="confirm-dialog-title">Reject deletion request?</h2></header>
       {/if}
-      <label>Optional reason <textarea bind:value={confirmReason} rows="4" /></label>
+      <label>Support reason <textarea bind:value={confirmReason} rows="4" /></label>
       <div class="actions">
         <button
           class={confirmAction === 'approve_deletion' ? 'danger' : ''}
           on:click={submitDeletionDecision}
-          disabled={Boolean(actionBusyFor) || (confirmAction === 'approve_deletion' && deletionConfirmText.trim() !== 'DELETE USER DATA')}
+          disabled={Boolean(actionBusyFor) || !confirmReason.trim() || (confirmAction === 'approve_deletion' && deletionConfirmText.trim() !== 'DELETE USER DATA')}
         >
           {actionBusyFor ? 'Submitting...' : confirmAction === 'approve_deletion' ? 'Approve and Delete' : 'Confirm reject'}
         </button>

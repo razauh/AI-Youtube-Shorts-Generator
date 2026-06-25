@@ -25,6 +25,13 @@ import {
   updateDeletionRequestMetadata,
 } from "./store.js";
 
+const ADMIN_AUTH_SCOPE = {
+  LEGACY: "legacy",
+  READ: "read",
+  SUPPORT: "support",
+};
+const adminSupportRateLimits = new Map();
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -109,6 +116,8 @@ async function handleReadyz(request, env) {
       gumroad_ok: false,
       hash_pepper: nonEmpty(env?.HASH_PEPPER),
       admin_api_token: nonEmpty(env?.ADMIN_API_TOKEN),
+      admin_read_token: nonEmpty(env?.ADMIN_READ_TOKEN),
+      admin_support_token: nonEmpty(env?.ADMIN_SUPPORT_TOKEN),
       gumroad_access_token: nonEmpty(env?.GUMROAD_ACCESS_TOKEN),
     },
     config: {
@@ -124,7 +133,10 @@ async function handleReadyz(request, env) {
   let ready = true;
 
   checks.secrets.core_ok = checks.secrets.hash_pepper;
-  checks.secrets.admin_ok = checks.secrets.admin_api_token;
+  checks.secrets.admin_ok = checks.secrets.admin_read_token && checks.secrets.admin_support_token;
+  if (!checks.secrets.admin_ok && checks.secrets.admin_api_token) {
+    checks.secrets.admin_ok = true;
+  }
   checks.secrets.gumroad_ok = checks.secrets.gumroad_access_token;
   checks.secrets.ok = checks.secrets.core_ok && checks.secrets.admin_ok;
   if (!checks.secrets.ok) ready = false;
@@ -489,7 +501,7 @@ function deprecatedAdminResetResponse(rid) {
 
 async function handleAdminListDeletionRequests(request, env) {
   const rid = requestId();
-  const auth = requireAdminAuth(request, env, rid);
+  const auth = requireAdminAuth(request, env, rid, ADMIN_AUTH_SCOPE.SUPPORT);
   if (auth) return auth;
   if (!env?.DB) {
     return err("storage", "D1 database binding is not configured.", rid, false, 503);
@@ -518,7 +530,7 @@ async function handleAdminListDeletionRequests(request, env) {
 
 async function handleAdminDeletionReject(request, env) {
   const rid = requestId();
-  const auth = requireAdminAuth(request, env, rid);
+  const auth = requireAdminAuth(request, env, rid, ADMIN_AUTH_SCOPE.SUPPORT);
   if (auth) return auth;
   if (!env?.DB) {
     return err("storage", "D1 database binding is not configured.", rid, false, 503);
@@ -533,8 +545,12 @@ async function handleAdminDeletionReject(request, env) {
   if (!requestIdValue) {
     return err("bad_request", "Invalid admin deletion decision payload.", rid, false, 400);
   }
+  const supportContext = requireSupportDecisionContext(request, body, rid);
+  if (supportContext instanceof Response) return supportContext;
+  const rateLimit = enforceAdminSupportRateLimit(request, env, "privacy_delete_reject", rid);
+  if (rateLimit) return rateLimit;
 
-  const payloadHash = stableHash({ decision: "rejected", request_id: requestIdValue, reason: body.reason || null });
+  const payloadHash = stableHash({ decision: "rejected", request_id: requestIdValue, reason: supportContext.reason });
   const replay = await getD1Idempotent(env.DB, "admin_privacy_delete_reject", idem);
   if (replay) {
     if (replay.payload_hash !== payloadHash) {
@@ -567,11 +583,12 @@ async function handleAdminDeletionReject(request, env) {
     await writeAuditEvent(
       env.DB,
       "user_data_deletion_rejected",
-      "admin",
+      supportContext.actor,
       JSON.stringify({
         request_id: deletion.request_id,
         has_license_hash: Boolean(deletion.license_key_hash),
-        reason_present: Boolean(body.reason),
+        reason_present: true,
+        reason: redactAuditText(supportContext.reason),
       }),
       now,
     );
@@ -598,7 +615,7 @@ async function handleAdminDeletionReject(request, env) {
 
 async function handleAdminDeletionApprove(request, env) {
   const rid = requestId();
-  const auth = requireAdminAuth(request, env, rid);
+  const auth = requireAdminAuth(request, env, rid, ADMIN_AUTH_SCOPE.SUPPORT);
   if (auth) return auth;
   if (!env?.DB) {
     return err("storage", "D1 database binding is not configured.", rid, false, 503);
@@ -613,12 +630,16 @@ async function handleAdminDeletionApprove(request, env) {
   if (!requestIdValue || body.confirmation !== "DELETE USER DATA") {
     return err("bad_request", "Deletion approval requires request_id and confirmation.", rid, false, 400);
   }
+  const supportContext = requireSupportDecisionContext(request, body, rid);
+  if (supportContext instanceof Response) return supportContext;
+  const rateLimit = enforceAdminSupportRateLimit(request, env, "privacy_delete_approve", rid);
+  if (rateLimit) return rateLimit;
 
   const payloadHash = stableHash({
     decision: "approved",
     request_id: requestIdValue,
     confirmation: body.confirmation,
-    reason: body.reason || null,
+    reason: supportContext.reason,
   });
   const replay = await getD1Idempotent(env.DB, "admin_privacy_delete_approve", idem);
   if (replay) {
@@ -734,10 +755,11 @@ async function handleAdminDeletionApprove(request, env) {
     await writeAuditEvent(
       env.DB,
       "user_data_deletion_completed",
-      "admin",
+      supportContext.actor,
       JSON.stringify({
         request_id: deletion.request_id,
-        reason_present: Boolean(body.reason),
+        reason_present: true,
+        reason: redactAuditText(supportContext.reason),
         summary: completedSummary,
       }),
       now,
@@ -773,7 +795,7 @@ async function handleAdminDeletionApprove(request, env) {
 
 async function handleAdminOverview(request, env) {
   const rid = requestId();
-  const auth = requireAdminAuth(request, env, rid);
+  const auth = requireAdminAuth(request, env, rid, ADMIN_AUTH_SCOPE.READ);
   if (auth) return auth;
   if (!env?.DB) {
     return err("storage", "D1 database binding is not configured.", rid, false, 503);
@@ -800,7 +822,7 @@ async function handleAdminDisableLicense(request, env) {
 
 async function handleAdminAuditEvents(request, env) {
   const rid = requestId();
-  const auth = requireAdminAuth(request, env, rid);
+  const auth = requireAdminAuth(request, env, rid, ADMIN_AUTH_SCOPE.READ);
   if (auth) return auth;
   if (!env?.DB) {
     return err("storage", "D1 database binding is not configured.", rid, false, 503);
@@ -831,7 +853,7 @@ async function handleAdminAuditEvents(request, env) {
 
 async function handleAdminIdempotencyRecords(request, env) {
   const rid = requestId();
-  const auth = requireAdminAuth(request, env, rid);
+  const auth = requireAdminAuth(request, env, rid, ADMIN_AUTH_SCOPE.READ);
   if (auth) return auth;
   if (!env?.DB) {
     return err("storage", "D1 database binding is not configured.", rid, false, 503);
@@ -1222,16 +1244,87 @@ function summarizeAuditMetadata(metadataJson) {
   return summary;
 }
 
-function requireAdminAuth(request, env, requestIdValue) {
+function bearerToken(request) {
+  const header = request.headers.get("authorization") || "";
+  return header.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : "";
+}
+
+function requireAdminAuth(request, env, requestIdValue, scope = ADMIN_AUTH_SCOPE.LEGACY) {
+  const token = bearerToken(request);
+
+  if (scope === ADMIN_AUTH_SCOPE.READ) {
+    const readToken = String(env?.ADMIN_READ_TOKEN || "").trim();
+    const supportToken = String(env?.ADMIN_SUPPORT_TOKEN || "").trim();
+    const legacyToken = String(env?.ADMIN_API_TOKEN || "").trim();
+    if (!readToken && !supportToken && !legacyToken) {
+      return err("unauthorized", "Admin read token is not configured.", requestIdValue, false, 401);
+    }
+    if (!token || (token !== readToken && token !== supportToken && token !== legacyToken)) {
+      return err("unauthorized", "Admin read authorization failed.", requestIdValue, false, 401);
+    }
+    return null;
+  }
+
+  if (scope === ADMIN_AUTH_SCOPE.SUPPORT) {
+    const supportToken = String(env?.ADMIN_SUPPORT_TOKEN || "").trim();
+    if (!supportToken) {
+      return err("unauthorized", "Admin support token is not configured.", requestIdValue, false, 401);
+    }
+    if (!token || token !== supportToken) {
+      return err("forbidden", "Admin support authorization failed.", requestIdValue, false, 403);
+    }
+    return null;
+  }
+
   if (!env?.ADMIN_API_TOKEN) {
     return err("unauthorized", "Admin API token is not configured.", requestIdValue, false, 401);
   }
-  const header = request.headers.get("authorization") || "";
-  const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : "";
   if (!token || token !== env.ADMIN_API_TOKEN) {
     return err("unauthorized", "Admin authorization failed.", requestIdValue, false, 401);
   }
   return null;
+}
+
+function requireSupportDecisionContext(request, body, requestIdValue) {
+  const actor = String(request.headers.get("x-admin-actor") || "").trim();
+  const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+  if (!actor) {
+    return err("bad_request", "Missing required header: X-Admin-Actor", requestIdValue, false, 400);
+  }
+  if (!reason) {
+    return err("bad_request", "Support decision reason is required.", requestIdValue, false, 400);
+  }
+  return { actor: redactAuditText(actor), reason };
+}
+
+function enforceAdminSupportRateLimit(request, env, action, requestIdValue) {
+  const token = bearerToken(request);
+  const max = parsePositiveInteger(env?.ADMIN_SUPPORT_RATE_LIMIT_MAX, 10);
+  const windowMs = parsePositiveInteger(env?.ADMIN_SUPPORT_RATE_LIMIT_WINDOW_MS, 60_000);
+  const now = Date.now();
+  const bucketKey = `${action}:${hashPrefix(stableHash(token))}`;
+  const bucket = adminSupportRateLimits.get(bucketKey);
+  if (!bucket || bucket.resetAtMs <= now) {
+    adminSupportRateLimits.set(bucketKey, { count: 1, resetAtMs: now + windowMs });
+    return null;
+  }
+  if (bucket.count >= max) {
+    return err("rate_limited", "Admin support action rate limit exceeded.", requestIdValue, true, 429);
+  }
+  bucket.count += 1;
+  return null;
+}
+
+function parsePositiveInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function redactAuditText(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]")
+    .slice(0, 160);
 }
 
 function normalizeD1Results(result) {

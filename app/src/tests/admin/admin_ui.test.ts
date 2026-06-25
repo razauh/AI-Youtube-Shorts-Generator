@@ -129,9 +129,16 @@ describe('AdminApp', () => {
     let approveButtons = screen.getAllByRole('button', { name: 'Approve and Delete' });
     expect(approveButtons[approveButtons.length - 1]).toBeDisabled();
     await fireEvent.input(screen.getByLabelText('Confirmation'), { target: { value: 'DELETE USER DATA' } });
+    await fireEvent.input(screen.getByLabelText('Support reason'), { target: { value: 'privacy request verified' } });
     approveButtons = screen.getAllByRole('button', { name: 'Approve and Delete' });
     await fireEvent.click(approveButtons[approveButtons.length - 1]);
 
-    await waitFor(() => expect(approveDeletionRequest).toHaveBeenCalledWith('del-pending', 'DELETE USER DATA', ''));
+    await waitFor(() =>
+      expect(approveDeletionRequest).toHaveBeenCalledWith(
+        'del-pending',
+        'DELETE USER DATA',
+        'privacy request verified'
+      )
+    );
   });
 });

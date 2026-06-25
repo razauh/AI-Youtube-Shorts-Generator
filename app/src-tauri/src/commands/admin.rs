@@ -337,6 +337,17 @@ fn validate_token(value: &str) -> Result<String, AdminCommandError> {
     Ok(trimmed)
 }
 
+fn validate_support_reason(value: Option<&str>) -> Result<&str, AdminCommandError> {
+    value.map(str::trim).filter(|value| !value.is_empty()).ok_or_else(|| {
+        command_error(
+            "bad_request",
+            "Support decision reason is required.",
+            None,
+            false,
+        )
+    })
+}
+
 pub fn redact_token(token: &str) -> String {
     let chars: Vec<char> = token.chars().collect();
     if chars.len() <= 4 {
@@ -423,6 +434,12 @@ where
 
     if let Some(value) = idempotency_key {
         request = request.header("x-idempotency-key", value);
+    }
+    if matches!(
+        action,
+        AdminAction::ApproveDeletionRequest | AdminAction::RejectDeletionRequest
+    ) {
+        request = request.header("x-admin-actor", "admin_desktop");
     }
     if let Some(value) = body {
         request = request.json(value);
@@ -710,14 +727,11 @@ pub async fn admin_approve_deletion_request(
         ));
     }
     let idempotency_key = generate_admin_idempotency_key("approve_deletion", &request_id);
-    let reason = reason
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
+    let reason = validate_support_reason(reason.as_deref())?;
     let body = AdminDeletionApproveRequest {
         request_id: request_id.as_str(),
         confirmation: normalized_confirmation,
-        reason,
+        reason: Some(reason),
     };
     send_admin_request(
         AdminAction::ApproveDeletionRequest,
@@ -735,13 +749,10 @@ pub async fn admin_reject_deletion_request(
     reason: Option<String>,
 ) -> Result<AdminDeletionDecisionData, AdminCommandError> {
     let idempotency_key = generate_admin_idempotency_key("reject_deletion", &request_id);
-    let reason = reason
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
+    let reason = validate_support_reason(reason.as_deref())?;
     let body = AdminDecisionRequest {
         request_id: request_id.as_str(),
-        reason,
+        reason: Some(reason),
     };
     send_admin_request(
         AdminAction::RejectDeletionRequest,
@@ -854,6 +865,13 @@ mod tests {
         let second = generate_admin_idempotency_key("approve", "reset-1");
         assert!(first.starts_with("admin_"));
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn admin_support_reason_is_required_for_deletion_decisions() {
+        assert_eq!(validate_support_reason(Some(" privacy request ")).unwrap(), "privacy request");
+        assert_eq!(validate_support_reason(Some("")).unwrap_err().code, "bad_request");
+        assert_eq!(validate_support_reason(None).unwrap_err().code, "bad_request");
     }
 
     #[test]

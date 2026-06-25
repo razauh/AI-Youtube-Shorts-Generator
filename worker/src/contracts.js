@@ -14,6 +14,8 @@ export const ERROR_CODES = new Set([
   "reset_request_not_found",
   "license_not_found",
   "unauthorized",
+  "forbidden",
+  "rate_limited",
   "storage",
   "serialization",
   "invalid_transition",

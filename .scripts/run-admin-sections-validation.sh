@@ -36,6 +36,12 @@ if rg -n 'admin_list_licenses|admin_list_device_bindings|listLicenses|listDevice
   exit 1
 fi
 
+SUPPORT_SCOPE_GATES="$(awk '/const auth = requireAdminAuth\(request, env, rid, ADMIN_AUTH_SCOPE\.SUPPORT\);/ { count += 1 } END { print count + 0 }' worker/src/index.js)"
+if [ "$SUPPORT_SCOPE_GATES" -lt 3 ]; then
+  echo "Retained support deletion endpoints are not all gated by ADMIN_AUTH_SCOPE.SUPPORT." | tee -a "$LOG_FILE"
+  exit 1
+fi
+
 run_and_log node --test worker/test/contract.test.js worker/test/routes_inventory.test.js worker/test/d1_authority_inventory.test.js
 run_and_log pnpm --dir app run test -- src/tests/admin/admin_client.test.ts src/tests/admin/admin_messages.test.ts src/tests/admin/admin_ui.test.ts src/tests/admin/admin_inventory.test.ts
 run_and_log cargo test --locked --manifest-path app/src-tauri/Cargo.toml admin_
