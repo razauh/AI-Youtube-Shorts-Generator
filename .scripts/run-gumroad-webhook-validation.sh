@@ -25,4 +25,10 @@ cd "${ROOT_DIR}/worker"
 run_step "node-test-worker-contract" node --test test/contract.test.js
 run_step "node-test-gumroad-webhook-failures" node --test test/gumroad_webhook_failures.test.js
 
+cd "${ROOT_DIR}"
+run_step "docs-policy-duplicate-mismatch" grep -F "Duplicate Mismatched Payload" docs/gumroad_webhook_state_policy.md
+run_step "docs-policy-refund-blockkey-failure" grep -F "Refund BlockKey Fails" docs/gumroad_webhook_state_policy.md
+run_step "docs-policy-missing-license-key" grep -F "Verified Sale Missing License Key" docs/gumroad_webhook_state_policy.md
+run_step "docs-policy-createkey-network-failure" grep -F "Devolens CreateKey HTTP/Network Failure" docs/gumroad_webhook_state_policy.md
+
 echo "validation logs: ${LOG_FILE}"

@@ -1003,12 +1003,25 @@ async function handleVerifiedGumroadTerminalSale(env, saleId, verification) {
   const normalizedLicenseKey = normalizeLicenseKey(verification.license_key);
   const licenseKeyHash = await sha256Hex(`${env?.HASH_PEPPER || ""}:${normalizedLicenseKey}`);
 
-  if (hasDevolensWebhookConfig(env)) {
-    await blockDevolensKey(env, normalizedLicenseKey);
-  }
-
   const now = Date.now();
   try {
+    if (hasDevolensWebhookConfig(env)) {
+      const blockResult = await blockDevolensKey(env, normalizedLicenseKey);
+      if (!blockResult.ok) {
+        await writeAuditEvent(
+          env.DB,
+          "gumroad_refund_devolens_block_failed",
+          "gumroad",
+          JSON.stringify({
+            sale_id: saleId,
+            reason: "refunded_or_disputed",
+            error_code: blockResult.code,
+            retryable: blockResult.retryable,
+          }),
+          now,
+        );
+      }
+    }
     await updateLicenseEntitlementStatus(env.DB, licenseKeyHash, "disabled", now);
     await writeAuditEvent(
       env.DB,
