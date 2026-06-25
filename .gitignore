@@ -86,6 +86,7 @@ scripts/graphify_split_merge.py
 !/.scripts/generate-customer-updater-manifest.mjs
 !/.scripts/generate-customer-updater-manifest.test.mjs
 !/.scripts/run-admin-desktop-validation.sh
+!/.scripts/run-admin-sections-validation.sh
 !/.scripts/run-openai-frontend-removal-validation.sh
 !/.scripts/run-policy-muapi-liability-validation.sh
 !/.scripts/run-ui-flow-test-node22.sh
@@ -109,6 +110,7 @@ scripts/graphify_split_merge.py
 !/.scripts/run-d1-authority-validation.sh
 !/.scripts/run-devolens-inventory-validation.sh
 !/.scripts/run-tauri-storage-validation.sh
+!/.scripts/run-gumroad-webhook-validation.sh
 app/.scripts/
 .opencode/
 app/.opencode/

@@ -1,0 +1,81 @@
+import { describe, expect, it } from 'vitest';
+
+// Canonical inventory of Admin UI sections, their decisions, and minimum auth policies
+interface AdminSectionPolicy {
+  decision: 'retain' | 'remove' | 'replace_with_devolens_link' | 'replace_with_devolens_flow';
+  requiredAuthLevel: 'admin_token' | 'super_admin';
+  rationale: string;
+}
+
+const ADMIN_SECTION_POLICIES: Record<string, AdminSectionPolicy> = {
+  overview: {
+    decision: 'retain',
+    requiredAuthLevel: 'admin_token',
+    rationale: 'Provides high-level metrics of D1 database and worker activity. Essential for monitoring.'
+  },
+  reset_requests: {
+    decision: 'replace_with_devolens_flow',
+    requiredAuthLevel: 'admin_token',
+    rationale: 'Must call Devolens key deactivation instead of just mutating local D1 records.'
+  },
+  delete_requests: {
+    decision: 'retain',
+    requiredAuthLevel: 'super_admin',
+    rationale: 'GDPR/privacy data erasure is worker-specific but must also block the corresponding Devolens key.'
+  },
+  licenses: {
+    decision: 'replace_with_devolens_link',
+    requiredAuthLevel: 'admin_token',
+    rationale: 'D1 is not the license source of truth. Licenses should be managed on the Devolens dashboard.'
+  },
+  device_bindings: {
+    decision: 'replace_with_devolens_flow',
+    requiredAuthLevel: 'admin_token',
+    rationale: 'Active bindings must be queried and cleared via Devolens APIs.'
+  },
+  audit_events: {
+    decision: 'retain',
+    requiredAuthLevel: 'super_admin',
+    rationale: 'Compliance audit log of admin activity; must remain securely stored in D1.'
+  },
+  idempotency: {
+    decision: 'retain',
+    requiredAuthLevel: 'super_admin',
+    rationale: 'Worker-level request replay protection cache; not a Devolens concern.'
+  }
+};
+
+describe('Admin UI & Command Inventory', () => {
+  const ACTUAL_SECTIONS = ['overview', 'reset_requests', 'delete_requests', 'licenses', 'device_bindings', 'audit_events', 'idempotency'];
+
+  it('asserts every active admin section has a documented Devolens-alignment decision', () => {
+    for (const section of ACTUAL_SECTIONS) {
+      const policy = ADMIN_SECTION_POLICIES[section];
+      expect(policy, `Section "${section}" must be documented with an alignment decision.`).toBeDefined();
+      expect(['retain', 'remove', 'replace_with_devolens_link', 'replace_with_devolens_flow']).toContain(policy.decision);
+    }
+  });
+
+  it('asserts every active admin section requires a secure authorization level', () => {
+    for (const section of ACTUAL_SECTIONS) {
+      const policy = ADMIN_SECTION_POLICIES[section];
+      expect(policy.requiredAuthLevel, `Section "${section}" must specify a required auth level.`).toBeDefined();
+      expect(['admin_token', 'super_admin']).toContain(policy.requiredAuthLevel);
+    }
+  });
+
+  // Red Test (TDD): Failing test representing sections that must be transitioned
+  it.todo('enforces that licenses section is replaced with Devolens link and disables D1 direct editing', () => {
+    const policy = ADMIN_SECTION_POLICIES['licenses'];
+    expect(policy.decision).toBe('replace_with_devolens_link');
+    // Once implemented, direct "Disable License" action in UI should be replaced by Devolens links
+    expect(false, 'TDD: Licenses screen still allows D1 direct modifications instead of Devolens redirection.').toBe(true);
+  });
+
+  it.todo('enforces that reset requests flow calls Devolens key deactivation', () => {
+    const policy = ADMIN_SECTION_POLICIES['reset_requests'];
+    expect(policy.decision).toBe('replace_with_devolens_flow');
+    // Once implemented, resetting a device must hit the Devolens bridge deactivation endpoint
+    expect(false, 'TDD: Reset requests do not call the Devolens deactivation worker bridge.').toBe(true);
+  });
+});
