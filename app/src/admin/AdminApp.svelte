@@ -1,7 +1,6 @@
 <script>
   import {
     approveDeletionRequest,
-    approveResetRequest,
     clearAdminConfig,
     disableLicense,
     listAuditEvents,
@@ -9,18 +8,15 @@
     listIdempotencyRecords,
     listLicenses,
     listDeletionRequests,
-    listResetRequests,
     loadAdminConfig,
     loadOverview,
     rejectDeletionRequest,
-    rejectResetRequest,
     saveAdminConfig,
     testAdminConnection
   } from './lib/adminClient';
   import { friendlyAdminError, validateAdminConfig } from './lib/messages';
 
-  const SECTIONS = ['overview', 'reset_requests', 'delete_requests', 'licenses', 'device_bindings', 'audit_events', 'idempotency'];
-  const STATUSES = ['pending', 'approved', 'rejected', 'expired'];
+  const SECTIONS = ['overview', 'delete_requests', 'licenses', 'device_bindings', 'audit_events', 'idempotency'];
   const DELETION_STATUSES = ['pending', 'approved', 'processing', 'rejected', 'completed', 'failed'];
   const DEVICE_STATUSES = ['all', 'active', 'inactive'];
 
@@ -38,8 +34,6 @@
   let detailTitle = '';
 
   let overview = null;
-  let resetFilter = 'pending';
-  let resetRequests = [];
   let deletionFilter = 'pending';
   let deletionRequests = [];
   let licenseQ = '';
@@ -156,8 +150,6 @@
     try {
       if (section === 'overview') {
         overview = await loadOverview();
-      } else if (section === 'reset_requests') {
-        resetRequests = (await listResetRequests(resetFilter)).requests;
       } else if (section === 'delete_requests') {
         deletionRequests = (await listDeletionRequests(deletionFilter)).requests;
       } else if (section === 'licenses') {
@@ -208,26 +200,6 @@
     confirmRequest = null;
     confirmReason = '';
     deletionConfirmText = '';
-  }
-
-
-
-  async function submitDecision() {
-    if (!confirmAction || !confirmRequest || actionBusyFor) return;
-    const requestId = confirmRequest.reset_request_id;
-    actionBusyFor = `${confirmAction}:${requestId}`;
-    try {
-      const result = confirmAction === 'approve'
-        ? await approveResetRequest(requestId, confirmReason)
-        : await rejectResetRequest(requestId, confirmReason);
-      notice = { kind: 'success', message: `Reset request ${result.reset_request_id} ${result.status}.` };
-      closeConfirm();
-      await refreshCurrentSection();
-    } catch (error) {
-      showError(error);
-    } finally {
-      actionBusyFor = null;
-    }
   }
 
   async function submitDeletionDecision() {
@@ -303,58 +275,8 @@
           <article><h3>Total licenses</h3><strong>{overview?.total_licenses ?? 0}</strong></article>
           <article><h3>Recent audit events (24h)</h3><strong>{overview?.recent_audit_events_24h ?? 0}</strong></article>
           <article><h3>Active bindings</h3><strong>{overview?.device_binding_counts?.active ?? 0}</strong></article>
-          <article><h3>Pending resets</h3><strong>{overview?.reset_request_counts?.pending ?? 0}</strong></article>
           <article><h3>Pending deletions</h3><strong>{overview?.deletion_request_counts?.pending ?? 0}</strong></article>
         </div>
-      {:else if section === 'reset_requests'}
-        <div class="actions">
-          <label>Status
-            <select bind:value={resetFilter} on:change={refreshCurrentSection}>
-              {#each STATUSES as s}<option value={s}>{s}</option>{/each}
-            </select>
-          </label>
-        </div>
-        {#if !loading && resetRequests.length === 0}<div class="empty-state">No results.</div>{/if}
-        {#if resetRequests.length > 0}
-          <div class="table-scroll" role="region" aria-label="Reset requests table">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th scope="col">Request ID</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">License State</th>
-                  <th scope="col">Masked License Key</th>
-                  <th scope="col">Purchaser Email</th>
-                  <th scope="col">Created</th>
-                  <th scope="col">Updated</th>
-                  <th scope="col">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each resetRequests as item (item.reset_request_id)}
-                  <tr>
-                    <td>{item.reset_request_id}</td>
-                    <td>{item.status}</td>
-                    <td>{item.license_state}</td>
-                    <td>{item.masked_license_key ?? 'Unavailable'}</td>
-                    <td>{item.purchaser_email ?? 'Unavailable'}</td>
-                    <td>{formatDate(item.created_at_ms)}</td>
-                    <td>{formatDate(item.updated_at_ms)}</td>
-                    <td class="row-actions">
-                      <button class="secondary" on:click={() => openDetail('Reset Request', item)}>Details</button>
-                      {#if item.status === 'pending'}
-                        <button on:click={() => openConfirm('approve', item)}>Approve</button>
-                        <button class="danger" on:click={() => openConfirm('reject', item)}>Reject</button>
-                      {:else}
-                        <span class="muted">Decision already final</span>
-                      {/if}
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        {/if}
       {:else if section === 'delete_requests'}
         <div class="actions">
           <label>Status
@@ -572,37 +494,27 @@
   </div>
 {/if}
 
-{#if confirmAction && confirmRequest}
+{#if confirmRequest && (confirmAction === 'approve_deletion' || confirmAction === 'reject_deletion')}
   <div class="modal-backdrop" role="presentation" on:click|self={closeConfirm}>
     <section class="modal decision-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
-      {#if confirmAction === 'approve_deletion' || confirmAction === 'reject_deletion'}
-        <header><h2 id="confirm-dialog-title">{confirmAction === 'approve_deletion' ? 'Approve and delete user data?' : 'Reject deletion request?'}</h2></header>
-        {#if confirmAction === 'approve_deletion'}
-          <p>This will delete device bindings and anonymize backend licensing records for the selected request. Type DELETE USER DATA to continue.</p>
-          <label>Confirmation <input bind:value={deletionConfirmText} autocomplete="off" /></label>
-        {/if}
-        <label>Optional reason <textarea bind:value={confirmReason} rows="4" /></label>
-        <div class="actions">
-          <button
-            class={confirmAction === 'approve_deletion' ? 'danger' : ''}
-            on:click={submitDeletionDecision}
-            disabled={Boolean(actionBusyFor) || (confirmAction === 'approve_deletion' && deletionConfirmText.trim() !== 'DELETE USER DATA')}
-          >
-            {actionBusyFor ? 'Submitting...' : confirmAction === 'approve_deletion' ? 'Approve and Delete' : 'Confirm reject'}
-          </button>
-          <button class="secondary" on:click={closeConfirm} disabled={Boolean(actionBusyFor)}>Cancel</button>
-        </div>
-      {:else}
-        <header><h2 id="confirm-dialog-title">{confirmAction === 'approve' ? 'Approve reset request?' : 'Reject reset request?'}</h2></header>
-        <label>Optional reason <textarea bind:value={confirmReason} rows="4" /></label>
-        <div class="actions">
-          <button class={confirmAction === 'reject' ? 'danger' : ''} on:click={submitDecision} disabled={Boolean(actionBusyFor)}>
-            {actionBusyFor ? 'Submitting...' : confirmAction === 'approve' ? 'Confirm approve' : 'Confirm reject'}
-          </button>
-          <button class="secondary" on:click={closeConfirm} disabled={Boolean(actionBusyFor)}>Cancel</button>
-        </div>
+      {#if confirmAction === 'approve_deletion'}
+        <header><h2 id="confirm-dialog-title">Approve and delete user data?</h2></header>
+        <p>This will delete device bindings and anonymize backend licensing records for the selected request. Type DELETE USER DATA to continue.</p>
+        <label>Confirmation <input bind:value={deletionConfirmText} autocomplete="off" /></label>
+      {:else if confirmAction === 'reject_deletion'}
+        <header><h2 id="confirm-dialog-title">Reject deletion request?</h2></header>
       {/if}
+      <label>Optional reason <textarea bind:value={confirmReason} rows="4" /></label>
+      <div class="actions">
+        <button
+          class={confirmAction === 'approve_deletion' ? 'danger' : ''}
+          on:click={submitDeletionDecision}
+          disabled={Boolean(actionBusyFor) || (confirmAction === 'approve_deletion' && deletionConfirmText.trim() !== 'DELETE USER DATA')}
+        >
+          {actionBusyFor ? 'Submitting...' : confirmAction === 'approve_deletion' ? 'Approve and Delete' : 'Confirm reject'}
+        </button>
+        <button class="secondary" on:click={closeConfirm} disabled={Boolean(actionBusyFor)}>Cancel</button>
+      </div>
     </section>
   </div>
 {/if}
-

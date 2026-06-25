@@ -13,6 +13,14 @@ run_and_log() {
   "$@" 2>&1 | tee -a "$LOG_FILE"
 }
 
+if rg -n "admin_(list|approve|reject)_reset_request|listResetRequests|approveResetRequest|rejectResetRequest" \
+  app/src-tauri/src/bin/admin_desktop.rs \
+  app/src/admin/AdminApp.svelte \
+  app/src/admin/lib/adminClient.ts 2>&1 | tee -a "$LOG_FILE"; then
+  echo "Deprecated admin reset queue command/UI surface is still exposed." | tee -a "$LOG_FILE"
+  exit 1
+fi
+
 run_and_log node --test worker/test/contract.test.js
 run_and_log pnpm --dir app run test -- src/tests/admin/admin_client.test.ts src/tests/admin/admin_messages.test.ts src/tests/admin/admin_ui.test.ts src/tests/admin/admin_inventory.test.ts
 run_and_log cargo test --locked --manifest-path app/src-tauri/Cargo.toml admin_

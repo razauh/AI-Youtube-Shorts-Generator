@@ -26,32 +26,13 @@ describe('adminClient', () => {
     expect(JSON.stringify(localStorage)).not.toContain('admin-test-token-1234');
   });
 
-  it('sends status filter through the typed Tauri command', async () => {
+  it('sends deletion status filter through the typed Tauri command', async () => {
     invoke.mockResolvedValue({ requests: [] });
 
-    const { listResetRequests, listDeletionRequests } = await import('../../admin/lib/adminClient');
-    await listResetRequests('approved');
+    const { listDeletionRequests } = await import('../../admin/lib/adminClient');
     await listDeletionRequests('failed');
 
-    expect(invoke).toHaveBeenNthCalledWith(1, 'admin_list_reset_requests', { status: 'approved' });
-    expect(invoke).toHaveBeenNthCalledWith(2, 'admin_list_deletion_requests', { status: 'failed' });
-  });
-
-  it('uses approve and reject commands with optional reason input', async () => {
-    invoke.mockResolvedValue({ reset_request_id: 'reset-1', status: 'approved', license_state: 'UNBOUND' });
-
-    const { approveResetRequest, rejectResetRequest } = await import('../../admin/lib/adminClient');
-    await approveResetRequest('reset-1', ' verified ');
-    await rejectResetRequest('reset-2', '');
-
-    expect(invoke).toHaveBeenNthCalledWith(1, 'admin_approve_reset_request', {
-      requestId: 'reset-1',
-      reason: 'verified'
-    });
-    expect(invoke).toHaveBeenNthCalledWith(2, 'admin_reject_reset_request', {
-      requestId: 'reset-2',
-      reason: null
-    });
+    expect(invoke).toHaveBeenCalledWith('admin_list_deletion_requests', { status: 'failed' });
   });
 
   it('uses deletion decision commands with required confirmation', async () => {

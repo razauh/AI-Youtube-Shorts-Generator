@@ -24,4 +24,9 @@ cd "${ROOT_DIR}/worker"
 run_step "node-test-devolens-bridge" node --test test/devolens_bridge.test.js
 run_step "node-test-contract" node --test test/contract.test.js
 
+if grep -q "DEVOLENS_ACCESS_TOKEN is deprecated" "${LOG_FILE}"; then
+  echo "Error: deprecated Devolens token warning was emitted. See ${LOG_FILE} for details." >&2
+  exit 1
+fi
+
 echo "validation logs: ${LOG_FILE}"

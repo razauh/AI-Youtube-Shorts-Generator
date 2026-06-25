@@ -5,13 +5,10 @@ import type {
   AdminDeviceBindingListData,
   AdminAuditEventListData,
   AdminIdempotencyRecordListData,
-  AdminResetDecisionData,
   AdminDeletionDecisionData,
   AdminDeletionListData,
   AdminDisableLicenseData,
-  AdminResetListData,
-  DeletionRequestStatus,
-  ResetRequestStatus
+  DeletionRequestStatus
 } from './contracts';
 
 interface TauriCore {
@@ -102,26 +99,8 @@ export function listIdempotencyRecords(filters: {
   });
 }
 
-export function listResetRequests(status: ResetRequestStatus): Promise<AdminResetListData> {
-  return invoke<AdminResetListData>('admin_list_reset_requests', { status });
-}
-
 export function listDeletionRequests(status: DeletionRequestStatus): Promise<AdminDeletionListData> {
   return invoke<AdminDeletionListData>('admin_list_deletion_requests', { status });
-}
-
-export function approveResetRequest(requestId: string, reason?: string): Promise<AdminResetDecisionData> {
-  return invoke<AdminResetDecisionData>('admin_approve_reset_request', {
-    requestId,
-    reason: reason?.trim() ? reason.trim() : null
-  });
-}
-
-export function rejectResetRequest(requestId: string, reason?: string): Promise<AdminResetDecisionData> {
-  return invoke<AdminResetDecisionData>('admin_reject_reset_request', {
-    requestId,
-    reason: reason?.trim() ? reason.trim() : null
-  });
 }
 
 export function approveDeletionRequest(

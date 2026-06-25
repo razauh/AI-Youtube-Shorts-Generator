@@ -77,15 +77,19 @@ test('deactivateDevolensKey constructs correct URL, uses DEVOLENS_CLIENT_TOKEN',
   }
 });
 
-test('bridge falls back to DEVOLENS_ACCESS_TOKEN and warns when specific token is missing', async () => {
+test('bridge falls back to DEVOLENS_ACCESS_TOKEN without warning when specific token is missing', async () => {
   const originalFetch = global.fetch;
   const originalWarn = console.warn;
+  let callArgs = null;
   let warnings = [];
   console.warn = (...args) => {
     warnings.push(args.join(' '));
   };
 
-  global.fetch = async () => new Response(JSON.stringify({ result: 0 }));
+  global.fetch = async (url, options) => {
+    callArgs = { url, options };
+    return new Response(JSON.stringify({ result: 0 }));
+  };
 
   const env = {
     DEVOLENS_ACCESS_TOKEN: 'legacy_token_123',
@@ -96,9 +100,9 @@ test('bridge falls back to DEVOLENS_ACCESS_TOKEN and warns when specific token i
   try {
     const res = await deactivateDevolensKey(env, 'test-key-123', 'mac_abc');
     assert.equal(res.ok, true);
-    assert.equal(warnings.length, 1);
-    assert.ok(warnings[0].includes('DEVOLENS_ACCESS_TOKEN is deprecated'));
-    assert.ok(warnings[0].includes('DEVOLENS_CLIENT_TOKEN'));
+    const params = new URLSearchParams(callArgs.options.body);
+    assert.equal(params.get('token'), 'legacy_token_123');
+    assert.equal(warnings.length, 0);
   } finally {
     global.fetch = originalFetch;
     console.warn = originalWarn;

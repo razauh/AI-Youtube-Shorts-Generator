@@ -13,11 +13,6 @@ const ADMIN_SECTION_POLICIES: Record<string, AdminSectionPolicy> = {
     requiredAuthLevel: 'admin_token',
     rationale: 'Provides high-level metrics of D1 database and worker activity. Essential for monitoring.'
   },
-  reset_requests: {
-    decision: 'replace_with_devolens_flow',
-    requiredAuthLevel: 'admin_token',
-    rationale: 'Must call Devolens key deactivation instead of just mutating local D1 records.'
-  },
   delete_requests: {
     decision: 'retain',
     requiredAuthLevel: 'super_admin',
@@ -46,7 +41,8 @@ const ADMIN_SECTION_POLICIES: Record<string, AdminSectionPolicy> = {
 };
 
 describe('Admin UI & Command Inventory', () => {
-  const ACTUAL_SECTIONS = ['overview', 'reset_requests', 'delete_requests', 'licenses', 'device_bindings', 'audit_events', 'idempotency'];
+  const ACTUAL_SECTIONS = ['overview', 'delete_requests', 'licenses', 'device_bindings', 'audit_events', 'idempotency'];
+  const REMOVED_SECTIONS = ['reset_requests'];
 
   it('asserts every active admin section has a documented Devolens-alignment decision', () => {
     for (const section of ACTUAL_SECTIONS) {
@@ -70,10 +66,8 @@ describe('Admin UI & Command Inventory', () => {
     expect(policy.decision).toBe('replace_with_devolens_link');
   });
 
-  it.todo('enforces that reset requests flow calls Devolens key deactivation', () => {
-    const policy = ADMIN_SECTION_POLICIES['reset_requests'];
-    expect(policy.decision).toBe('replace_with_devolens_flow');
-    // Once implemented, resetting a device must hit the Devolens bridge deactivation endpoint
-    expect(false, 'TDD: Reset requests do not call the Devolens deactivation worker bridge.').toBe(true);
+  it('enforces that deprecated reset requests are not active admin sections', () => {
+    expect(ACTUAL_SECTIONS).not.toContain('reset_requests');
+    expect(REMOVED_SECTIONS).toContain('reset_requests');
   });
 });

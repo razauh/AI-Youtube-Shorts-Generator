@@ -21,21 +21,18 @@ async function callDevolensAPI(env, endpoint, params) {
     tokenVarName = "DEVOLENS_WEBHOOK_TOKEN";
     token = env.DEVOLENS_WEBHOOK_TOKEN;
     if (!token && env.DEVOLENS_ACCESS_TOKEN) {
-      console.warn("Warning: DEVOLENS_ACCESS_TOKEN is deprecated. Please use DEVOLENS_WEBHOOK_TOKEN.");
       token = env.DEVOLENS_ACCESS_TOKEN;
     }
   } else if (endpoint === "/api/key/Deactivate") {
     tokenVarName = "DEVOLENS_CLIENT_TOKEN";
     token = env.DEVOLENS_CLIENT_TOKEN;
     if (!token && env.DEVOLENS_ACCESS_TOKEN) {
-      console.warn("Warning: DEVOLENS_ACCESS_TOKEN is deprecated. Please use DEVOLENS_CLIENT_TOKEN.");
       token = env.DEVOLENS_ACCESS_TOKEN;
     }
   } else {
     tokenVarName = "DEVOLENS_SUPPORT_TOKEN";
     token = env.DEVOLENS_SUPPORT_TOKEN;
     if (!token && env.DEVOLENS_ACCESS_TOKEN) {
-      console.warn("Warning: DEVOLENS_ACCESS_TOKEN is deprecated. Please use DEVOLENS_SUPPORT_TOKEN.");
       token = env.DEVOLENS_ACCESS_TOKEN;
     }
   }

@@ -1,5 +1,5 @@
 import { createDevolensKey, blockDevolensKey } from "./devolensBridge.js";
-import { DELETION_STATUS, err, json, ok, readForm, readJson, requestId, RESET_STATUS } from "./contracts.js";
+import { DELETION_STATUS, err, json, ok, readForm, readJson, requestId } from "./contracts.js";
 import {
   anonymizeLicenseForPrivacyDeletion,
   anonymizeResetRequestsByLicenseHash,
@@ -13,13 +13,9 @@ import {
   writeVerifiedGumroadSale,
   getLicenseByHash,
   writeAuditEvent,
-  getResetRequest,
-  listResetRequestsByStatus,
   listDeletionRequestsByStatus,
-  updateResetRequestStatus,
   updateDeletionRequestStatus,
   sanitizeCompletedDeletionRequest,
-  deactivateDeviceBindingsByLicenseHash,
   getAdminOverviewCounts,
   listAdminLicenses,
   listAdminDeviceBindings,
@@ -79,10 +75,10 @@ export default {
       return handleAdminIdempotencyRecords(request, env);
     }
     if (method === "POST" && path === "/v1/admin/reset/approve") {
-      return handleAdminResetDecision(request, env, "approved");
+      return handleAdminResetDecision(request, env);
     }
     if (method === "POST" && path === "/v1/admin/reset/reject") {
-      return handleAdminResetDecision(request, env, "rejected");
+      return handleAdminResetDecision(request, env);
     }
     if (method === "GET" && path === "/v1/admin/privacy/delete-requests") {
       return handleAdminListDeletionRequests(request, env);
@@ -479,110 +475,24 @@ async function handleAdminListResetRequests(request, env) {
   const rid = requestId();
   const auth = requireAdminAuth(request, env, rid);
   if (auth) return auth;
-  if (!env?.DB) {
-    return err("storage", "D1 database binding is not configured.", rid, false, 503);
-  }
-
-  const url = new URL(request.url);
-  const status = url.searchParams.get("status") || "pending";
-  if (!RESET_STATUS.has(status)) {
-    return err("bad_request", "Invalid reset request status filter.", rid, false, 400);
-  }
-
-  try {
-    const result = await listResetRequestsByStatus(env.DB, status);
-    return ok({
-      requests: normalizeD1Results(result).map((row) => adminResetView(row)),
-    });
-  } catch {
-    return err("storage", "Failed to load reset requests.", rid, true, 503);
-  }
+  return deprecatedAdminResetResponse(rid);
 }
 
-async function handleAdminResetDecision(request, env, decision) {
+async function handleAdminResetDecision(request, env) {
   const rid = requestId();
   const auth = requireAdminAuth(request, env, rid);
   if (auth) return auth;
-  if (!env?.DB) {
-    return err("storage", "D1 database binding is not configured.", rid, false, 503);
-  }
+  return deprecatedAdminResetResponse(rid);
+}
 
-  const idem = request.headers.get("x-idempotency-key");
-  if (!idem) {
-    return err("bad_request", "Missing required header: X-Idempotency-Key", rid, false, 400);
-  }
-
-  const body = await readJson(request);
-  const requestIdValue = body?.request_id;
-  if (!requestIdValue) {
-    return err("bad_request", "Invalid admin reset decision payload.", rid, false, 400);
-  }
-
-  const payloadHash = stableHash({ decision, request_id: requestIdValue, reason: body.reason || null });
-  const replay = await getD1Idempotent(env.DB, `admin_reset_${decision}`, idem);
-  if (replay) {
-    if (replay.payload_hash !== payloadHash) {
-      return err(
-        "invalid_transition",
-        "Idempotency key reuse does not match original request payload.",
-        rid,
-        false,
-        409,
-      );
-    }
-    return new Response(replay.response_body, {
-      status: replay.response_status,
-      headers: { "content-type": "application/json; charset=utf-8" },
-    });
-  }
-
-  const reset = await getResetRequest(env.DB, requestIdValue);
-  if (!reset) {
-    return err("reset_request_not_found", "Reset request was not found.", rid, false, 404);
-  }
-  if (reset.status !== "pending") {
-    return err("invalid_transition", "Reset request has already been decided.", rid, false, 409);
-  }
-  if (decision === "approved" && !reset.license_key_hash) {
-    return err("invalid_transition", "Reset request cannot be approved without a bound license.", rid, false, 409);
-  }
-
-  const now = Date.now();
-  try {
-    await updateResetRequestStatus(env.DB, reset.request_id, decision, now);
-    if (decision === "approved") {
-      await deactivateDeviceBindingsByLicenseHash(env.DB, reset.license_key_hash, now);
-    }
-    await writeAuditEvent(
-      env.DB,
-      decision === "approved" ? "device_reset_approved" : "device_reset_rejected",
-      "admin",
-      JSON.stringify({
-        request_id: reset.request_id,
-        has_license_hash: Boolean(reset.license_key_hash),
-        reason_present: Boolean(body.reason),
-      }),
-      now,
-    );
-  } catch {
-    return err("storage", "Failed to persist admin reset decision.", rid, true, 503);
-  }
-
-  const response = ok({
-    reset_request_id: reset.request_id,
-    status: decision,
-    license_state: decision === "approved" ? "UNBOUND" : "BOUND_ACTIVE",
-  });
-  const responseBody = await response.clone().text();
-  await putD1Idempotent(
-    env.DB,
-    `admin_reset_${decision}`,
-    idem,
-    payloadHash,
-    { status: response.status, body: responseBody },
-    now,
+function deprecatedAdminResetResponse(rid) {
+  return err(
+    "gone",
+    "Admin reset approval routes are deprecated. Deactivate devices through the Devolens-backed app flow instead.",
+    rid,
+    false,
+    410,
   );
-  return response;
 }
 
 async function handleAdminListDeletionRequests(request, env) {
@@ -1412,20 +1322,6 @@ function normalizeD1Results(result) {
   if (Array.isArray(result)) return result;
   if (Array.isArray(result?.results)) return result.results;
   return [];
-}
-
-function adminResetView(row) {
-  return {
-    reset_request_id: row.request_id,
-    status: row.status,
-    license_state: row.status === "approved" ? "UNBOUND" : "BOUND_ACTIVE",
-    message: row.status,
-    masked_license_key: row.masked_license_key || null,
-    has_license_hash: Boolean(row.license_key_hash),
-    purchaser_email: maskEmail(row.purchaser_email),
-    created_at_ms: row.created_at_ms,
-    updated_at_ms: row.updated_at_ms,
-  };
 }
 
 function deletionStatusView(row) {

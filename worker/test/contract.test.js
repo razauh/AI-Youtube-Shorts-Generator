@@ -638,7 +638,7 @@ test('admin reset routes require bearer token', async () => {
   assert.equal(json.error.code, 'unauthorized');
 });
 
-test('admin lists pending reset requests without raw purchaser email', async () => {
+test('admin reset list route is deprecated and does not expose reset queues', async () => {
   const db = new MockD1Database();
   db.resetRequests.set('reset-1', {
     request_id: 'reset-1',
@@ -655,13 +655,12 @@ test('admin lists pending reset requests without raw purchaser email', async () 
     headers: { authorization: 'Bearer admin-secret' },
     env: { DB: db, ADMIN_API_TOKEN: 'admin-secret' },
   });
-  assert.equal(res.status, 200);
+  assert.equal(res.status, 410);
   const json = await res.json();
-  assert.equal(json.ok, true);
-  assert.equal(json.data.requests[0].status, 'pending');
-  assert.equal(json.data.requests[0].masked_license_key, '••••-DDDD');
-  assert.equal(json.data.requests[0].has_license_hash, true);
-  assert.equal(json.data.requests[0].purchaser_email, 'b***@example.com');
+  assert.equal(json.ok, false);
+  assert.equal(json.error.code, 'gone');
+  assert.match(json.error.message, /deprecated/i);
+  assert.equal(json.data, undefined);
   assert.equal(JSON.stringify(json).includes('buyer@example.com'), false);
 });
 
@@ -983,7 +982,7 @@ test('admin audit events endpoint redacts email-like metadata', async () => {
   assert.equal(json.data.events[0].metadata_summary.email, 'b***@example.com');
 });
 
-test('admin approve reset unbinds active device and idempotently replays', async () => {
+test('admin approve reset route is deprecated and does not mutate D1', async () => {
   const db = new MockD1Database();
   const env = {
     DB: db,
@@ -1023,24 +1022,18 @@ test('admin approve reset unbinds active device and idempotently replays', async
     body: { request_id: 'reset-1' },
     env,
   });
-  assert.equal(approve.status, 200);
+  assert.equal(approve.status, 410);
   const approveJson = await approve.json();
-  assert.equal(approveJson.data.status, 'approved');
-  assert.equal(approveJson.data.license_state, 'UNBOUND');
-  assert.equal(Array.from(db.deviceBindings.values())[0].status, 'inactive');
-
-  const replay = await call('/v1/admin/reset/approve', {
-    headers: { authorization: 'Bearer admin-secret', 'x-idempotency-key': 'approve-1' },
-    body: { request_id: 'reset-1' },
-    env,
-  });
-  assert.equal(replay.status, 200);
-
-  assert.equal(db.auditEvents.at(-1).event_type, 'device_reset_approved');
-  assert.equal(JSON.stringify(db.auditEvents.at(-1)).includes('buyer@example.com'), false);
+  assert.equal(approveJson.ok, false);
+  assert.equal(approveJson.error.code, 'gone');
+  assert.match(approveJson.error.message, /deprecated/i);
+  assert.equal(Array.from(db.deviceBindings.values())[0].status, 'active');
+  assert.equal(db.resetRequests.get('reset-1').status, 'pending');
+  assert.equal(db.auditEvents.length, 0);
+  assert.equal(JSON.stringify(approveJson).includes('buyer@example.com'), false);
 });
 
-test('admin reject reset preserves active device binding', async () => {
+test('admin reject reset route is deprecated and does not mutate D1', async () => {
   const db = new MockD1Database();
   db.resetRequests.set('reset-1', {
     request_id: 'reset-1',
@@ -1065,13 +1058,14 @@ test('admin reject reset preserves active device binding', async () => {
     body: { request_id: 'reset-1', reason: 'manual review failed' },
     env: { DB: db, ADMIN_API_TOKEN: 'admin-secret' },
   });
-  assert.equal(reject.status, 200);
+  assert.equal(reject.status, 410);
   const rejectJson = await reject.json();
-  assert.equal(rejectJson.data.status, 'rejected');
+  assert.equal(rejectJson.ok, false);
+  assert.equal(rejectJson.error.code, 'gone');
+  assert.match(rejectJson.error.message, /deprecated/i);
   assert.equal(db.deviceBindings.get('dev-1').status, 'active');
-  assert.equal(db.resetRequests.get('reset-1').status, 'rejected');
-  assert.equal(db.auditEvents.at(-1).event_type, 'device_reset_rejected');
-  assert.equal(JSON.parse(db.auditEvents.at(-1).metadata_json).reason_present, true);
+  assert.equal(db.resetRequests.get('reset-1').status, 'pending');
+  assert.equal(db.auditEvents.length, 0);
 });
 
 test('gumroad webhook accepts form-encoded ping payloads', async () => {

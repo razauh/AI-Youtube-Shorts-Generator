@@ -3,10 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 const loadAdminConfig = vi.fn();
-const listResetRequests = vi.fn();
 const listDeletionRequests = vi.fn();
-const approveResetRequest = vi.fn();
-const rejectResetRequest = vi.fn();
 const approveDeletionRequest = vi.fn();
 const rejectDeletionRequest = vi.fn();
 const saveAdminConfig = vi.fn();
@@ -21,10 +18,7 @@ const listIdempotencyRecords = vi.fn();
 
 vi.mock('../../admin/lib/adminClient', () => ({
   loadAdminConfig: (...args: unknown[]) => loadAdminConfig(...args),
-  listResetRequests: (...args: unknown[]) => listResetRequests(...args),
   listDeletionRequests: (...args: unknown[]) => listDeletionRequests(...args),
-  approveResetRequest: (...args: unknown[]) => approveResetRequest(...args),
-  rejectResetRequest: (...args: unknown[]) => rejectResetRequest(...args),
   approveDeletionRequest: (...args: unknown[]) => approveDeletionRequest(...args),
   rejectDeletionRequest: (...args: unknown[]) => rejectDeletionRequest(...args),
   saveAdminConfig: (...args: unknown[]) => saveAdminConfig(...args),
@@ -37,25 +31,6 @@ vi.mock('../../admin/lib/adminClient', () => ({
   listAuditEvents: (...args: unknown[]) => listAuditEvents(...args),
   listIdempotencyRecords: (...args: unknown[]) => listIdempotencyRecords(...args)
 }));
-
-const pendingRequest = {
-  reset_request_id: 'reset-pending',
-  status: 'pending',
-  license_state: 'BOUND_ACTIVE',
-  message: 'pending',
-  masked_license_key: '••••-1234',
-  has_license_hash: true,
-  purchaser_email: 'b***@example.com',
-  created_at_ms: 1,
-  updated_at_ms: 2
-};
-
-const approvedRequest = {
-  ...pendingRequest,
-  reset_request_id: 'reset-approved',
-  status: 'approved',
-  license_state: 'UNBOUND'
-};
 
 const pendingDeletionRequest = {
   deletion_request_id: 'del-pending',
@@ -81,10 +56,7 @@ describe('AdminApp', () => {
   beforeEach(async () => {
     vi.resetModules();
     loadAdminConfig.mockReset();
-    listResetRequests.mockReset();
     listDeletionRequests.mockReset();
-    approveResetRequest.mockReset();
-    rejectResetRequest.mockReset();
     approveDeletionRequest.mockReset();
     rejectDeletionRequest.mockReset();
     saveAdminConfig.mockReset();
@@ -111,35 +83,15 @@ describe('AdminApp', () => {
     expect(screen.getByLabelText('Admin API token')).toBeInTheDocument();
   });
 
-  it('shows approve and reject only for pending requests', async () => {
+  it('hides the deprecated reset request queue and overview metric', async () => {
     loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
-    loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, deletion_request_counts: {}, recent_audit_events_24h: 0 });
-    listResetRequests.mockResolvedValue({ requests: [pendingRequest, approvedRequest] });
+    loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: { pending: 2 }, deletion_request_counts: {}, recent_audit_events_24h: 0 });
 
     render(AdminApp);
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'reset requests' }));
-    expect(await screen.findByText('reset-pending')).toBeInTheDocument();
-    expect(screen.getByText('reset-approved')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
-    expect(screen.getByText('Decision already final')).toBeInTheDocument();
-  });
-
-  it('confirms approve actions and sends the optional reason', async () => {
-    loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
-    loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, deletion_request_counts: {}, recent_audit_events_24h: 0 });
-    listResetRequests.mockResolvedValue({ requests: [pendingRequest] });
-    approveResetRequest.mockResolvedValue({ reset_request_id: 'reset-pending', status: 'approved', license_state: 'UNBOUND' });
-
-    render(AdminApp);
-
-    await fireEvent.click(await screen.findByRole('button', { name: 'reset requests' }));
-    await fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
-    await fireEvent.input(screen.getByLabelText('Optional reason'), { target: { value: 'verified by support' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Confirm approve' }));
-
-    await waitFor(() => expect(approveResetRequest).toHaveBeenCalledWith('reset-pending', 'verified by support'));
+    expect(await screen.findByText('Total licenses')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'reset requests' })).toBeNull();
+    expect(screen.queryByText('Pending resets')).toBeNull();
   });
 
   it('loads overview by default and allows section switching', async () => {
@@ -159,7 +111,6 @@ describe('AdminApp', () => {
   it('renders table headers across admin tabs', async () => {
     loadAdminConfig.mockResolvedValue({ baseUrl: 'https://worker.example.test', tokenConfigured: true, tokenRedacted: '[redacted]...1234' });
     loadOverview.mockResolvedValue({ total_licenses: 1, entitlement_counts: {}, device_binding_counts: {}, reset_request_counts: {}, deletion_request_counts: {}, recent_audit_events_24h: 0 });
-    listResetRequests.mockResolvedValue({ requests: [pendingRequest] });
     listDeletionRequests.mockResolvedValue({ requests: [pendingDeletionRequest] });
     listLicenses.mockResolvedValue({ licenses: [{ license_hash_prefix: 'hash-1', purchaser_email_masked: 'b***@example.com', entitlement_status: 'active', provider: 'gumroad', provider_sale_id: 'sale-1', updated_at_ms: 1, active_device_count: 1, inactive_device_count: 0 }] });
     listDeviceBindings.mockResolvedValue({ bindings: [{ device_id: 'dev-1', status: 'active', license_hash_prefix: 'hash-1', updated_at_ms: 1, purchaser_email_masked: 'b***@example.com', public_key_prefix: 'abc', fingerprint_summary: { os_name: 'linux', platform_family: 'linux', arch: 'x64', app_version: '1.0.0' } }] });
@@ -167,10 +118,8 @@ describe('AdminApp', () => {
     listIdempotencyRecords.mockResolvedValue({ records: [{ op: 'admin_license_disable', idempotency_key_prefix: 'idk', payload_hash_prefix: 'ph', response_status: 200, response_body_size: 10, created_at_ms: 1 }] });
 
     render(AdminApp);
-    await fireEvent.click(await screen.findByRole('button', { name: 'reset requests' }));
-    expect(await screen.findByText('Request ID')).toBeInTheDocument();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'delete requests' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'delete requests' }));
     expect(await screen.findByText('del-pending')).toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole('button', { name: 'licenses' }));
