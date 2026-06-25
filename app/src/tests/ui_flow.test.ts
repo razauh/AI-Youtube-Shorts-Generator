@@ -48,6 +48,7 @@ const authStoreMock = vi.hoisted(() => {
     activate: vi.fn(),
     requestReset: vi.fn(),
     pollResetStatus: vi.fn(),
+    deactivateCurrentDevice: vi.fn(),
     clearSession: vi.fn()
   };
   return {
@@ -171,7 +172,9 @@ describe('test_ui flow parity', () => {
     authStoreMock.store.activate.mockReset();
     authStoreMock.store.requestReset.mockReset();
     authStoreMock.store.pollResetStatus.mockReset();
+    authStoreMock.store.deactivateCurrentDevice.mockReset();
     authStoreMock.store.clearSession.mockReset();
+    authStoreMock.store.deactivateCurrentDevice.mockResolvedValue(undefined);
     authStoreMock.set({
       lifecycle: 'licensed',
       authState: {
@@ -495,10 +498,10 @@ describe('test_ui flow parity', () => {
     expect(screen.getByRole('tab', { name: 'Diagnostics' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Policies' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'API Providers', selected: true })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Device Reset' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Deactivate Device' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'MuAPI Access help' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'OpenAI Access help' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Device Reset help' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Deactivate this device help' })).toBeNull();
 
     expect(screen.getByRole('button', { name: 'MuAPI Access help' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'OpenAI Access help' })).toBeNull();
@@ -523,12 +526,21 @@ describe('test_ui flow parity', () => {
     expect(document.body.textContent).not.toContain('/home/test');
     expect(appConfigSummary.mock.calls.length).toBeGreaterThanOrEqual(1);
     expect(runtimeContext).toHaveBeenCalledTimes(1);
-    await fireEvent.click(screen.getByRole('tab', { name: 'Device Reset' }));
-    expect(screen.getByRole('button', { name: 'Device Reset help' })).toBeTruthy();
-    expect(screen.getByText('License support')).toBeTruthy();
-    await fireEvent.input(screen.getByLabelText('Settings reset license key'), { target: { value: 'LICENSE-1234' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Request Device Reset' }));
-    expect(authStoreMock.store.requestReset).toHaveBeenCalledWith({ license_key: 'LICENSE-1234' }, { preserveLicensedSession: true });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Deactivate Device' }));
+    expect(screen.getByRole('button', { name: 'Deactivate this device help' })).toBeTruthy();
+    expect(screen.getByText('Current device')).toBeTruthy();
+    expect(screen.queryByLabelText('Settings reset license key')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Request Device Reset' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Deactivate this device' }));
+    expect(screen.getByRole('group', { name: 'Confirm device deactivation' })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('group', { name: 'Confirm device deactivation' })).toBeNull();
+    expect(screen.getByText('Device deactivation cancelled.')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Deactivate this device' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Deactivate this device' }));
+    expect(authStoreMock.store.deactivateCurrentDevice).toHaveBeenCalledWith();
+    expect(authStoreMock.store.requestReset).not.toHaveBeenCalled();
+    expect(screen.getByText('This device has been deactivated. Re-enter your license key to use this device again.')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('tab', { name: 'Configuration' }));
@@ -594,6 +606,43 @@ describe('test_ui flow parity', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Request Reset' }));
 
     expect(authStoreMock.store.requestReset).toHaveBeenCalledWith({ license_key: 'LICENSE-1234' });
+  });
+
+  it('test_settings_deactivate_device_failure_keeps_retryable_confirmation', async () => {
+    authStoreMock.store.deactivateCurrentDevice.mockRejectedValue({
+      code: 'worker_unreachable',
+      message: 'Unable to reach the license service right now. Please try again shortly.'
+    });
+    authStoreMock.set({
+      lifecycle: 'licensed',
+      authState: {
+        status: 'licensed',
+        masked_license_key: '****-1234',
+        device_id: 'dev',
+        token_expires_at_ms: 1,
+        last_validated_at_ms: 1,
+        next_validation_due_ms: 2
+      },
+      resetRequestId: null,
+      resetStatus: 'error',
+      resetStatusMessage: null,
+      resetError: {
+        code: 'worker_unreachable',
+        message: 'Unable to reach the license service right now. Please try again shortly.'
+      },
+      error: null
+    });
+
+    render(Page);
+    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    await fireEvent.click(await screen.findByRole('tab', { name: 'Deactivate Device' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Deactivate this device' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Deactivate this device' }));
+
+    expect(authStoreMock.store.deactivateCurrentDevice).toHaveBeenCalledWith();
+    expect(screen.getByRole('group', { name: 'Confirm device deactivation' })).toBeTruthy();
+    expect(screen.getByText('Unable to reach the license service right now. Please try again shortly.')).toBeTruthy();
+    expect(screen.queryByLabelText('Settings reset license key')).toBeNull();
   });
 
   it('test_submit sends correct payload', async () => {

@@ -35,6 +35,10 @@ export function validateSession(): Promise<SessionView> {
   return invoke<SessionView>('validate_session');
 }
 
+export function deactivateCurrentDevice(): Promise<SessionView> {
+  return invoke<SessionView>('deactivate_current_device');
+}
+
 export function requestDeviceReset(input: DeviceResetInput): Promise<DeviceResetView> {
   return invoke<DeviceResetView>('request_device_reset', { input });
 }

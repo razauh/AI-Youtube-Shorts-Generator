@@ -3,6 +3,7 @@ import type { AuthCommandError, AuthStateView, DeviceResetInput } from '../authC
 import {
   activateLicense,
   clearLocalSession,
+  deactivateCurrentDevice,
   getDeviceResetStatus,
   requestDeviceReset,
   validateSession,
@@ -464,6 +465,23 @@ export function createAuthState() {
     },
     pollResetStatus: async (requestId: string) => {
       await api.pollResetStatus(requestId);
+    },
+    deactivateCurrentDevice: async () => {
+      try {
+        const view = await deactivateCurrentDevice();
+        stopResetPolling();
+        clearResetCache();
+        applyAuthState(view.auth_state);
+      } catch (error) {
+        const err = commandError(error);
+        update((state) => ({
+          ...state,
+          resetStatus: 'error',
+          resetStatusMessage: null,
+          resetError: err,
+        }));
+        throw err;
+      }
     },
     clearSession: async () => {
       await clearLocalSession();

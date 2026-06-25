@@ -6,6 +6,7 @@ const validateSession = vi.fn();
 const activateLicense = vi.fn();
 const requestDeviceReset = vi.fn();
 const getDeviceResetStatus = vi.fn();
+const deactivateCurrentDevice = vi.fn();
 const clearLocalSession = vi.fn();
 
 vi.mock('../lib/api/authClient', () => ({
@@ -14,6 +15,7 @@ vi.mock('../lib/api/authClient', () => ({
   activateLicense: (licenseKey: string) => activateLicense(licenseKey),
   requestDeviceReset: (input: unknown) => requestDeviceReset(input),
   getDeviceResetStatus: (requestId: string) => getDeviceResetStatus(requestId),
+  deactivateCurrentDevice: () => deactivateCurrentDevice(),
   clearLocalSession: () => clearLocalSession(),
 }));
 
@@ -25,6 +27,7 @@ describe('authState store', () => {
     activateLicense.mockReset();
     requestDeviceReset.mockReset();
     getDeviceResetStatus.mockReset();
+    deactivateCurrentDevice.mockReset();
     clearLocalSession.mockReset();
     localStorage.clear();
   });
@@ -213,6 +216,51 @@ describe('authState store', () => {
       code: 'worker_unreachable',
       message: 'Unable to reach the license service right now. Please try again shortly.',
     });
+    expect(get(state).resetStatus).toBe('error');
+    expect(get(state).resetError?.code).toBe('worker_unreachable');
+  });
+
+  it('deactivates the current device without license re-entry', async () => {
+    deactivateCurrentDevice.mockResolvedValue({
+      auth_state: { status: 'unauthenticated' },
+    });
+    const { createAuthState } = await import('../lib/stores/authState');
+    const state = createAuthState();
+    state.reset();
+
+    await state.deactivateCurrentDevice();
+
+    expect(deactivateCurrentDevice).toHaveBeenCalledWith();
+    expect(requestDeviceReset).not.toHaveBeenCalled();
+    expect(get(state).lifecycle).toBe('unauthenticated');
+    expect(get(state).resetStatus).toBe('idle');
+  });
+
+  it('preserves auth state when current device deactivation fails', async () => {
+    deactivateCurrentDevice.mockRejectedValue({
+      code: 'worker_unreachable',
+      message: 'backend unreachable',
+    });
+    const { createAuthState } = await import('../lib/stores/authState');
+    const state = createAuthState();
+    state.reset();
+    validateSession.mockResolvedValue({
+      auth_state: {
+        status: 'licensed',
+        masked_license_key: '****-1234',
+        device_id: 'dev',
+        token_expires_at_ms: 1,
+        last_validated_at_ms: 1,
+        next_validation_due_ms: 2,
+      },
+    });
+    await state.bootstrap();
+
+    await expect(state.deactivateCurrentDevice()).rejects.toMatchObject({
+      code: 'worker_unreachable',
+    });
+
+    expect(get(state).lifecycle).toBe('licensed');
     expect(get(state).resetStatus).toBe('error');
     expect(get(state).resetError?.code).toBe('worker_unreachable');
   });

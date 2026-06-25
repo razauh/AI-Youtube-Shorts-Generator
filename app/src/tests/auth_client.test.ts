@@ -38,6 +38,17 @@ describe('authClient', () => {
     expect(invoke).toHaveBeenNthCalledWith(2, 'get_device_reset_status', { requestId: 'reset-1' });
   });
 
+  it('calls current device deactivation without license material', async () => {
+    invoke.mockResolvedValue({ auth_state: { status: 'unauthenticated' } });
+    localStorage.clear();
+
+    const { deactivateCurrentDevice } = await import('../lib/api/authClient');
+    await deactivateCurrentDevice();
+
+    expect(invoke).toHaveBeenCalledWith('deactivate_current_device', undefined);
+    expect(JSON.stringify(localStorage)).not.toContain('LICENSE-1234');
+  });
+
   it('calls user data deletion commands without browser persistence', async () => {
     invoke.mockResolvedValue({ request_id: 'del-1', lookup_token: 'lookup-1', status: 'pending' });
     localStorage.clear();

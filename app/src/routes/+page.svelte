@@ -84,7 +84,7 @@
   let settingsActionTarget = '';
   let settingsActionKind = 'success';
   let settingsActionBusy = false;
-  let settingsResetLicenseKey = '';
+  let settingsDeactivateConfirmOpen = false;
   let deletionLicenseKey = '';
   let deletionPurchaserEmail = '';
   let deletionConfirmation = '';
@@ -377,15 +377,22 @@
     return value ? 'Configured' : 'Not configured';
   }
 
-  async function submitSettingsResetRequest() {
+  function beginSettingsDeviceDeactivation() {
+    settingsActionStatus = '';
+    settingsActionTarget = '';
+    settingsActionKind = 'success';
+    settingsDeactivateConfirmOpen = true;
+  }
+
+  function cancelSettingsDeviceDeactivation() {
+    settingsDeactivateConfirmOpen = false;
+    settingsActionStatus = 'Device deactivation cancelled.';
+    settingsActionTarget = 'deactivate';
+    settingsActionKind = 'success';
+  }
+
+  async function confirmSettingsDeviceDeactivation() {
     if (settingsActionBusy) {
-      return;
-    }
-    const key = settingsResetLicenseKey.trim();
-    if (!key) {
-      settingsActionStatus = 'Enter your license key to request a device reset.';
-      settingsActionTarget = 'reset';
-      settingsActionKind = 'error';
       return;
     }
     settingsActionStatus = '';
@@ -393,16 +400,14 @@
     settingsActionKind = 'success';
     settingsActionBusy = true;
     try {
-      await authState.requestReset({ license_key: key }, { preserveLicensedSession: true });
-      settingsResetLicenseKey = '';
-      settingsActionStatus = 'Device reset request sent.';
-      settingsActionTarget = 'reset';
+      await authState.deactivateCurrentDevice();
+      settingsDeactivateConfirmOpen = false;
+      settingsActionStatus = 'This device has been deactivated. Re-enter your license key to use this device again.';
+      settingsActionTarget = 'deactivate';
       settingsActionKind = 'success';
     } catch (err) {
-      // The auth store surfaces safe messages via `$authState.resetError`.
-      // Avoid duplicating the same error message in both places.
-      settingsActionStatus = '';
-      settingsActionTarget = 'reset';
+      settingsActionStatus = $authState.resetError?.message || 'Unable to deactivate this device. Your local license session was preserved so you can retry.';
+      settingsActionTarget = 'deactivate';
       settingsActionKind = 'error';
     } finally {
       settingsActionBusy = false;
@@ -1320,7 +1325,7 @@
               aria-selected={settingsConfigTab === 'reset'}
               class:active-tab={settingsConfigTab === 'reset'}
               on:click={() => (settingsConfigTab = 'reset')}
-            >Device Reset</button>
+            >Deactivate Device</button>
           </div>
 
           <div class="configuration-grid" class:configuration-grid-single={settingsConfigTab !== 'api'}>
@@ -1383,42 +1388,35 @@
           <article class="panel config-card config-card-caution">
             <div class="config-card-head">
               <div>
-                <p class="eyebrow">License support</p>
+                <p class="eyebrow">Current device</p>
                 <div class="config-title-row">
-                  <h3>Device Reset</h3>
+                  <h3>Deactivate this device</h3>
                   <span class="help-wrap">
-                    <button class="help-button" type="button" aria-label="Device Reset help" aria-describedby="help-device-reset">?</button>
-                    <span id="help-device-reset" class="help-tooltip" role="tooltip">Request a reset only when this license needs to move to a different device.</span>
+                    <button class="help-button" type="button" aria-label="Deactivate this device help" aria-describedby="help-device-deactivate">?</button>
+                    <span id="help-device-deactivate" class="help-tooltip" role="tooltip">Release this device from your license before moving to another device.</span>
                   </span>
                 </div>
               </div>
             </div>
-            <form class="form reset-form" novalidate on:submit|preventDefault={submitSettingsResetRequest}>
-              <label>
-                License key
-                <input
-                  aria-label="Settings reset license key"
-                  type="password"
-                  bind:value={settingsResetLicenseKey}
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-              </label>
-              <button class="button-danger" type="submit" disabled={settingsActionBusy}>Request Device Reset</button>
-            </form>
-            {#if $authState.resetRequestId}
-              <p class="meta">Request: {$authState.resetRequestId}</p>
-            {/if}
-            {#if $authState.resetStatus !== 'idle' && $authState.resetStatus !== 'error'}
-              <p class="meta">Status: {$authState.resetStatus}</p>
-              {#if $authState.resetStatusMessage}
-                <p class="meta">{$authState.resetStatusMessage}</p>
+            <div class="deactivate-device-panel">
+              <p class="meta">Deactivate only this signed-in device. This does not display or require your raw license key.</p>
+              <p class="meta">After deactivation, this app returns to the license screen. You can activate again here or use the license on another device.</p>
+              {#if settingsDeactivateConfirmOpen}
+                <div class="deactivate-confirm-box" role="group" aria-label="Confirm device deactivation">
+                  <p><strong>Confirm deactivation?</strong></p>
+                  <p class="meta">Keep this app open until the license service confirms the device was released.</p>
+                  <div class="settings-actions">
+                    <button class="button-secondary" type="button" on:click={cancelSettingsDeviceDeactivation} disabled={settingsActionBusy}>Cancel</button>
+                    <button class="button-danger" type="button" on:click={confirmSettingsDeviceDeactivation} disabled={settingsActionBusy}>
+                      {settingsActionBusy ? 'Deactivating...' : 'Deactivate this device'}
+                    </button>
+                  </div>
+                </div>
+              {:else}
+                <button class="button-danger" type="button" on:click={beginSettingsDeviceDeactivation} disabled={settingsActionBusy}>Deactivate this device</button>
               {/if}
-            {/if}
-            {#if $authState.resetError}
-              <p class="error-text">{$authState.resetError.message}</p>
-            {/if}
-            {#if settingsActionTarget === 'reset'}
+            </div>
+            {#if settingsActionTarget === 'deactivate'}
               <FormStatus message={settingsActionStatus} kind={settingsActionKind} />
             {/if}
           </article>
@@ -2288,6 +2286,23 @@
     display: flex;
     gap: var(--space-sm);
     flex-wrap: wrap;
+  }
+
+  .deactivate-device-panel,
+  .deactivate-confirm-box {
+    display: grid;
+    gap: var(--space-sm);
+  }
+
+  .deactivate-confirm-box {
+    padding: var(--space-md);
+    border-radius: var(--radius-sm);
+    border: 1px solid color-mix(in srgb, var(--color-state-warning) 32%, transparent);
+    background: color-mix(in srgb, var(--color-state-warning) 8%, transparent);
+  }
+
+  .deactivate-confirm-box p {
+    margin: 0;
   }
 
   .button-secondary,
