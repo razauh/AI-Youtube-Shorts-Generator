@@ -29,9 +29,10 @@ fn no_root_glob_exports_in_lib() {
 #[test]
 fn all_known_tauri_command_names_present() {
     let names = app_command_names();
-    assert_eq!(names.len(), 6);
+    assert_eq!(names.len(), 7);
     assert!(names.contains(&"activate_license"));
     assert!(names.contains(&"validate_session"));
+    assert!(names.contains(&"deactivate_current_device"));
     assert!(names.contains(&"request_device_reset"));
     assert!(names.contains(&"get_device_reset_status"));
     assert!(names.contains(&"clear_local_session"));

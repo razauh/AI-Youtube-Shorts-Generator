@@ -1,9 +1,11 @@
 use license_control_suite::core::test_support::{FakeWorkerClient, TestService};
 use license_control_suite::core::{
-    BoundDeviceSummary, DeviceFingerprint, DeviceId, DevicePublicKey, LocalStateStore,
-    MaskedLicenseKey, SessionState,
+    AccessToken, BoundDeviceSummary, DeviceFingerprint, DeviceId, DevicePublicKey,
+    DeviceResetStatus, LicenseKey, LocalStateStore, MaskedLicenseKey, ResetRequestId,
+    SecretStore, SessionState,
 };
-use license_control_suite::desktop::tauri::AuthAppState;
+use license_control_suite::desktop::tauri::{AuthAppState, AuthStateView};
+use license_control_suite::desktop::tauri::deactivate_current_device_with_service;
 use serde_json::Value;
 use shorts_tauri_app::commands::{
     generate::{
@@ -56,6 +58,49 @@ async fn licensed_auth_state() -> AuthAppState {
     AuthAppState {
         service: Arc::new(harness.service),
     }
+}
+
+#[tokio::test]
+async fn deactivate_current_device_returns_unauthenticated_state_on_success() {
+    let request_id = ResetRequestId::new("reset-1").expect("request id");
+    let harness = TestService::new(FakeWorkerClient::new().with_reset_request(Ok(
+        DeviceResetStatus::Approved {
+            request_id,
+            decided_at_ms: 1,
+        },
+    )));
+    harness
+        .secrets
+        .put_license_key(LicenseKey::new("LICENSE-1234").expect("license key"))
+        .await
+        .expect("license should be stored");
+    harness
+        .secrets
+        .put_access_token(AccessToken::new("token").expect("access token"))
+        .await
+        .expect("access token should be stored");
+    harness
+        .state
+        .save_session_state(SessionState::Licensed {
+            masked_license_key: MaskedLicenseKey::new("••••-1234").expect("masked key"),
+            bound_device: BoundDeviceSummary {
+                device_id: DeviceId::new("device-id").expect("device id"),
+                public_key: DevicePublicKey::new("public").expect("public key"),
+                fingerprint: DeviceFingerprint::new("linux", "linux", "x86_64", None)
+                    .expect("fingerprint"),
+            },
+            token_expires_at_ms: 10,
+            last_validated_at_ms: 1,
+            next_validation_due_ms: 2,
+        })
+        .await
+        .expect("licensed state should be stored");
+
+    let view = deactivate_current_device_with_service(&harness.service)
+        .await
+        .expect("deactivate should succeed");
+
+    assert!(matches!(view.auth_state, AuthStateView::Unauthenticated));
 }
 
 #[test]

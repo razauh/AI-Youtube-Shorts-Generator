@@ -114,11 +114,11 @@ Deferred backend/provider work remains out of scope:
 
 ## Admin Desktop Boundary
 
-`license_control_suite::desktop::admin` is a desktop-only admin console surface. It is not a web dashboard target, and it remains separate from the six user/client commands.
+`license_control_suite::desktop::admin` is a desktop-only admin console surface. It is not a web dashboard target, and it remains separate from the seven user/client commands.
 
 ## Admin Desktop Console Onboarding
 
-Admin desktop consumers should start from `license_control_suite::desktop::admin`, keep admin flows separate from the six client auth commands, and use the example shell layout under `examples/admin-desktop-shell/`.
+Admin desktop consumers should start from `license_control_suite::desktop::admin`, keep admin flows separate from the seven client auth commands, and use the example shell layout under `examples/admin-desktop-shell/`.
 
 ## Desktop Persistence Namespacing
 
@@ -136,7 +136,7 @@ Secrets stay in keyring-backed storage. Non-secret state stays in JSON.
 
 ## Tauri Command Composition
 
-For host desktop apps, the recommended pattern is to compose the public command functions into the app's own final `tauri::generate_handler!` invocation. `register_auth_commands()` remains available as a convenience helper when the auth command set is the only handler group being registered.
+For host desktop apps, the recommended pattern is to use `auth_command_handler::<R>()` from the host shell. `register_auth_commands()` remains available as a convenience helper when the auth command set is the only handler group being registered.
 
 ## Client Desktop App Onboarding
 
@@ -144,7 +144,7 @@ Client desktop consumers should:
 
 1. Start from `license_control_suite::core`, `license_control_suite::desktop::tauri`, and `license_control_suite::desktop::persistence`.
 2. Use the minimal shell layout under `examples/client-desktop-shell/`.
-3. Compose the six auth commands in the host shell rather than treating the crate as the final app shell.
+3. Wire the seven auth commands through `auth_command_handler::<R>()` rather than treating the crate as the final app shell.
 4. Use namespaced JSON state and namespaced keyring entries when shipping multiple desktop shells on one machine.
 
 ## Unsupported and Deferred Capabilities
@@ -242,10 +242,11 @@ flowchart TB
 
 ## Tauri Command Surface
 
-The unified command inventory is fixed at six commands:
+The unified command inventory is fixed at seven commands:
 
 - `activate_license`
 - `validate_session`
+- `deactivate_current_device`
 - `request_device_reset`
 - `get_device_reset_status`
 - `clear_local_session`

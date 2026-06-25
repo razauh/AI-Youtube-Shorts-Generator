@@ -20,7 +20,7 @@ fn admin_desktop_curated_imports_compile() {
 #[test]
 fn admin_domain_remains_separate_from_user_command_surface() {
     let names = license_control_suite::app_command_names();
-    assert_eq!(names.len(), 6);
+    assert_eq!(names.len(), 7);
     assert!(!names.iter().any(|name| name.contains("admin")));
     assert!(!names.iter().any(|name| name.contains("challenge")));
     assert!(!names.iter().any(|name| name.contains("reset:write")));
@@ -36,7 +36,7 @@ fn admin_desktop_docs_explicitly_exclude_web_dashboard_target() {
     assert!(readme.contains("desktop-only admin console"));
     assert!(note.contains("desktop-only"));
     assert!(note.contains("not a web dashboard"));
-    assert!(note.contains("separate from the six user/client commands"));
+    assert!(note.contains("separate from the seven user/client commands"));
 }
 
 #[test]

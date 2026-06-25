@@ -136,6 +136,22 @@ pub async fn validate_session_with_service(
 }
 
 #[tauri::command]
+pub async fn deactivate_current_device(
+    state: State<'_, AuthAppState>,
+) -> Result<SessionView, AuthCommandError> {
+    deactivate_current_device_with_service(&state.service).await
+}
+
+pub async fn deactivate_current_device_with_service(
+    service: &AuthService,
+) -> Result<SessionView, AuthCommandError> {
+    service.deactivate_current_device().await?;
+    Ok(SessionView {
+        auth_state: AuthStateView::from(service.get_auth_state().await?),
+    })
+}
+
+#[tauri::command]
 pub async fn request_device_reset(
     input: DeviceResetInput,
     state: State<'_, AuthAppState>,
@@ -204,6 +220,7 @@ pub fn command_names() -> &'static [&'static str] {
     &[
         "activate_license",
         "validate_session",
+        "deactivate_current_device",
         "request_device_reset",
         "get_device_reset_status",
         "clear_local_session",
@@ -223,6 +240,7 @@ where
     tauri::generate_handler![
         activate_license,
         validate_session,
+        deactivate_current_device,
         request_device_reset,
         get_device_reset_status,
         clear_local_session,

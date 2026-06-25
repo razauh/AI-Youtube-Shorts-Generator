@@ -20,6 +20,13 @@ pub async fn validate_session(
 }
 
 #[tauri::command]
+pub async fn deactivate_current_device(
+    state: State<'_, AuthAppState>,
+) -> Result<SessionView, AuthCommandError> {
+    auth_tauri::deactivate_current_device_with_service(&state.service).await
+}
+
+#[tauri::command]
 pub async fn request_device_reset(
     input: DeviceResetInput,
     state: State<'_, AuthAppState>,

@@ -3,8 +3,8 @@ use std::fs;
 use std::path::Path;
 
 #[test]
-fn six_commands_remain_reserved_for_tauri_capability_mapping() {
-    assert_eq!(app_command_names().len(), 6);
+fn seven_commands_remain_reserved_for_tauri_capability_mapping() {
+    assert_eq!(app_command_names().len(), 7);
 }
 
 #[test]
@@ -41,7 +41,7 @@ fn example_shells_ship_icon_assets_for_tauri_context_generation() {
 }
 
 #[test]
-fn client_shell_capabilities_map_the_six_user_commands() {
+fn client_shell_capabilities_map_the_seven_user_commands() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let caps = fs::read_to_string(
         root.join("examples/client-desktop-shell/src-tauri/capabilities/default.json"),

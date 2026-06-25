@@ -24,5 +24,5 @@ where
 }
 
 fn main() {
-    assert_eq!(command_names().len(), 6);
+    assert_eq!(command_names().len(), 7);
 }

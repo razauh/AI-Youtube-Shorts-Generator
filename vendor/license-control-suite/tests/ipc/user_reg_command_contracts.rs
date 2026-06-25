@@ -1,16 +1,17 @@
-use license_control_suite::modules::user_reg::auth_licensing_core::{
-    BoundDeviceSummary, DeviceFingerprint, DeviceId, DevicePublicKey, MaskedLicenseKey, ResetRequestId,
-    SessionState,
+use license_control_suite::modules::user_reg::auth_licensing_core::test_support::{
+    FakeWorkerClient, TestService,
 };
 use license_control_suite::modules::user_reg::auth_licensing_tauri::{
-    activate_license_with_service, clear_local_session_with_service, get_auth_state_with_service,
+    activate_license_with_service, clear_local_session_with_service,
+    deactivate_current_device_with_service, get_auth_state_with_service,
     get_device_reset_status_with_service, request_device_reset_with_service,
     validate_session_with_service, AuthCommandError, AuthStateView, DeviceResetInput,
     DeviceResetView,
 };
-use license_control_suite::modules::user_reg::auth_licensing_core::test_support::{FakeWorkerClient, TestService};
 use license_control_suite::modules::user_reg::auth_licensing_core::{
-    AccessToken, ActivationOutcome, DeviceResetStatus, EntitlementStatus,
+    AccessToken, ActivationOutcome, BoundDeviceSummary, DeviceFingerprint, DeviceId,
+    DevicePublicKey, DeviceResetStatus, EntitlementStatus, LicenseKey, LocalStateStore,
+    MaskedLicenseKey, ResetRequestId, SecretStore, SessionState,
 };
 
 fn outcome() -> ActivationOutcome {
@@ -130,4 +131,60 @@ async fn service_helper_functions_remain_behaviorally_equivalent() {
     clear_local_session_with_service(&harness.service).await.unwrap();
     let cleared = get_auth_state_with_service(&harness.service).await.unwrap();
     assert!(matches!(cleared, AuthStateView::Unauthenticated));
+}
+
+#[tokio::test]
+async fn deactivate_current_device_helper_returns_unauthenticated_view() {
+    let request_id = ResetRequestId::new("reset-1").unwrap();
+    let harness = TestService::new(FakeWorkerClient::new().with_reset_request(Ok(
+        DeviceResetStatus::Approved {
+            request_id,
+            decided_at_ms: 20,
+        },
+    )));
+    harness
+        .secrets
+        .put_license_key(LicenseKey::new("LICENSE-1234").unwrap())
+        .await
+        .unwrap();
+    harness
+        .secrets
+        .put_access_token(AccessToken::new("token").unwrap())
+        .await
+        .unwrap();
+    let public_key = DevicePublicKey::new("public").unwrap();
+    harness
+        .state
+        .save_session_state(SessionState::Licensed {
+            masked_license_key: MaskedLicenseKey::new("••••-1234").unwrap(),
+            bound_device: BoundDeviceSummary {
+                device_id: DeviceId::from_public_key(&public_key),
+                public_key,
+                fingerprint: DeviceFingerprint::new("linux", "linux", "x86_64", None).unwrap(),
+            },
+            token_expires_at_ms: 100,
+            last_validated_at_ms: 10,
+            next_validation_due_ms: 20,
+        })
+        .await
+        .unwrap();
+
+    let view = deactivate_current_device_with_service(&harness.service)
+        .await
+        .unwrap();
+
+    assert!(matches!(view.auth_state, AuthStateView::Unauthenticated));
+    assert!(harness.secrets.get_license_key().await.unwrap().is_none());
+    assert!(harness.secrets.get_access_token().await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn deactivate_current_device_helper_rejects_unauthenticated_state() {
+    let harness = TestService::new(FakeWorkerClient::new());
+
+    let err = deactivate_current_device_with_service(&harness.service)
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.code, "invalid_reset_request");
 }

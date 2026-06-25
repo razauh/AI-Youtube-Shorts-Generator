@@ -6,6 +6,7 @@
     "core:default",
     "activate_license",
     "validate_session",
+    "deactivate_current_device",
     "request_device_reset",
     "get_device_reset_status",
     "clear_local_session",

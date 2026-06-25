@@ -15,6 +15,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             shorts_tauri_app::commands::auth::activate_license,
             shorts_tauri_app::commands::auth::validate_session,
+            shorts_tauri_app::commands::auth::deactivate_current_device,
             shorts_tauri_app::commands::auth::request_device_reset,
             shorts_tauri_app::commands::auth::get_device_reset_status,
             shorts_tauri_app::commands::auth::clear_local_session,

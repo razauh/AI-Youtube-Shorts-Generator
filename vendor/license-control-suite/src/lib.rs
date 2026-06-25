@@ -8,9 +8,10 @@ pub mod desktop;
 pub mod reference_worker;
 
 #[cfg(feature = "desktop-tauri")]
-pub const APP_COMMAND_NAMES: [&str; 6] = [
+pub const APP_COMMAND_NAMES: [&str; 7] = [
     "activate_license",
     "validate_session",
+    "deactivate_current_device",
     "request_device_reset",
     "get_device_reset_status",
     "clear_local_session",

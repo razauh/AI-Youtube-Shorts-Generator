@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 from graphify.analyze import god_nodes, suggest_questions, surprising_connections
@@ -18,6 +19,35 @@ from graphify.report import generate
 
 
 NON_CODE_TYPES = ("document", "paper", "image", "video")
+SEMANTIC_EXTENSIONS = {
+    ".md",
+    ".mdx",
+    ".qmd",
+    ".html",
+    ".txt",
+    ".rst",
+    ".yaml",
+    ".yml",
+    ".docx",
+    ".xlsx",
+    ".gdoc",
+    ".gsheet",
+    ".gslides",
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".gif",
+    ".bmp",
+    ".tiff",
+    ".svg",
+    ".mp4",
+    ".mov",
+    ".mp3",
+    ".wav",
+    ".m4a",
+}
 DIRECT_LLM_UNSUPPORTED_EXTENSIONS = {
     ".pdf",
     ".png",
@@ -43,10 +73,48 @@ def _non_code_files(files: dict[str, list[str]]) -> list[str]:
     return selected
 
 
+def _git_changed_files(root: Path) -> list[Path] | None:
+    try:
+        tracked = subprocess.run(
+            ["git", "-C", str(root), "diff", "--name-only", "HEAD", "--"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        untracked = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "--others", "--exclude-standard"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return None
+
+    paths = []
+    for raw in (*tracked.stdout.splitlines(), *untracked.stdout.splitlines()):
+        if raw:
+            paths.append(root / raw)
+    return paths
+
+
+def _semantic_file(path: Path, root: Path) -> bool:
+    try:
+        rel = path.resolve().relative_to(root)
+    except ValueError:
+        rel = path
+    if rel.parts and rel.parts[0] == "graphify-out":
+        return False
+    return path.suffix.lower() in SEMANTIC_EXTENSIONS
+
+
 def _semantic_needed(root: Path) -> bool:
     out_dir = root / "graphify-out"
     if (out_dir / "needs_update").exists() or (out_dir / ".needs_update").exists():
         return True
+
+    changed_files = _git_changed_files(root)
+    if changed_files is not None:
+        return any(_semantic_file(path, root) for path in changed_files)
 
     incremental = detect_incremental(root)
     return bool(_non_code_files(incremental.get("new_files", {})))
