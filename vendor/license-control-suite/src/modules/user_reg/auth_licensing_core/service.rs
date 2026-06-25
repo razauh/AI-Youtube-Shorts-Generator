@@ -293,23 +293,44 @@ impl AuthService {
             timestamp_ms: self.clock.now_ms(),
         };
         match self.worker.request_device_reset(request).await {
+            Ok(status) if deactivation_status_is_confirmed(&status) => {
+                self.clear_after_terminal_deactivation(Some(status)).await
+            }
             Ok(status) => {
-                self.secrets.clear_session_secrets().await?;
-                self.state.save_session_state(SessionState::Unauthenticated).await?;
                 self.state.save_reset_status(status).await?;
-                Ok(())
+                Err(AuthError::InvalidTransition(
+                    "deactivation did not reach a terminal state".to_string(),
+                ))
             }
-            Err(err) => {
-                if err == AuthError::WorkerUnreachable {
-                    Err(err)
-                } else {
-                    self.secrets.clear_session_secrets().await?;
-                    self.state.save_session_state(SessionState::Unauthenticated).await?;
-                    Err(err)
-                }
+            Err(err) if deactivation_error_is_terminal(&err) => {
+                self.clear_after_terminal_deactivation(None).await?;
+                Err(err)
             }
+            Err(err) => Err(err),
         }
     }
+
+    async fn clear_after_terminal_deactivation(
+        &self,
+        status: Option<DeviceResetStatus>,
+    ) -> Result<(), AuthError> {
+        self.secrets.clear_session_secrets().await?;
+        self.state
+            .save_session_state(SessionState::Unauthenticated)
+            .await?;
+        if let Some(status) = status {
+            self.state.save_reset_status(status).await?;
+        }
+        Ok(())
+    }
+}
+
+fn deactivation_status_is_confirmed(status: &DeviceResetStatus) -> bool {
+    matches!(status, DeviceResetStatus::Approved { .. })
+}
+
+fn deactivation_error_is_terminal(error: &AuthError) -> bool {
+    matches!(error, AuthError::InvalidResetRequest)
 }
 
 fn masked_from_state(state: &SessionState) -> Option<MaskedLicenseKey> {
