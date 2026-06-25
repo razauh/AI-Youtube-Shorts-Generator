@@ -1,6 +1,6 @@
 use license_control_suite::core::test_support::{FakeWorkerClient, TestService};
 use license_control_suite::core::{
-    AccessToken, BoundDeviceSummary, DeviceFingerprint, DeviceId, DevicePublicKey,
+    AccessToken, BoundDeviceSummary, DeviceFingerprint, DeviceId, DeviceKeyPair, DevicePublicKey,
     DeviceResetStatus, LicenseKey, LocalStateStore, MaskedLicenseKey, ResetRequestId,
     SecretStore, SessionState,
 };
@@ -34,6 +34,14 @@ fn unauthenticated_auth_state() -> AuthAppState {
     AuthAppState {
         service: Arc::new(TestService::new(FakeWorkerClient::new()).service),
     }
+}
+
+fn stored_activation_keypair() -> DeviceKeyPair {
+    DeviceKeyPair::new(
+        DevicePublicKey::new("stored-activation-public").expect("stored public key"),
+        "stored-activation-private",
+    )
+    .expect("stored activation keypair")
 }
 
 async fn licensed_auth_state() -> AuthAppState {
@@ -79,6 +87,11 @@ async fn deactivate_current_device_returns_unauthenticated_state_on_success() {
         .put_access_token(AccessToken::new("token").expect("access token"))
         .await
         .expect("access token should be stored");
+    harness
+        .secrets
+        .put_device_keypair(stored_activation_keypair())
+        .await
+        .expect("device keypair should be stored");
     harness
         .state
         .save_session_state(SessionState::Licensed {

@@ -22,5 +22,7 @@ run_step() {
 cd "${ROOT_DIR}"
 
 run_step "cargo-test-license-control-suite" cargo test --manifest-path vendor/license-control-suite/Cargo.toml --test user_reg_core_service_int
+run_step "cargo-test-license-control-suite-ipc" cargo test --manifest-path vendor/license-control-suite/Cargo.toml --test user_reg_command_contracts
+run_step "cargo-test-app-tauri-commands" cargo test --manifest-path app/src-tauri/Cargo.toml --test tauri_command_tests
 
 echo "validation logs: ${LOG_FILE}"

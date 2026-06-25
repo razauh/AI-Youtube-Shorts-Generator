@@ -275,13 +275,14 @@ impl AuthService {
     }
 
     pub async fn deactivate_current_device(&self) -> Result<(), AuthError> {
-        let keypair = self.identity.get_or_create_keypair().await?;
-        self.secrets.put_device_keypair(keypair.clone()).await?;
-        let fingerprint = self.identity.collect_fingerprint().await?;
         let license_key = self.secrets.get_license_key().await?;
         if license_key.is_none() {
             return Err(AuthError::InvalidResetRequest);
         }
+        let Some(keypair) = self.secrets.get_device_keypair().await? else {
+            return Err(AuthError::InvalidDeviceIdentity);
+        };
+        let fingerprint = self.identity.collect_fingerprint().await?;
         let request = DeviceResetRequest {
             license_key,
             masked_license_key: None,

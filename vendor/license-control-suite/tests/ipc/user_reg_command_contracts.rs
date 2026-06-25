@@ -10,9 +10,17 @@ use license_control_suite::modules::user_reg::auth_licensing_tauri::{
 };
 use license_control_suite::modules::user_reg::auth_licensing_core::{
     AccessToken, ActivationOutcome, BoundDeviceSummary, DeviceFingerprint, DeviceId,
-    DevicePublicKey, DeviceResetStatus, EntitlementStatus, LicenseKey, LocalStateStore,
-    MaskedLicenseKey, ResetRequestId, SecretStore, SessionState,
+    DeviceKeyPair, DevicePublicKey, DeviceResetStatus, EntitlementStatus, LicenseKey,
+    LocalStateStore, MaskedLicenseKey, ResetRequestId, SecretStore, SessionState,
 };
+
+fn stored_activation_keypair() -> DeviceKeyPair {
+    DeviceKeyPair::new(
+        DevicePublicKey::new("stored-activation-public").unwrap(),
+        "stored-activation-private",
+    )
+    .unwrap()
+}
 
 fn outcome() -> ActivationOutcome {
     let public_key = DevicePublicKey::new("public").unwrap();
@@ -150,6 +158,11 @@ async fn deactivate_current_device_helper_returns_unauthenticated_view() {
     harness
         .secrets
         .put_access_token(AccessToken::new("token").unwrap())
+        .await
+        .unwrap();
+    harness
+        .secrets
+        .put_device_keypair(stored_activation_keypair())
         .await
         .unwrap();
     let public_key = DevicePublicKey::new("public").unwrap();

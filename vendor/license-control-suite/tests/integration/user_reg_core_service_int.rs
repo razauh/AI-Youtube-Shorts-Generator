@@ -3,9 +3,18 @@ use license_control_suite::modules::user_reg::auth_licensing_core::test_support:
 };
 use license_control_suite::modules::user_reg::auth_licensing_core::{
     AccessToken, ActivationOutcome, AuthError, BoundDeviceSummary, DeviceFingerprint, DeviceId,
-    DevicePublicKey, DeviceResetStatus, EntitlementStatus, LicenseKey, LocalStateStore,
-    MaskedLicenseKey, ResetRequestId, SecretStore, SessionState, ValidationOutcome,
+    DeviceKeyPair, DevicePublicKey, DeviceResetStatus, EntitlementStatus, LicenseKey,
+    LocalStateStore, MaskedLicenseKey, ResetRequestId, SecretStore, SessionState,
+    ValidationOutcome,
 };
+
+fn stored_activation_keypair() -> DeviceKeyPair {
+    DeviceKeyPair::new(
+        DevicePublicKey::new("stored-activation-public").unwrap(),
+        "stored-activation-private",
+    )
+    .unwrap()
+}
 
 fn outcome() -> ActivationOutcome {
     let public_key = DevicePublicKey::new("public").unwrap();
@@ -186,6 +195,11 @@ async fn deactivate_current_device_success_clears_only_approved_state() {
         .await
         .unwrap();
     harness
+        .secrets
+        .put_device_keypair(stored_activation_keypair())
+        .await
+        .unwrap();
+    harness
         .state
         .save_session_state(SessionState::after_activation(
             MaskedLicenseKey::new("••••-1234").unwrap(),
@@ -209,6 +223,92 @@ async fn deactivate_current_device_success_clears_only_approved_state() {
 }
 
 #[tokio::test]
+async fn deactivate_current_device_reuses_stored_activation_identity() {
+    let worker = FakeWorkerClient::new().with_reset_request(Ok(DeviceResetStatus::Approved {
+        request_id: ResetRequestId::new("reset-success").unwrap(),
+        decided_at_ms: 10,
+    }));
+    let harness = TestService::new(worker.clone());
+    let stored_keypair = stored_activation_keypair();
+    harness
+        .secrets
+        .put_license_key(LicenseKey::new("key").unwrap())
+        .await
+        .unwrap();
+    harness
+        .secrets
+        .put_access_token(AccessToken::new("token").unwrap())
+        .await
+        .unwrap();
+    harness
+        .secrets
+        .put_device_keypair(stored_keypair.clone())
+        .await
+        .unwrap();
+
+    harness.service.deactivate_current_device().await.unwrap();
+
+    let calls = worker.reset_requests();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].device_public_key.as_str(),
+        stored_keypair.public_key().as_str()
+    );
+}
+
+#[tokio::test]
+async fn deactivate_current_device_reuses_keypair_persisted_by_activation() {
+    let worker = FakeWorkerClient::new()
+        .with_activation(Ok(outcome()))
+        .with_reset_request(Ok(DeviceResetStatus::Approved {
+            request_id: ResetRequestId::new("reset-success").unwrap(),
+            decided_at_ms: 10,
+        }));
+    let harness = TestService::new(worker.clone());
+
+    harness
+        .service
+        .activate_license(LicenseKey::new("LICENSE-1234").unwrap())
+        .await
+        .unwrap();
+    harness.service.deactivate_current_device().await.unwrap();
+
+    let activation_calls = worker.activation_requests();
+    let reset_calls = worker.reset_requests();
+    assert_eq!(activation_calls.len(), 1);
+    assert_eq!(reset_calls.len(), 1);
+    assert_eq!(
+        reset_calls[0].device_public_key.as_str(),
+        activation_calls[0].device_public_key.as_str()
+    );
+}
+
+#[tokio::test]
+async fn deactivate_current_device_fails_without_regenerating_missing_identity() {
+    let worker = FakeWorkerClient::new().with_reset_request(Ok(DeviceResetStatus::Approved {
+        request_id: ResetRequestId::new("reset-success").unwrap(),
+        decided_at_ms: 10,
+    }));
+    let harness = TestService::new(worker.clone());
+    harness
+        .secrets
+        .put_license_key(LicenseKey::new("key").unwrap())
+        .await
+        .unwrap();
+    harness
+        .secrets
+        .put_access_token(AccessToken::new("token").unwrap())
+        .await
+        .unwrap();
+
+    let err = harness.service.deactivate_current_device().await.unwrap_err();
+
+    assert_eq!(err, AuthError::InvalidDeviceIdentity);
+    assert!(worker.reset_requests().is_empty());
+    assert!(harness.secrets.get_device_keypair().await.unwrap().is_none());
+}
+
+#[tokio::test]
 async fn deactivate_current_device_failure_preserves_retryable_state() {
     let worker = FakeWorkerClient::new().with_reset_request(Err(AuthError::WorkerUnreachable));
     let harness = TestService::new(worker);
@@ -220,6 +320,11 @@ async fn deactivate_current_device_failure_preserves_retryable_state() {
     harness
         .secrets
         .put_access_token(AccessToken::new("token").unwrap())
+        .await
+        .unwrap();
+    harness
+        .secrets
+        .put_device_keypair(stored_activation_keypair())
         .await
         .unwrap();
     harness
@@ -258,6 +363,11 @@ async fn deactivate_current_device_terminal_already_deactivated_clears_state() {
     harness
         .secrets
         .put_access_token(AccessToken::new("token").unwrap())
+        .await
+        .unwrap();
+    harness
+        .secrets
+        .put_device_keypair(stored_activation_keypair())
         .await
         .unwrap();
     harness
