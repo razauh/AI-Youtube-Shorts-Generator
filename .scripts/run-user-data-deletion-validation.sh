@@ -19,8 +19,18 @@ run_step() {
   } 2>&1 | tee -a "${LOG_FILE}"
 }
 
+priv_01_contract_source_check() {
+  local pattern="blockDevolensKeyForPrivacy|local_privacy_data_deleted_or_anonymized|devolens_action"
+  if command -v rg >/dev/null 2>&1; then
+    rg -n "${pattern}" worker/src worker/test
+    return
+  fi
+  grep -R -n -E "${pattern}" worker/src worker/test
+}
+
 cd "${ROOT_DIR}"
 
+run_step "priv-01-contract-source-check" priv_01_contract_source_check
 run_step "worker-contract-tests" pnpm run worker:test
 run_step "frontend-and-rust-tests" pnpm run test
 run_step "app-build" pnpm run build

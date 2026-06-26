@@ -14,10 +14,16 @@ function redactText(text, token, key) {
   return result;
 }
 
-async function callDevolensAPI(env, endpoint, params) {
+async function callDevolensAPI(env, endpoint, params, options = {}) {
   let token;
   let tokenVarName = "";
-  if (endpoint === "/api/key/CreateKey" || endpoint === "/api/key/BlockKey") {
+  if (options.tokenScope === "support") {
+    tokenVarName = "DEVOLENS_SUPPORT_TOKEN";
+    token = env.DEVOLENS_SUPPORT_TOKEN;
+    if (!token && env.DEVOLENS_ACCESS_TOKEN) {
+      token = env.DEVOLENS_ACCESS_TOKEN;
+    }
+  } else if (endpoint === "/api/key/CreateKey" || endpoint === "/api/key/BlockKey") {
     tokenVarName = "DEVOLENS_WEBHOOK_TOKEN";
     token = env.DEVOLENS_WEBHOOK_TOKEN;
     if (!token && env.DEVOLENS_ACCESS_TOKEN) {
@@ -130,6 +136,10 @@ export async function createDevolensKey(env, licenseKey) {
 
 export async function blockDevolensKey(env, licenseKey) {
   return callDevolensAPI(env, "/api/key/BlockKey", { Key: licenseKey });
+}
+
+export async function blockDevolensKeyForPrivacy(env, licenseKey) {
+  return callDevolensAPI(env, "/api/key/BlockKey", { Key: licenseKey }, { tokenScope: "support" });
 }
 
 export async function deactivateDevolensKey(env, licenseKey, machineCode) {

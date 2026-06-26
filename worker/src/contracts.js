@@ -9,6 +9,7 @@ export const ERROR_CODES = new Set([
   "device_already_bound",
   "reauth_required",
   "worker_unreachable",
+  "devolens_error",
   "not_found",
   "route_not_found",
   "reset_request_not_found",

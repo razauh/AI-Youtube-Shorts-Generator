@@ -2,10 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 test('D1 authority inventory matches store.js exports and is complete', () => {
-  const storePath = path.resolve('worker/src/store.js');
-  const inventoryPath = path.resolve('worker/src/d1_authority_inventory.json');
+  const storePath = path.join(repoRoot, 'worker/src/store.js');
+  const inventoryPath = path.join(repoRoot, 'worker/src/d1_authority_inventory.json');
 
   const content = fs.readFileSync(storePath, 'utf8');
   const lines = content.split('\n');

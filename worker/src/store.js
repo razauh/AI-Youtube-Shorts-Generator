@@ -368,7 +368,6 @@ export async function anonymizeLicenseForPrivacyDeletion(db, licenseKeyHash, upd
     .prepare(
       `UPDATE licenses
        SET purchaser_email = NULL,
-           entitlement_status = 'disabled',
            updated_at_ms = ?,
            privacy_deleted_at_ms = ?
        WHERE license_key_hash = ?`,

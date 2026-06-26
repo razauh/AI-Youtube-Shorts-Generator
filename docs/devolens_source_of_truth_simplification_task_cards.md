@@ -447,6 +447,9 @@ Use this sequence for every card:
 - Rollback notes: Keep old token accepted only during migration with reduced privileges.
 - Dependencies: `AUD-07`, `DEV-05`.
 
+
+
+
 ### WEBHOOK-01: Refactor Gumroad webhook into thin verify/idempotency/Devolens/mapping pipeline
 
 - Status: Proposed
@@ -480,6 +483,13 @@ Use this sequence for every card:
 - Done criteria: Gumroad can safely retry without duplicate side effects, and every outcome has a tested contract.
 - Rollback notes: Preserve existing response codes until provider retry behavior is confirmed.
 - Dependencies: `AUD-06`, `WEBHOOK-01`.
+
+
+
+adhere to agents.md and use /.venv to query graphify  and implement
+  this is task cards file '/media/pc/64B0D1DBB0D1B3B0/personal/inf/finalized/AI-Youtube-Shorts-Generator/docs/devolens_source_of_truth_simplification_task_cards.md'
+  from which i need you to implement
+ 
 
 ### PRIV-01: Preserve privacy request/status flow while decoupling from license authority
 

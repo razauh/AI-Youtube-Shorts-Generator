@@ -150,8 +150,8 @@
     "function_name": "anonymizeLicenseForPrivacyDeletion",
     "tables": ["licenses"],
     "classification": "privacy",
-    "description": "Nullifies email, updates status to disabled, and sets privacy deleted timestamp.",
-    "devolens_decoupling_strategy": "Convert to privacy cache update. Webhook/Admin must block key on Devolens as final authority."
+    "description": "Nullifies email and sets privacy deleted timestamp without changing entitlement authority.",
+    "devolens_decoupling_strategy": "Keep as a privacy cache update. Webhook/Admin must block key on Devolens as final authority."
   },
   {
     "function_name": "getAdminOverviewCounts",

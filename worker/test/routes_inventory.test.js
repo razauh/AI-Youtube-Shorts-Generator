@@ -2,10 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 test('Worker routes inventory matches implementation', () => {
-  const indexJsPath = path.resolve('worker/src/index.js');
-  const inventoryPath = path.resolve('worker/src/routes_inventory.json');
+  const indexJsPath = path.join(repoRoot, 'worker/src/index.js');
+  const inventoryPath = path.join(repoRoot, 'worker/src/routes_inventory.json');
 
   const indexJsContent = fs.readFileSync(indexJsPath, 'utf8');
   const inventory = JSON.parse(fs.readFileSync(inventoryPath, 'utf8'));

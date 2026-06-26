@@ -2,10 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 test('D1 schema inventory matches migrations and is complete', () => {
-  const migrationsDir = path.resolve('worker/migrations');
-  const inventoryPath = path.resolve('worker/src/d1_schema_inventory.json');
+  const migrationsDir = path.join(repoRoot, 'worker/migrations');
+  const inventoryPath = path.join(repoRoot, 'worker/src/d1_schema_inventory.json');
 
   const files = fs.readdirSync(migrationsDir).sort();
   const schema = {};

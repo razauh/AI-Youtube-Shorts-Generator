@@ -373,7 +373,6 @@ export class MockStatement {
         this.db.licenses.set(licenseKeyHash, {
           ...existing,
           purchaser_email: null,
-          entitlement_status: 'disabled',
           updated_at_ms: updatedAtMs,
           privacy_deleted_at_ms: privacyDeletedAtMs,
         });
@@ -884,9 +883,16 @@ test('privacy deletion request creates pending request and status requires looku
   assert.equal(statusJson.data.status, 'pending');
 });
 
-test('admin approve deletion deletes devices and anonymizes license/reset data', async () => {
+test('admin approve deletion delegates Devolens action and anonymizes local D1 privacy data', async () => {
   const db = new MockD1Database();
-  const env = { DB: db, HASH_PEPPER: 'pepper_123', ADMIN_SUPPORT_TOKEN: 'support-secret' };
+  const env = {
+    DB: db,
+    HASH_PEPPER: 'pepper_123',
+    ADMIN_SUPPORT_TOKEN: 'support-secret',
+    DEVOLENS_SUPPORT_TOKEN: 'devolens-support-secret',
+    DEVOLENS_PRODUCT_ID: '123',
+    DEVOLENS_BASE_URL: 'https://devolens.example.test',
+  };
   const licenseKey = 'AAAA-BBBB-CCCC-DDDD';
   const licenseHash = await sha256Hex(`${env.HASH_PEPPER}:${licenseKey}`);
   db.licenses.set(licenseHash, {
@@ -926,25 +932,47 @@ test('admin approve deletion deletes devices and anonymizes license/reset data',
   });
   const reqJson = await req.json();
 
-  const approve = await call('/v1/admin/privacy/delete/approve', {
-    headers: {
-      authorization: 'Bearer support-secret',
-      'x-idempotency-key': 'approve-delete-1',
-      'x-admin-actor': 'support@example.test',
-    },
-    body: {
-      request_id: reqJson.data.request_id,
-      confirmation: 'DELETE USER DATA',
-      reason: 'privacy request',
-    },
-    env,
-  });
+  const originalFetch = global.fetch;
+  const devolensCalls = [];
+  global.fetch = async (url, init) => {
+    devolensCalls.push({ url, body: init.body });
+    return new Response(JSON.stringify({ result: 0 }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  let approve;
+  try {
+    approve = await call('/v1/admin/privacy/delete/approve', {
+      headers: {
+        authorization: 'Bearer support-secret',
+        'x-idempotency-key': 'approve-delete-1',
+        'x-admin-actor': 'support@example.test',
+      },
+      body: {
+        request_id: reqJson.data.request_id,
+        license_key: licenseKey,
+        confirmation: 'DELETE USER DATA',
+        reason: 'privacy request',
+      },
+      env,
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+
   assert.equal(approve.status, 200);
   const approveJson = await approve.json();
   assert.equal(approveJson.data.status, 'completed');
+  assert.equal(devolensCalls.length, 1);
+  assert.equal(devolensCalls[0].url, 'https://devolens.example.test/api/key/BlockKey');
+  assert.match(devolensCalls[0].body, /token=devolens-support-secret/);
+  assert.match(devolensCalls[0].body, /Key=AAAA-BBBB-CCCC-DDDD/);
   assert.equal(db.deviceBindings.size, 0);
   assert.equal(db.licenses.get(licenseHash).purchaser_email, null);
-  assert.equal(db.licenses.get(licenseHash).entitlement_status, 'disabled');
+  assert.equal(db.licenses.get(licenseHash).entitlement_status, 'active');
+  assert.equal(approveJson.data.deletion_summary.action, 'local_privacy_data_deleted_or_anonymized');
+  assert.equal(approveJson.data.deletion_summary.devolens_action, 'block_key_completed');
   assert.equal(db.resetRequests.get('reset-1').purchaser_email, null);
   assert.equal(db.resetRequests.get('reset-1').license_key_hash, null);
   assert.equal(db.deletionRequests.get(reqJson.data.request_id).purchaser_email, null);
@@ -953,6 +981,77 @@ test('admin approve deletion deletes devices and anonymizes license/reset data',
   assert.ok(completionAudit);
   assert.equal(completionAudit.actor, '[redacted-email]');
   assert.equal(JSON.parse(completionAudit.metadata_json).reason, 'privacy request');
+});
+
+test('admin approve deletion stops before D1 anonymization when Devolens action fails', async () => {
+  const db = new MockD1Database();
+  const env = {
+    DB: db,
+    HASH_PEPPER: 'pepper_123',
+    ADMIN_SUPPORT_TOKEN: 'support-secret',
+    DEVOLENS_SUPPORT_TOKEN: 'devolens-support-secret',
+    DEVOLENS_PRODUCT_ID: '123',
+    DEVOLENS_BASE_URL: 'https://devolens.example.test',
+  };
+  const licenseKey = 'AAAA-BBBB-CCCC-DDDD';
+  const licenseHash = await sha256Hex(`${env.HASH_PEPPER}:${licenseKey}`);
+  db.licenses.set(licenseHash, {
+    license_key_hash: licenseHash,
+    purchaser_email: 'buyer@example.com',
+    entitlement_status: 'active',
+    provider: 'gumroad',
+    provider_sale_id: 'sale_1',
+    updated_at_ms: 1,
+  });
+  db.deviceBindings.set('dev-1', {
+    device_id: 'dev-1',
+    license_key_hash: licenseHash,
+    public_key: 'pub',
+    fingerprint_json: '{}',
+    status: 'active',
+    updated_at_ms: 1,
+  });
+
+  const req = await call('/v1/privacy/delete/request', {
+    headers: { 'x-idempotency-key': 'delete-request-devolens-fail' },
+    body: { license_key: licenseKey, confirmation: 'DELETE', timestamp_ms: Date.now() },
+    env,
+  });
+  const reqJson = await req.json();
+
+  const originalFetch = global.fetch;
+  global.fetch = async () =>
+    new Response(JSON.stringify({ result: 1, message: 'blocked by fixture' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  let approve;
+  try {
+    approve = await call('/v1/admin/privacy/delete/approve', {
+      headers: {
+        authorization: 'Bearer support-secret',
+        'x-idempotency-key': 'approve-delete-devolens-fail',
+        'x-admin-actor': 'support@example.test',
+      },
+      body: {
+        request_id: reqJson.data.request_id,
+        license_key: licenseKey,
+        confirmation: 'DELETE USER DATA',
+        reason: 'privacy request',
+      },
+      env,
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(approve.status, 502);
+  assert.equal((await approve.json()).error.code, 'devolens_error');
+  assert.equal(db.deviceBindings.size, 1);
+  assert.equal(db.licenses.get(licenseHash).purchaser_email, 'buyer@example.com');
+  assert.equal(db.licenses.get(licenseHash).entitlement_status, 'active');
+  assert.equal(db.deletionRequests.get(reqJson.data.request_id).status, 'failed');
+  assert.equal(db.deletionRequests.get(reqJson.data.request_id).error_code, 'devolens_error');
 });
 
 test('admin approve deletion can be retried after phase failure', async () => {
@@ -1020,7 +1119,7 @@ test('admin approve deletion can be retried after phase failure', async () => {
   const retryJson = await retry.json();
   assert.equal(retryJson.data.status, 'completed');
   assert.equal(db.licenses.get(licenseHash).purchaser_email, null);
-  assert.equal(db.licenses.get(licenseHash).entitlement_status, 'disabled');
+  assert.equal(db.licenses.get(licenseHash).entitlement_status, 'active');
   assert.equal(db.deletionRequests.get(reqJson.data.request_id).purchaser_email, null);
 });
 

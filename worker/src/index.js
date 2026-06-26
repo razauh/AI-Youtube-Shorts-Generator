@@ -1,4 +1,4 @@
-import { createDevolensKey, blockDevolensKey } from "./devolensBridge.js";
+import { createDevolensKey, blockDevolensKey, blockDevolensKeyForPrivacy } from "./devolensBridge.js";
 import { DELETION_STATUS, err, json, ok, readForm, readJson, requestId } from "./contracts.js";
 import {
   anonymizeLicenseForPrivacyDeletion,
@@ -630,6 +630,7 @@ async function handleAdminDeletionApprove(request, env) {
   if (!requestIdValue || body.confirmation !== "DELETE USER DATA") {
     return err("bad_request", "Deletion approval requires request_id and confirmation.", rid, false, 400);
   }
+  const devolensLicenseKey = asOptionalString(body.license_key);
   const supportContext = requireSupportDecisionContext(request, body, rid);
   if (supportContext instanceof Response) return supportContext;
   const rateLimit = enforceAdminSupportRateLimit(request, env, "privacy_delete_approve", rid);
@@ -640,6 +641,8 @@ async function handleAdminDeletionApprove(request, env) {
     request_id: requestIdValue,
     confirmation: body.confirmation,
     reason: supportContext.reason,
+    devolens_action: devolensLicenseKey ? "block_key" : "support_handoff",
+    devolens_license_key: devolensLicenseKey ? normalizeLicenseKey(devolensLicenseKey) : null,
   });
   const replay = await getD1Idempotent(env.DB, "admin_privacy_delete_approve", idem);
   if (replay) {
@@ -719,6 +722,25 @@ async function handleAdminDeletionApprove(request, env) {
       await writePhase("processing");
     }
 
+    let devolensAction = devolensLicenseKey ? "block_key_completed" : "support_handoff_required";
+    if (
+      devolensLicenseKey &&
+      !["devolens_blocked", "device_bindings_deleted", "reset_requests_anonymized", "license_anonymized", "completed"].includes(phase)
+    ) {
+      maybeFail("devolens_block_key");
+      const devolensResult = await blockDevolensKeyForPrivacy(env, normalizeLicenseKey(devolensLicenseKey));
+      if (!devolensResult.ok) {
+        const failure = new Error("devolens_privacy_action_failed");
+        failure.phase = "devolens_block_key";
+        failure.code = devolensResult.code;
+        failure.messageSafe = devolensResult.message;
+        throw failure;
+      }
+      await writePhase("devolens_blocked");
+    } else if (phase === "devolens_blocked") {
+      devolensAction = "block_key_completed";
+    }
+
     if (!["device_bindings_deleted", "reset_requests_anonymized", "license_anonymized", "completed"].includes(phase)) {
       maybeFail("delete_device_bindings");
       await deleteDeviceBindingsByLicenseHash(env.DB, deletion.license_key_hash);
@@ -738,7 +760,8 @@ async function handleAdminDeletionApprove(request, env) {
     }
     const completedSummary = {
       ...summary,
-      action: "backend_licensing_data_deleted_or_anonymized",
+      action: "local_privacy_data_deleted_or_anonymized",
+      devolens_action: devolensAction,
     };
     maybeFail("mark_completed");
     await updateDeletionRequestStatus(env.DB, {
@@ -765,15 +788,20 @@ async function handleAdminDeletionApprove(request, env) {
       now,
     );
     summary = completedSummary;
-  } catch {
+  } catch (error) {
+    const errorCode = error?.code === "devolens_error" || error?.code === "worker_unreachable" ? error.code : "storage";
+    const errorMessageSafe =
+      error?.phase === "devolens_block_key"
+        ? "Deletion execution failed at phase=devolens_block_key. Retry after checking Devolens support/API status."
+        : `Deletion execution failed at phase=${phaseForError}. Retry after checking Worker storage.`;
     await updateDeletionRequestStatus(env.DB, {
       requestId: deletion.request_id,
       status: "failed",
       updatedAtMs: Date.now(),
-      errorCode: "storage",
-      errorMessageSafe: `Deletion execution failed at phase=${phaseForError}. Retry after checking Worker storage.`,
+      errorCode,
+      errorMessageSafe,
     });
-    return err("storage", "Failed to execute deletion request.", rid, true, 503);
+    return err(errorCode, "Failed to execute deletion request.", rid, true, errorCode === "storage" ? 503 : 502);
   }
 
   const response = ok({
