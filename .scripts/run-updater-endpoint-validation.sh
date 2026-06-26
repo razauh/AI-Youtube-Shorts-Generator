@@ -14,6 +14,8 @@ echo "[info] updater endpoint validation started: ${TS}"
 
 cd "${ROOT_DIR}"
 
+grep -F "Decision: retain the Worker updater compatibility endpoint" docs/updater_architecture.md
+grep -F "static signed HTTPS manifest" docs/updater_architecture.md
 pnpm --dir worker run test
 cargo test --locked --manifest-path app/src-tauri/Cargo.toml --test updater_plugin_config_tests
 node --test .scripts/generate-customer-updater-manifest.test.mjs

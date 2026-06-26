@@ -123,6 +123,7 @@ async function handleReadyz(request, env) {
     config: {
       license_contract_version: String(env?.LICENSE_CONTRACT_VERSION || "").trim() || null,
       update_manifest_url_configured: nonEmpty(env?.UPDATE_MANIFEST_URL),
+      update_manifest_url_https: !nonEmpty(env?.UPDATE_MANIFEST_URL) || isHttpsUrl(env.UPDATE_MANIFEST_URL),
     },
     deep: {
       enabled: deep,
@@ -179,13 +180,18 @@ async function handleReadyz(request, env) {
 
   if (deep) {
     if (checks.config.update_manifest_url_configured) {
-      try {
-        const res = await fetch(String(env.UPDATE_MANIFEST_URL).trim());
-        checks.deep.updater_manifest_ok = res.ok;
-        if (!res.ok) ready = false;
-      } catch {
+      if (!checks.config.update_manifest_url_https) {
         checks.deep.updater_manifest_ok = false;
         ready = false;
+      } else {
+        try {
+          const res = await fetch(String(env.UPDATE_MANIFEST_URL).trim());
+          checks.deep.updater_manifest_ok = res.ok;
+          if (!res.ok) ready = false;
+        } catch {
+          checks.deep.updater_manifest_ok = false;
+          ready = false;
+        }
       }
     } else {
       checks.deep.updater_manifest_ok = true;
@@ -206,6 +212,9 @@ async function handleUpdateCheck(env, request) {
   const manifestUrl = String(env?.UPDATE_MANIFEST_URL || "").trim();
   if (!manifestUrl) {
     return new Response(null, { status: 204 });
+  }
+  if (!isHttpsUrl(manifestUrl)) {
+    return err("storage", "Update manifest URL must use HTTPS.", requestId(), false, 503);
   }
 
   const current = parseSemver(request.currentVersion);
@@ -600,6 +609,7 @@ async function handleAdminDeletionReject(request, env) {
     deletion_request_id: deletion.request_id,
     status: "rejected",
     deletion_summary: null,
+    privacy_review: privacyReviewState({ ...deletion, status: "rejected" }),
   });
   const responseBody = await response.clone().text();
   await putD1Idempotent(
@@ -808,6 +818,12 @@ async function handleAdminDeletionApprove(request, env) {
     deletion_request_id: deletion.request_id,
     status: "completed",
     deletion_summary: summary,
+    privacy_review: privacyReviewState({
+      ...deletion,
+      status: "completed",
+      deletion_summary_json: JSON.stringify(summary),
+      completed_at_ms: now,
+    }),
   });
   const responseBody = await response.clone().text();
   await putD1Idempotent(
@@ -1433,12 +1449,64 @@ function adminDeletionView(row, preview) {
     requested_scope: row.requested_scope || "backend_licensing_data",
     deletion_preview: preview || parseJsonObject(row.deletion_summary_json),
     deletion_summary: parseJsonObject(row.deletion_summary_json),
+    privacy_review: privacyReviewState(row),
     error_code: row.error_code || null,
     error_message_safe: row.error_message_safe || null,
     created_at_ms: row.created_at_ms,
     updated_at_ms: row.updated_at_ms,
     decided_at_ms: row.decided_at_ms || null,
     completed_at_ms: row.completed_at_ms || null,
+  };
+}
+
+function privacyReviewState(row) {
+  const summary = parseJsonObject(row?.deletion_summary_json);
+  const devolensAction = summary?.devolens_action || null;
+  const status = row?.status || "pending";
+  const errorCode = row?.error_code || null;
+
+  if (status === "rejected") {
+    return {
+      local_d1_status: "not_started",
+      devolens_action_status: "not_started",
+      operator_next_step: "Request rejected; no deletion action was performed.",
+    };
+  }
+
+  if (status === "completed") {
+    return {
+      local_d1_status: "complete",
+      devolens_action_status: devolensAction === "block_key_completed" ? "complete" : "support_handoff_required",
+      operator_next_step:
+        devolensAction === "block_key_completed"
+          ? "Local D1 cleanup completed and Devolens BlockKey was completed."
+          : "Local D1 cleanup completed; complete the Devolens-owned deletion/blocking step through support.",
+    };
+  }
+
+  if (status === "failed") {
+    const devolensFailed = errorCode === "devolens_error" || errorCode === "worker_unreachable";
+    return {
+      local_d1_status: devolensFailed ? "not_started" : "failed",
+      devolens_action_status: devolensFailed ? "failed" : devolensAction || "unknown",
+      operator_next_step: devolensFailed
+        ? "Retry after checking Devolens support/API status; local D1 cleanup has not completed."
+        : "Retry after checking Worker storage; Devolens-owned action may still need support review.",
+    };
+  }
+
+  if (status === "approved" || status === "processing") {
+    return {
+      local_d1_status: "processing",
+      devolens_action_status: devolensAction || "pending",
+      operator_next_step: "Request is approved and still processing; verify both local D1 cleanup and Devolens-owned action.",
+    };
+  }
+
+  return {
+    local_d1_status: "pending_review",
+    devolens_action_status: "not_started",
+    operator_next_step: "Review the request; approval must account for local D1 cleanup and Devolens-owned action separately.",
   };
 }
 

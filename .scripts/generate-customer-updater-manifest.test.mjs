@@ -41,6 +41,8 @@ test('generates customer updater manifest from signed release artifacts', async 
     assert.equal(manifest.platforms['windows-x86_64'].signature, 'windows-signature');
     assert.equal(manifest.platforms['linux-x86_64'].signature, 'linux-signature');
     assert.equal(manifest.platforms['windows-x86_64'].url, 'https://github.com/owner/repo/releases/download/v0.1.1/windows-x86_64-setup.exe');
+    assert.ok(Object.values(manifest.platforms).every((platform) => platform.url.startsWith('https://')));
+    assert.ok(Object.values(manifest.platforms).every((platform) => platform.signature.length > 0));
     assert.equal(Object.hasOwn(manifest.platforms, 'admin-windows-x86_64'), false);
 
     const written = JSON.parse(await readFile(out, 'utf8'));

@@ -101,6 +101,8 @@ pub struct AdminDeletionRequestItem {
     pub requested_scope: String,
     pub deletion_preview: Option<serde_json::Value>,
     pub deletion_summary: Option<serde_json::Value>,
+    #[serde(default)]
+    pub privacy_review: Option<serde_json::Value>,
     pub error_code: Option<String>,
     pub error_message_safe: Option<String>,
     pub created_at_ms: u64,
@@ -121,6 +123,8 @@ pub struct AdminDeletionDecisionData {
     pub deletion_request_id: String,
     pub status: DeletionRequestStatus,
     pub deletion_summary: Option<serde_json::Value>,
+    #[serde(default)]
+    pub privacy_review: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

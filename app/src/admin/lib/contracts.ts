@@ -40,6 +40,7 @@ export interface AdminDeletionRequestItem {
   requested_scope: string;
   deletion_preview: Record<string, unknown> | null;
   deletion_summary: Record<string, unknown> | null;
+  privacy_review?: Record<string, unknown> | null;
   error_code: string | null;
   error_message_safe: string | null;
   created_at_ms: number;
@@ -56,6 +57,7 @@ export interface AdminDeletionDecisionData {
   deletion_request_id: string;
   status: DeletionRequestStatus;
   deletion_summary: Record<string, unknown> | null;
+  privacy_review?: Record<string, unknown> | null;
 }
 
 export interface AdminOverviewData {

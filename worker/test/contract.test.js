@@ -463,6 +463,7 @@ test('readyz returns ready when env is configured', async () => {
   assert.equal(json.status, 'ready');
   assert.equal(json.checks.d1.ok, true);
   assert.equal(json.checks.secrets.ok, true);
+  assert.equal(json.checks.config.update_manifest_url_https, true);
 });
 
 test('readyz returns not_ready when required secrets are missing', async () => {
@@ -552,6 +553,26 @@ test('updater endpoint returns no content when not configured or no newer versio
       env: { UPDATE_MANIFEST_URL: 'https://updates.example.test/customer-latest.json' },
     });
     assert.equal(newerInstalled.status, 204);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('updater endpoint rejects non-https configured manifest source', async () => {
+  const originalFetch = global.fetch;
+  let fetchCalled = false;
+  global.fetch = async () => {
+    fetchCalled = true;
+    return new Response('{}', { status: 200 });
+  };
+  try {
+    const res = await call('/updates/windows/x86_64/0.1.0', {
+      method: 'GET',
+      env: { UPDATE_MANIFEST_URL: 'http://updates.example.test/customer-latest.json' },
+    });
+    assert.equal(res.status, 503);
+    assert.equal((await res.json()).error.code, 'storage');
+    assert.equal(fetchCalled, false);
   } finally {
     global.fetch = originalFetch;
   }
@@ -789,7 +810,81 @@ test('support deletion request lookup requires support token', async () => {
   const json = await withSupportToken.json();
   assert.equal(json.ok, true);
   assert.equal(json.data.requests.length, 1);
+  assert.equal(json.data.requests[0].privacy_review.local_d1_status, 'pending_review');
+  assert.equal(json.data.requests[0].privacy_review.devolens_action_status, 'not_started');
   assert.equal(JSON.stringify(json).includes('buyer@example.com'), false);
+});
+
+test('support deletion review states distinguish local D1 and Devolens actions without raw identifiers', async () => {
+  const db = new MockD1Database();
+  const baseRow = {
+    lookup_token_hash: 'lookup-hash',
+    license_key_hash: 'license-hash',
+    masked_license_key: '••••-DDDD',
+    purchaser_email: 'buyer@example.com',
+    purchaser_email_masked: 'b***@example.com',
+    requested_scope: 'backend_licensing_data',
+    deletion_summary_json: null,
+    error_code: null,
+    error_message_safe: null,
+    created_at_ms: 1,
+    updated_at_ms: 1,
+    decided_at_ms: null,
+    completed_at_ms: null,
+  };
+  db.deletionRequests.set('delete-pending', { ...baseRow, request_id: 'delete-pending', status: 'pending' });
+  db.deletionRequests.set('delete-approved', { ...baseRow, request_id: 'delete-approved', status: 'approved' });
+  db.deletionRequests.set('delete-rejected', { ...baseRow, request_id: 'delete-rejected', status: 'rejected' });
+  db.deletionRequests.set('delete-complete-devolens', {
+    ...baseRow,
+    request_id: 'delete-complete-devolens',
+    status: 'completed',
+    deletion_summary_json: JSON.stringify({
+      action: 'local_privacy_data_deleted_or_anonymized',
+      devolens_action: 'block_key_completed',
+    }),
+  });
+  db.deletionRequests.set('delete-complete-handoff', {
+    ...baseRow,
+    request_id: 'delete-complete-handoff',
+    status: 'completed',
+    deletion_summary_json: JSON.stringify({
+      action: 'local_privacy_data_deleted_or_anonymized',
+      devolens_action: 'support_handoff_required',
+    }),
+  });
+  db.deletionRequests.set('delete-devolens-failed', {
+    ...baseRow,
+    request_id: 'delete-devolens-failed',
+    status: 'failed',
+    error_code: 'devolens_error',
+    error_message_safe: 'Deletion execution failed at phase=devolens_block_key.',
+  });
+
+  const env = { DB: db, ADMIN_SUPPORT_TOKEN: 'support-secret' };
+  const headers = { authorization: 'Bearer support-secret' };
+  const pending = await call('/v1/admin/privacy/delete-requests?status=pending', { method: 'GET', headers, env });
+  const approved = await call('/v1/admin/privacy/delete-requests?status=approved', { method: 'GET', headers, env });
+  const rejected = await call('/v1/admin/privacy/delete-requests?status=rejected', { method: 'GET', headers, env });
+  const completed = await call('/v1/admin/privacy/delete-requests?status=completed', { method: 'GET', headers, env });
+  const failed = await call('/v1/admin/privacy/delete-requests?status=failed', { method: 'GET', headers, env });
+
+  assert.equal((await pending.json()).data.requests[0].privacy_review.local_d1_status, 'pending_review');
+  assert.equal((await approved.json()).data.requests[0].privacy_review.local_d1_status, 'processing');
+  assert.equal((await rejected.json()).data.requests[0].privacy_review.devolens_action_status, 'not_started');
+
+  const completedJson = await completed.json();
+  const completedById = new Map(completedJson.data.requests.map((row) => [row.deletion_request_id, row]));
+  assert.equal(completedById.get('delete-complete-devolens').privacy_review.local_d1_status, 'complete');
+  assert.equal(completedById.get('delete-complete-devolens').privacy_review.devolens_action_status, 'complete');
+  assert.equal(completedById.get('delete-complete-handoff').privacy_review.local_d1_status, 'complete');
+  assert.equal(completedById.get('delete-complete-handoff').privacy_review.devolens_action_status, 'support_handoff_required');
+
+  const failedJson = await failed.json();
+  assert.equal(failedJson.data.requests[0].privacy_review.local_d1_status, 'not_started');
+  assert.equal(failedJson.data.requests[0].privacy_review.devolens_action_status, 'failed');
+  assert.equal(JSON.stringify(failedJson).includes('buyer@example.com'), false);
+  assert.equal(JSON.stringify(failedJson).includes('AAAA-BBBB-CCCC-DDDD'), false);
 });
 
 test('support deletion decisions are rate limited per token and action', async () => {
@@ -973,6 +1068,8 @@ test('admin approve deletion delegates Devolens action and anonymizes local D1 p
   assert.equal(db.licenses.get(licenseHash).entitlement_status, 'active');
   assert.equal(approveJson.data.deletion_summary.action, 'local_privacy_data_deleted_or_anonymized');
   assert.equal(approveJson.data.deletion_summary.devolens_action, 'block_key_completed');
+  assert.equal(approveJson.data.privacy_review.local_d1_status, 'complete');
+  assert.equal(approveJson.data.privacy_review.devolens_action_status, 'complete');
   assert.equal(db.resetRequests.get('reset-1').purchaser_email, null);
   assert.equal(db.resetRequests.get('reset-1').license_key_hash, null);
   assert.equal(db.deletionRequests.get(reqJson.data.request_id).purchaser_email, null);

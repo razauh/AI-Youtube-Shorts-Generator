@@ -36,6 +36,11 @@ const pendingDeletionRequest = {
   requested_scope: 'backend_licensing_data',
   deletion_preview: { licenses: 1, device_bindings: 1, reset_requests: 1 },
   deletion_summary: null,
+  privacy_review: {
+    local_d1_status: 'pending_review',
+    devolens_action_status: 'not_started',
+    operator_next_step: 'Review the request; approval must account for local D1 cleanup and Devolens-owned action separately.'
+  },
   error_code: null,
   error_message_safe: null,
   created_at_ms: 1,
@@ -108,6 +113,13 @@ describe('AdminApp', () => {
 
     await fireEvent.click(await screen.findByRole('button', { name: 'delete requests' }));
     expect(await screen.findByText('del-pending')).toBeInTheDocument();
+    expect(await screen.findByText('Local D1')).toBeInTheDocument();
+    expect(await screen.findByText('Devolens')).toBeInTheDocument();
+    expect(await screen.findByText('pending review')).toBeInTheDocument();
+    expect(await screen.findByText('not started')).toBeInTheDocument();
+    expect(screen.getByText(/approval must account for local D1 cleanup and Devolens-owned action separately/i)).toBeInTheDocument();
+    expect(screen.queryByText('buyer@example.com')).toBeNull();
+    expect(screen.queryByText('AAAA-BBBB-CCCC-DDDD')).toBeNull();
 
     await fireEvent.click(screen.getByRole('button', { name: 'audit events' }));
     expect(await screen.findByText('Event Type')).toBeInTheDocument();
@@ -125,6 +137,10 @@ describe('AdminApp', () => {
     render(AdminApp);
     await fireEvent.click(await screen.findByRole('button', { name: 'delete requests' }));
     await fireEvent.click(await screen.findByRole('button', { name: 'Approve and Delete' }));
+
+    expect(screen.getByText(/approves local D1 cleanup/i)).toBeInTheDocument();
+    expect(screen.getByText(/Devolens-owned license deletion or blocking must be tracked separately/i)).toBeInTheDocument();
+    expect(screen.getByText(/Current Devolens state: not started/i)).toBeInTheDocument();
 
     let approveButtons = screen.getAllByRole('button', { name: 'Approve and Delete' });
     expect(approveButtons[approveButtons.length - 1]).toBeDisabled();

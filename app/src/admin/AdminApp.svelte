@@ -56,6 +56,23 @@
     return new Date(value).toLocaleString();
   }
 
+  function reviewValue(item, key, fallback = 'Unavailable') {
+    const value = item?.privacy_review?.[key];
+    return typeof value === 'string' && value.trim() ? value.replaceAll('_', ' ') : fallback;
+  }
+
+  function localD1Status(item) {
+    return reviewValue(item, 'local_d1_status');
+  }
+
+  function devolensActionStatus(item) {
+    return reviewValue(item, 'devolens_action_status');
+  }
+
+  function operatorNextStep(item) {
+    return reviewValue(item, 'operator_next_step');
+  }
+
   function showError(error, target = 'main') {
     const friendly = friendlyAdminError(error);
     const next = { kind: 'error', message: friendly.message, requestId: friendly.request_id };
@@ -196,7 +213,10 @@
       const result = confirmAction === 'approve_deletion'
         ? await approveDeletionRequest(requestId, deletionConfirmText, confirmReason)
         : await rejectDeletionRequest(requestId, confirmReason);
-      notice = { kind: 'success', message: `Deletion request ${result.deletion_request_id} ${result.status}.` };
+      notice = {
+        kind: 'success',
+        message: `Deletion request ${result.deletion_request_id} ${result.status}. ${operatorNextStep(result)}`
+      };
       closeConfirm();
       await refreshCurrentSection();
     } catch (error) {
@@ -283,6 +303,9 @@
                   <th scope="col">Purchaser Email</th>
                   <th scope="col">Scope</th>
                   <th scope="col">Preview</th>
+                  <th scope="col">Local D1</th>
+                  <th scope="col">Devolens</th>
+                  <th scope="col">Next Step</th>
                   <th scope="col">Created</th>
                   <th scope="col">Updated</th>
                   <th scope="col">Actions</th>
@@ -301,6 +324,9 @@
                       {item.deletion_preview?.device_bindings ?? 0} devices /
                       {item.deletion_preview?.reset_requests ?? 0} resets
                     </td>
+                    <td>{localD1Status(item)}</td>
+                    <td>{devolensActionStatus(item)}</td>
+                    <td>{operatorNextStep(item)}</td>
                     <td>{formatDate(item.created_at_ms)}</td>
                     <td>{formatDate(item.updated_at_ms)}</td>
                     <td class="row-actions">
@@ -406,7 +432,8 @@
     <section class="modal decision-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
       {#if confirmAction === 'approve_deletion'}
         <header><h2 id="confirm-dialog-title">Approve and delete user data?</h2></header>
-        <p>This will delete device bindings and anonymize backend licensing records for the selected request. Type DELETE USER DATA to continue.</p>
+        <p>This approves local D1 cleanup for the selected request. Devolens-owned license deletion or blocking must be tracked separately as shown in the review state. Type DELETE USER DATA to continue.</p>
+        <p>Current Devolens state: {devolensActionStatus(confirmRequest)}. Next step: {operatorNextStep(confirmRequest)}</p>
         <label>Confirmation <input bind:value={deletionConfirmText} autocomplete="off" /></label>
       {:else if confirmAction === 'reject_deletion'}
         <header><h2 id="confirm-dialog-title">Reject deletion request?</h2></header>

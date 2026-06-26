@@ -65,6 +65,16 @@ fn customer_updater_endpoint_uses_worker_updates_route() {
 }
 
 #[test]
+fn updater_architecture_keeps_worker_proxy_until_static_replacement_is_validated() {
+    let decision = fs::read_to_string("../../docs/updater_architecture.md")
+        .expect("updater architecture doc should be readable");
+
+    assert!(decision.contains("Decision: retain the Worker updater compatibility endpoint"));
+    assert!(decision.contains("static signed HTTPS manifest"));
+    assert!(decision.contains("/updates/{{target}}/{{arch}}/{{current_version}}"));
+}
+
+#[test]
 fn customer_updater_public_key_is_configured() {
     let config = fs::read_to_string("tauri.conf.json").expect("tauri config should be readable");
     let parsed: Value = serde_json::from_str(&config).expect("tauri config should be valid json");
